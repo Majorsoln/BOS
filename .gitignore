@@ -1,0 +1,92 @@
+# -------------------------
+# Python
+# -------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# -------------------------
+# Virtual Environment
+# -------------------------
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# -------------------------
+# Environment variables
+# -------------------------
+.env
+.env.*
+*.env
+
+# -------------------------
+# Django
+# -------------------------
+*.log
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+local_settings.py
+
+# -------------------------
+# Migrations
+# (KEEP core migrations, ignore auto noise elsewhere)
+# -------------------------
+**/migrations/*.pyc
+**/migrations/__pycache__/
+
+# -------------------------
+# VS Code / IDE
+# -------------------------
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# -------------------------
+# OS
+# -------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# Testing / Coverage
+# -------------------------
+.coverage
+htmlcov/
+.pytest_cache/
+.cache/
+
+# -------------------------
+# Logs
+# -------------------------
+logs/
+*.log
+
+# -------------------------
+# Runtime & temp files
+# -------------------------
+tmp/
+temp/
+*.tmp
+
+# -------------------------
+# Docker (future-proof)
+# -------------------------
+docker-compose.override.yml
+
+# -------------------------
+# GitHub
+# -------------------------
+.github/workflows/*.env
+
+# -------------------------
+# Replay / checkpoint temp exports (if any future)
+# -------------------------
+replay_exports/
