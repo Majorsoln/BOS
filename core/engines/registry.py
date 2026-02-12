@@ -21,6 +21,8 @@ After lock(), the registry is read-only. No new engines, no new events.
 The registry is the single source of truth for engine boundaries.
 """
 
+from __future__ import annotations
+
 import logging
 from threading import Lock
 from typing import Optional

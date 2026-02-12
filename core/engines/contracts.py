@@ -14,6 +14,8 @@ This module ONLY declares structure. It does not enforce at runtime.
 Enforcement is in enforcement.py.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 

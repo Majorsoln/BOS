@@ -347,6 +347,28 @@ class TestQueries:
 # EVENT TYPE REGISTRY BRIDGE
 # ══════════════════════════════════════════════════════════════
 
+class _StubEventTypeRegistry:
+    """
+    Lightweight stub matching EventTypeRegistry interface.
+    Avoids Django import chain for pure-logic tests.
+    """
+
+    def __init__(self):
+        self._registered = set()
+
+    def register(self, event_type: str) -> None:
+        self._registered.add(event_type)
+
+    def is_registered(self, event_type: str) -> bool:
+        return event_type in self._registered
+
+    def get_all_registered(self) -> frozenset:
+        return frozenset(self._registered)
+
+    def count(self) -> int:
+        return len(self._registered)
+
+
 class TestEventTypeRegistryBridge:
     """Integration with EventTypeRegistry (persistence gate)."""
 
@@ -355,15 +377,13 @@ class TestEventTypeRegistryBridge:
         reg.register_engine(inventory_contract)
 
         # Not locked yet
-        from core.event_store.validators.registry import EventTypeRegistry
-        etr = EventTypeRegistry()
+        etr = _StubEventTypeRegistry()
 
         with pytest.raises(RegistryNotLockedError):
             reg.populate_event_type_registry(etr)
 
     def test_populate_registers_all_types(self, populated_registry):
-        from core.event_store.validators.registry import EventTypeRegistry
-        etr = EventTypeRegistry()
+        etr = _StubEventTypeRegistry()
 
         count = populated_registry.populate_event_type_registry(etr)
         assert count == populated_registry.event_type_count()
@@ -376,12 +396,9 @@ class TestEventTypeRegistryBridge:
         self, populated_registry
     ):
         """Only owned event types go into EventTypeRegistry."""
-        from core.event_store.validators.registry import EventTypeRegistry
-        etr = EventTypeRegistry()
+        etr = _StubEventTypeRegistry()
         populated_registry.populate_event_type_registry(etr)
 
-        # Subscription-only types should NOT be extra-registered
-        # (they ARE registered because they are owned by other engines)
         # All registered types should have an owner
         for et in etr.get_all_registered():
             assert populated_registry.get_owner(et) is not None

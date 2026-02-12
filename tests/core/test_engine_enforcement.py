@@ -400,6 +400,26 @@ class TestErrorHierarchy:
 
 
 # ══════════════════════════════════════════════════════════════
+# STUB for EventTypeRegistry (avoids Django import chain)
+# ══════════════════════════════════════════════════════════════
+
+class _StubEventTypeRegistry:
+    """Lightweight stub matching EventTypeRegistry interface."""
+
+    def __init__(self):
+        self._registered = set()
+
+    def register(self, event_type: str) -> None:
+        self._registered.add(event_type)
+
+    def is_registered(self, event_type: str) -> bool:
+        return event_type in self._registered
+
+    def get_all_registered(self) -> frozenset:
+        return frozenset(self._registered)
+
+
+# ══════════════════════════════════════════════════════════════
 # INTEGRATION: FULL FLOW
 # ══════════════════════════════════════════════════════════════
 
@@ -416,11 +436,9 @@ class TestFullEnforcementFlow:
         5. Enforce emission (valid + invalid)
         6. Enforce subscription (valid + invalid)
         """
-        from core.event_store.validators.registry import EventTypeRegistry
-
         # ── 1. Create registries ──────────────────────────────
         engine_reg = EngineRegistry()
-        event_type_reg = EventTypeRegistry()
+        event_type_reg = _StubEventTypeRegistry()
         sub_reg = SubscriberRegistry()
 
         # ── 2. Register engines ───────────────────────────────
