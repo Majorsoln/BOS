@@ -1,0 +1,420 @@
+BOS GLOBAL — MASTER IMPLEMENTATION ROADMAP
+🧱 PHASE 0 — CORE KERNEL (LOCKED ✅)
+
+Already complete:
+
+Deterministic Command → Outcome → Event
+
+Immutable Event Store (hash-chain)
+
+Engine Registry
+
+Engine Contracts
+
+Bootstrap Self-check
+
+Multi-tenant isolation
+
+Replay capability
+
+Audit trail
+
+⚠️ Rule: No breaking changes. Additive only.
+
+🏛 PHASE 1 — GOVERNANCE & POLICY HARDENING
+1.1 Engine Contract Freezing
+
+Versioned engine contracts
+
+Engine capability manifest
+
+Engine compatibility checks
+
+1.2 Cross-Engine Policy Layer
+
+Central Policy Engine
+
+Conflict detection
+
+Policy override (tenant level)
+
+Compliance binding
+
+1.3 Legal Proof Infrastructure
+
+Event chain verification API
+
+Snapshot notarization option
+
+Admin action journaling
+
+Court-admissible export format
+
+Outcome:
+BOS becomes legally defensible globally.
+
+🌍 PHASE 2 — GLOBAL COMPLIANCE ENGINE (NO CODE PER COUNTRY)
+2.1 Compliance Profile System
+
+Admin-configurable:
+
+Country
+
+Tax regime
+
+Required document fields
+
+Ledger requirements
+
+Reporting format
+
+QR requirements
+
+Fiscal numbering rules
+
+No if country == logic in code.
+
+2.2 Compliance DSL
+
+Structured rule definitions:
+
+Required block rules
+
+Forbidden configuration rules
+
+Tax computation rule definition
+
+Numbering constraints
+
+2.3 Compliance Validation Engine
+
+Template validation
+
+Transaction validation
+
+Report validation
+
+Outcome:
+Global-ready without code forks.
+
+📄 PHASE 3 — DOCUMENT ENGINE (STRICT BUILDER)
+3.1 Template Engine
+
+Structured JSON layout schema
+
+Versioning
+
+Hash integrity
+
+Locking mechanism
+
+3.2 Block System
+
+Allowed blocks:
+
+Header
+
+Party
+
+Meta
+
+Item Table
+
+Totals
+
+Payment
+
+Compliance
+
+Notes
+
+QR
+
+User can:
+
+Toggle
+
+Reorder (within constraints)
+
+Activate per branch
+
+3.3 HTML Preview Renderer
+
+Safe component-based rendering
+
+Deterministic output
+
+Escaped content
+
+3.4 PDF Official Renderer
+
+Derived from same render source
+
+Hash stored
+
+Immutable artifact
+
+3.5 Numbering Engine
+
+Prefix/suffix
+
+Fiscal reset
+
+Branch-level
+
+Compliance override
+
+Deterministic event-based numbering
+
+3.6 Verification Portal
+
+Enter doc number
+
+Validate hash
+
+Show status (valid/tampered)
+
+Outcome:
+Enterprise-grade document system.
+
+🧱 PHASE 4 — BUSINESS PRIMITIVE LAYER
+
+Universal reusable primitives:
+
+Ledger Primitive
+
+Item/Service Primitive
+
+Actor Primitive
+
+Document Primitive
+
+Inventory Movement Primitive
+
+Obligation Primitive
+
+Approval Primitive
+
+Workflow Primitive
+
+All event-driven.
+
+Outcome:
+Vertical modules reuse same primitives.
+
+⚙️ PHASE 5 — ENTERPRISE ENGINES COMPLETION
+5.1 Accounting Engine
+
+Double entry
+
+Auto journal from events
+
+Ledger replay verification
+
+Trial balance invariants
+
+5.2 Inventory Engine
+
+Movement-only state
+
+No direct stock mutation
+
+FIFO/LIFO strategy plugin
+
+Offcut tracking (for workshop)
+
+5.3 Procurement Engine
+
+Requisition → PO → GRN → Invoice → Payment
+
+5.4 Cash Management Engine
+
+Multi-drawer
+
+Shift tracking
+
+Reconciliation engine
+
+5.5 Reporting & BI Engine
+
+Event-driven projections
+
+Snapshot reporting
+
+KPI calculators
+
+5.6 HR & Payroll Engine
+
+Role mapping
+
+Payroll ledger integration
+
+Permission binding
+
+Outcome:
+Full enterprise core capability.
+
+🏬 PHASE 6 — VERTICAL MODULES
+6.1 Retail Module
+
+POS hybrid (item + service)
+
+Remote item list
+
+Multi-branch stock
+
+Tax regime enforcement
+
+Promotion Engine integration
+
+6.2 Restaurant Module
+
+Table mapping
+
+QR per table
+
+Self-service ordering
+
+Kitchen workflow engine
+
+Split billing
+
+Order state machine
+
+6.3 Workshop Module (Windows, Doors, Panels)
+
+Style-driven costing
+
+Supplier style inheritance (if subscribed)
+
+Cutting optimization engine (line + area)
+
+Offcut reuse logic
+
+Production lifecycle tracking
+
+Material consumption events
+
+Computational heavy but deterministic.
+
+6.4 Rooms / Hospitality
+
+QR per room
+
+Service workflow
+
+Room billing integration
+
+🤖 PHASE 7 — AI & DECISION INTELLIGENCE (CONTROLLED)
+7.1 Advisory AI
+
+Cost anomaly detection
+
+Profit simulation
+
+Risk alerts
+
+7.2 Decision Simulation Engine
+
+What-if projections
+
+Inventory stress simulation
+
+Cash flow forecast
+
+7.3 Guardrails
+
+AI cannot commit state
+
+All actions must go through command pipeline
+
+Full journaling
+
+Outcome:
+AI-enhanced but safe BOS.
+
+🔐 PHASE 8 — SECURITY & ISOLATION
+
+Tenant-level encryption
+
+Role-based permission matrix
+
+Engine sandbox enforcement
+
+Cross-tenant leak detection
+
+Audit explorer
+
+Suspicious pattern detection
+
+🌐 PHASE 9 — INTEGRATION LAYER
+
+API Gateway Engine
+
+Webhook framework
+
+Payment adapters
+
+Bank adapters
+
+EFD / Tax authority adapters
+
+Data export formats
+
+Integration only through Integration Engine.
+
+⚡ PHASE 10 — PERFORMANCE & SCALE
+
+Event store partitioning
+
+Snapshot acceleration
+
+Read model projections
+
+Horizontal scaling
+
+Caching layer for preview
+
+Background PDF generation workers
+
+🏛 PHASE 11 — ENTERPRISE ADMINISTRATION
+
+Global admin console
+
+Compliance profile management
+
+Policy simulation UI
+
+Engine state visualizer
+
+Disaster recovery tools
+
+Template library marketplace
+
+💳 PHASE 12 — SAAS PRODUCTIZATION
+
+Tenant onboarding automation
+
+Subscription plans
+
+Feature flags
+
+Plan-based engine activation
+
+White-label branding
+
+Regional configuration packs (admin only)
+
+📘 PHASE 13 — DOCUMENTATION & CERTIFICATION
+
+Developer handbook
+
+Engine development guide
+
+Governance manual
+
+Compliance configuration guide
+
+Disaster recovery manual
+
+Certification path
