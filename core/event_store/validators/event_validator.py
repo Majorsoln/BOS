@@ -26,7 +26,6 @@ Pure function: data in → ValidationResult out. No side effects.
 import uuid
 from typing import Any
 
-from core.event_store.models import ActorType, EventStatus
 from core.event_store.validators.context import BusinessContextProtocol
 from core.event_store.validators.errors import (
     Rejection,
@@ -46,6 +45,7 @@ MANDATORY_FIELDS = (
     "event_type",
     "event_version",
     "business_id",
+    "branch_id",
     "source_engine",
     "actor_type",
     "actor_id",
@@ -59,8 +59,8 @@ MANDATORY_FIELDS = (
 # VALID ENUM VALUES
 # ══════════════════════════════════════════════════════════════
 
-VALID_ACTOR_TYPES = frozenset(choice[0] for choice in ActorType.choices)
-VALID_STATUSES = frozenset(choice[0] for choice in EventStatus.choices)
+VALID_ACTOR_TYPES = frozenset({"HUMAN", "SYSTEM", "DEVICE", "AI"})
+VALID_STATUSES = frozenset({"FINAL", "PROVISIONAL", "REVIEW_REQUIRED"})
 
 
 # ══════════════════════════════════════════════════════════════
@@ -118,6 +118,13 @@ def _validate_business_context(
     - business_id must match active context
     - branch_id (if present) must belong to business
     """
+    if context is None:
+        return Rejection(
+            code=RejectionCode.NO_ACTIVE_CONTEXT,
+            message="No active business context. Events require context.",
+            violated_rule=ViolatedRule.BUSINESS_CONTEXT,
+        )
+
     if not context.has_active_context():
         return Rejection(
             code=RejectionCode.NO_ACTIVE_CONTEXT,
@@ -134,6 +141,19 @@ def _validate_business_context(
             message=(
                 f"Event business_id ({event_business_id}) does not match "
                 f"active context business_id ({active_business_id})."
+            ),
+            violated_rule=ViolatedRule.BUSINESS_CONTEXT,
+        )
+
+    active_branch_id = context.get_active_branch_id()
+    event_branch_id = event_data.get("branch_id")
+
+    if active_branch_id is not None and event_branch_id != active_branch_id:
+        return Rejection(
+            code=RejectionCode.BRANCH_SCOPE_MISMATCH,
+            message=(
+                f"Event branch_id ({event_branch_id}) does not match "
+                f"active context branch_id ({active_branch_id})."
             ),
             violated_rule=ViolatedRule.BUSINESS_CONTEXT,
         )
@@ -181,7 +201,7 @@ def _validate_status(event_data: dict[str, Any]) -> Rejection | None:
     Default is FINAL if not provided (this is the only field
     where absence means a known default per the model).
     """
-    status = event_data.get("status", EventStatus.FINAL)
+    status = event_data.get("status", "FINAL")
 
     if status not in VALID_STATUSES:
         return Rejection(
@@ -215,7 +235,7 @@ def _validate_correction(event_data: dict[str, Any]) -> Rejection | None:
             violated_rule=ViolatedRule.CORRECTION_RULES,
         )
 
-    status = event_data.get("status", EventStatus.FINAL)
+    status = event_data.get("status", "FINAL")
     allowed_correction_statuses = {EventStatus.FINAL, EventStatus.REVIEW_REQUIRED}
 
     if status not in allowed_correction_statuses:
@@ -289,7 +309,7 @@ def validate_event(
         return ValidationResult(accepted=False, rejection=rejection)
 
     # ── All checks passed ─────────────────────────────────────
-    advisory_actor = event_data.get("actor_type") == ActorType.AI
+    advisory_actor = event_data.get("actor_type") == "AI"
 
     return ValidationResult(
         accepted=True,

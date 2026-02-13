@@ -53,6 +53,10 @@ class CommandContextProtocol(Protocol):
         """Check if branch belongs to business."""
         ...
 
+    def get_active_branch_id(self):
+        """Return active branch scope (UUID or None)."""
+        ...
+
     def get_business_lifecycle_state(self) -> str:
         """
         Return business lifecycle state.
@@ -113,6 +117,19 @@ def validate_command(
             message=f"Expected Command, got {type(command).__name__}.",
         )
 
+    # ── 1b. Context protocol guard ──────────────────────────
+    if context is None:
+        raise CommandValidationError(
+            code="MISSING_BUSINESS_CONTEXT",
+            message="BusinessContext is required for command evaluation.",
+        )
+
+    if not isinstance(context, CommandContextProtocol):
+        raise CommandValidationError(
+            code="INVALID_CONTEXT",
+            message="Provided context does not satisfy CommandContextProtocol.",
+        )
+
     # ── 2. Active context ─────────────────────────────────────
     if not context.has_active_context():
         raise CommandValidationError(
@@ -154,6 +171,16 @@ def validate_command(
                     f"to business_id ({command.business_id})."
                 ),
             )
+
+    active_branch_id = context.get_active_branch_id()
+    if active_branch_id is not None and command.branch_id != active_branch_id:
+        raise CommandValidationError(
+            code="BRANCH_SCOPE_MISMATCH",
+            message=(
+                f"Command branch_id ({command.branch_id}) does not match "
+                f"active context branch_id ({active_branch_id})."
+            ),
+        )
 
     # ── 6. actor_type valid ───────────────────────────────────
     if command.actor_type not in VALID_ACTOR_TYPES:
