@@ -97,6 +97,7 @@ def persist_event(
         previous_event_hash=event_data["previous_event_hash"],
         payload=event_data["payload"],
         event_hash=event_data["event_hash"],
+        context=context,
     )
     if not hash_result.accepted:
         return hash_result

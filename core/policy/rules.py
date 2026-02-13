@@ -20,6 +20,76 @@ from core.policy.contracts import BaseRule
 from core.policy.result import RuleResult, Severity
 
 
+
+
+class TenantScopeBlock(BaseRule):
+    """
+    BLOCK when command scope mismatches context or target aggregate owner.
+
+    Reads optional projected_state ownership keys:
+      - aggregate_business_id
+      - aggregate_branch_id
+    """
+
+    rule_id = "TEN-001"
+    version = "1.0.0"
+    domain = "tenant"
+    severity = Severity.BLOCK
+    applies_to = ["*"]
+
+    def evaluate(
+        self, command: Any, context: Any, projected_state: dict
+    ) -> RuleResult:
+        active_business_id = context.get_active_business_id()
+        active_branch_id = context.get_active_branch_id()
+
+        if command.business_id != active_business_id:
+            return self.fail(
+                message=(
+                    f"Command business_id ({command.business_id}) does not match "
+                    f"active context business_id ({active_business_id})."
+                ),
+                metadata={"code": "BUSINESS_ID_MISMATCH"},
+            )
+
+        if active_branch_id is not None and command.branch_id != active_branch_id:
+            return self.fail(
+                message=(
+                    f"Command branch_id ({command.branch_id}) does not match "
+                    f"active context branch_id ({active_branch_id})."
+                ),
+                metadata={"code": "BRANCH_SCOPE_MISMATCH"},
+            )
+
+        aggregate_business_id = projected_state.get("aggregate_business_id")
+        if (
+            aggregate_business_id is not None
+            and aggregate_business_id != command.business_id
+        ):
+            return self.fail(
+                message=(
+                    f"Cross-tenant access denied: aggregate_business_id "
+                    f"({aggregate_business_id}) does not match command "
+                    f"business_id ({command.business_id})."
+                ),
+                metadata={"code": "CROSS_TENANT_ACCESS"},
+            )
+
+        aggregate_branch_id = projected_state.get("aggregate_branch_id")
+        if command.branch_id is not None and aggregate_branch_id is not None:
+            if aggregate_branch_id != command.branch_id:
+                return self.fail(
+                    message=(
+                        f"Cross-branch access denied: aggregate_branch_id "
+                        f"({aggregate_branch_id}) does not match command "
+                        f"branch_id ({command.branch_id})."
+                    ),
+                    metadata={"code": "CROSS_BRANCH_ACCESS"},
+                )
+
+        return self.pass_rule(message="Tenant scope validated.")
+
+
 # ══════════════════════════════════════════════════════════════
 # INV-001: Cannot sell negative stock (BLOCK)
 # ══════════════════════════════════════════════════════════════

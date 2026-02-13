@@ -185,13 +185,18 @@ class PolicyRegistry:
             if policy_version is not None:
                 snapshot = self._version_snapshots.get(policy_version)
                 if snapshot is not None:
-                    return list(snapshot.get(command_type, ()))
+                    specific_rules = list(snapshot.get(command_type, ()))
+                    global_rules = list(snapshot.get("*", ()))
+                    merged = {r.rule_id: r for r in (specific_rules + global_rules)}
+                    return sorted(merged.values(), key=lambda r: r.rule_id)
                 # Unknown version → empty (fail-safe, not crash)
                 return []
 
             # ── Latest rules (default) ────────────────────────
-            rules = self._command_index.get(command_type, [])
-            return sorted(rules, key=lambda r: r.rule_id)
+            specific_rules = self._command_index.get(command_type, [])
+            global_rules = self._command_index.get("*", [])
+            merged = {r.rule_id: r for r in (specific_rules + global_rules)}
+            return sorted(merged.values(), key=lambda r: r.rule_id)
 
     def has_version(self, version: str) -> bool:
         """Check if a version snapshot exists."""

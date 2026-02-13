@@ -41,6 +41,7 @@ from core.policy.rules import (
     HighDiscountEscalate,
     MissingVATEscalate,
     NegativeStockBlock,
+    TenantScopeBlock,
 )
 from core.policy.integration import (
     EVENT_STATUS_FINAL,
@@ -76,6 +77,9 @@ class StubContext:
 
     def get_active_business_id(self):
         return self._business_id
+
+    def get_active_branch_id(self):
+        return None
 
     def is_branch_in_business(self, branch_id, business_id) -> bool:
         return branch_id in self._branches
@@ -117,6 +121,7 @@ def registry():
     reg.register_rule(HighDiscountEscalate())
     reg.register_rule(ClosedBusinessBlock())
     reg.register_rule(MissingVATEscalate())
+    reg.register_rule(TenantScopeBlock())
     reg.lock(version="1.0.0")
     return reg
 
@@ -937,3 +942,52 @@ class TestFullStabilizedFlow:
         assert result.requires_review
         assert result.enforced_event_status == EVENT_STATUS_REVIEW_REQUIRED
         assert result.policy_decision.escalations[0].rule_id == "PROMO-001"
+
+
+class TestTenantScopePolicy:
+    """Tenant scope policy must block cross-tenant access."""
+
+    def test_cross_tenant_aggregate_access_blocked(self, engine, context):
+        cmd = make_command(
+            command_type="inventory.stock.move.request",
+            source_engine="inventory",
+            business_id=BUSINESS_ID,
+        )
+        decision = engine.evaluate(
+            cmd,
+            context,
+            {
+                "available_stock": 10,
+                "aggregate_business_id": uuid.uuid4(),
+            },
+            policy_version="1.0.0",
+            evaluation_time=FIXED_TIME,
+        )
+
+        assert not decision.allowed
+        assert any(v.rule_id == "TEN-001" for v in decision.violations)
+
+    def test_replay_determinism_with_scope_policy(self, engine, context):
+        aggregate_owner = uuid.uuid4()
+        cmd = make_command(
+            command_type="inventory.stock.move.request",
+            source_engine="inventory",
+            business_id=BUSINESS_ID,
+        )
+
+        d1 = engine.evaluate(
+            cmd,
+            context,
+            {"available_stock": 5, "aggregate_business_id": aggregate_owner},
+            policy_version="1.0.0",
+            evaluation_time=FIXED_TIME,
+        )
+        d2 = engine.evaluate(
+            cmd,
+            context,
+            {"available_stock": 5, "aggregate_business_id": aggregate_owner},
+            policy_version="1.0.0",
+            evaluation_time=FIXED_TIME,
+        )
+
+        assert d1.to_payload() == d2.to_payload()

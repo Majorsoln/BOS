@@ -23,9 +23,10 @@ BOS prefers failure over silent corruption.
 """
 
 import uuid
-from typing import Any
+from typing import Any, Optional
 
 from core.event_store.models import Event
+from core.event_store.query_scope import scoped_events_for_context
 from core.event_store.hashing.errors import (
     HashRejectionCode,
     HashViolatedRule,
@@ -37,15 +38,23 @@ from core.event_store.hashing.hasher import (
 from core.event_store.validators.errors import Rejection, ValidationResult
 
 
-def _get_last_event_hash(business_id: uuid.UUID) -> str:
+def _get_last_event_hash(
+    business_id: uuid.UUID,
+    context: Optional[Any] = None,
+) -> str:
     """
     Fetch the event_hash of the most recent event for a business.
     If no events exist → return GENESIS_HASH.
 
     Uses received_at ordering to determine the latest event.
     """
+    if context is not None:
+        qs = scoped_events_for_context(context)
+    else:
+        qs = Event.objects.filter(business_id=business_id)
+
     last_event = (
-        Event.objects
+        qs
         .filter(business_id=business_id)
         .order_by("-received_at")
         .values_list("event_hash", flat=True)
@@ -63,6 +72,7 @@ def verify_hash_chain(
     previous_event_hash: str,
     payload: Any,
     event_hash: str,
+    context: Optional[Any] = None,
 ) -> ValidationResult:
     """
     Verify hash-chain integrity for a new event.
@@ -84,7 +94,7 @@ def verify_hash_chain(
     """
 
     # ── 1. Chain continuity check ─────────────────────────────
-    actual_last_hash = _get_last_event_hash(business_id)
+    actual_last_hash = _get_last_event_hash(business_id, context=context)
 
     if previous_event_hash != actual_last_hash:
         return ValidationResult(

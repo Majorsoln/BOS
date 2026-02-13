@@ -62,17 +62,22 @@ class StubContext:
         business_id: Optional[uuid.UUID] = None,
         branches: Optional[set] = None,
         lifecycle_state: str = "ACTIVE",
+        active_branch_id: Optional[uuid.UUID] = None,
     ):
         self._active = active
         self._business_id = business_id or uuid.uuid4()
         self._branches = branches or set()
         self._lifecycle_state = lifecycle_state
+        self._active_branch_id = active_branch_id
 
     def has_active_context(self) -> bool:
         return self._active
 
     def get_active_business_id(self):
         return self._business_id
+
+    def get_active_branch_id(self):
+        return self._active_branch_id
 
     def is_branch_in_business(self, branch_id, business_id) -> bool:
         return branch_id in self._branches
@@ -642,6 +647,40 @@ class TestMultiTenantEnforcement:
 
         assert outcome.is_rejected
         assert outcome.reason.code == "BRANCH_NOT_IN_BUSINESS"
+
+    def test_missing_business_context_rejected_deterministically(self, valid_command):
+        dispatcher = CommandDispatcher(context=None)
+        outcome = dispatcher.dispatch(valid_command)
+
+        assert outcome.is_rejected
+        assert outcome.reason.code == "MISSING_BUSINESS_CONTEXT"
+
+    def test_active_branch_scope_mismatch_rejected(self):
+        branch_a = uuid.uuid4()
+        branch_b = uuid.uuid4()
+        ctx = StubContext(
+            active=True,
+            business_id=BUSINESS_ID,
+            branches={branch_a, branch_b},
+            active_branch_id=branch_a,
+        )
+        cmd = Command(
+            command_id=uuid.uuid4(),
+            command_type="inventory.stock.move.request",
+            business_id=BUSINESS_ID,
+            branch_id=branch_b,
+            actor_type="HUMAN",
+            actor_id="user-1",
+            payload={"a": 1},
+            issued_at=datetime.now(timezone.utc),
+            correlation_id=uuid.uuid4(),
+            source_engine="inventory",
+        )
+        dispatcher = CommandDispatcher(context=ctx)
+        outcome = dispatcher.dispatch(cmd)
+
+        assert outcome.is_rejected
+        assert outcome.reason.code == "BRANCH_SCOPE_MISMATCH"
 
 
 # ══════════════════════════════════════════════════════════════
