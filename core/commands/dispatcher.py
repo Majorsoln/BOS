@@ -33,6 +33,7 @@ from core.commands.validator import (
     validate_command,
 )
 from core.identity.policy import actor_scope_authorization_guard
+from core.policy.feature_flag_policy import feature_flag_authorization_guard
 from core.policy.permission_policy import permission_authorization_guard
 
 logger = logging.getLogger("bos.commands")
@@ -91,12 +92,15 @@ class CommandDispatcher:
         self,
         context: CommandContextProtocol,
         permission_provider=None,
+        feature_flag_provider=None,
     ):
         self._context = context
         self._permission_provider = permission_provider
+        self._feature_flag_provider = feature_flag_provider
         self._policies: List[PolicyEvaluator] = [
             actor_scope_authorization_guard,
             self._permission_authorization_policy,
+            self._feature_flag_authorization_policy,
         ]
 
     def _permission_authorization_policy(
@@ -108,6 +112,17 @@ class CommandDispatcher:
             command=command,
             context=context,
             provider=self._permission_provider,
+        )
+
+    def _feature_flag_authorization_policy(
+        self,
+        command: Command,
+        context: CommandContextProtocol,
+    ) -> Optional[RejectionReason]:
+        return feature_flag_authorization_guard(
+            command=command,
+            context=context,
+            provider=self._feature_flag_provider,
         )
 
     def register_policy(self, policy: PolicyEvaluator) -> None:
