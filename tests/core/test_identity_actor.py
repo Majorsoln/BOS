@@ -7,10 +7,36 @@ from core.commands.base import Command
 from core.commands.dispatcher import CommandDispatcher
 from core.context.actor_context import ActorContext
 from core.identity.requirements import SYSTEM_ALLOWED
+from core.permissions import (
+    InMemoryPermissionProvider,
+    PERMISSION_INVENTORY_MOVE,
+    Role,
+    ScopeGrant,
+)
 
 
 BUSINESS_ID = uuid.uuid4()
 BRANCH_ID = uuid.uuid4()
+
+
+def _default_permission_provider():
+    role = Role(
+        role_id="test-role",
+        permissions=(PERMISSION_INVENTORY_MOVE,),
+    )
+    grants = (
+        ScopeGrant(
+            actor_id="user-1",
+            role_id="test-role",
+            business_id=BUSINESS_ID,
+        ),
+        ScopeGrant(
+            actor_id="kernel",
+            role_id="test-role",
+            business_id=BUSINESS_ID,
+        ),
+    )
+    return InMemoryPermissionProvider(roles=(role,), grants=grants)
 
 
 class StubContext:
@@ -19,10 +45,16 @@ class StubContext:
         active: bool = True,
         allow_business: bool = True,
         allow_branch: bool = True,
+        permission_provider=None,
     ):
         self._active = active
         self._allow_business = allow_business
         self._allow_branch = allow_branch
+        self._permission_provider = (
+            permission_provider
+            if permission_provider is not None
+            else _default_permission_provider()
+        )
 
     def has_active_context(self) -> bool:
         return self._active
@@ -50,6 +82,9 @@ class StubContext:
         branch_id,
     ) -> bool:
         return self._allow_branch
+
+    def get_permission_provider(self):
+        return self._permission_provider
 
 
 def _command(
@@ -81,7 +116,11 @@ def _command(
 
 
 def test_actor_required_missing_rejected():
-    dispatcher = CommandDispatcher(context=StubContext())
+    ctx = StubContext()
+    dispatcher = CommandDispatcher(
+        context=ctx,
+        permission_provider=ctx.get_permission_provider(),
+    )
     outcome = dispatcher.dispatch(
         _command(actor_context=None)
     )
@@ -91,7 +130,11 @@ def test_actor_required_missing_rejected():
 
 
 def test_system_allowed_does_not_require_actor_context():
-    dispatcher = CommandDispatcher(context=StubContext())
+    ctx = StubContext()
+    dispatcher = CommandDispatcher(
+        context=ctx,
+        permission_provider=ctx.get_permission_provider(),
+    )
     outcome = dispatcher.dispatch(
         _command(
             actor_type="SYSTEM",
@@ -105,8 +148,10 @@ def test_system_allowed_does_not_require_actor_context():
 
 
 def test_actor_unauthorized_business_rejected():
+    ctx = StubContext(allow_business=False)
     dispatcher = CommandDispatcher(
-        context=StubContext(allow_business=False)
+        context=ctx,
+        permission_provider=ctx.get_permission_provider(),
     )
     outcome = dispatcher.dispatch(
         _command(
@@ -122,11 +167,13 @@ def test_actor_unauthorized_business_rejected():
 
 
 def test_actor_unauthorized_branch_rejected():
+    ctx = StubContext(
+        allow_business=True,
+        allow_branch=False,
+    )
     dispatcher = CommandDispatcher(
-        context=StubContext(
-            allow_business=True,
-            allow_branch=False,
-        )
+        context=ctx,
+        permission_provider=ctx.get_permission_provider(),
     )
     outcome = dispatcher.dispatch(
         _command(
@@ -140,4 +187,3 @@ def test_actor_unauthorized_branch_rejected():
 
     assert outcome.is_rejected
     assert outcome.reason.code == "ACTOR_UNAUTHORIZED_BRANCH"
-

@@ -1,5 +1,5 @@
-﻿"""
-BOS Policy Engine â€” Comprehensive Tests (Stabilization Patch v1.0.2)
+"""
+BOS Policy Engine — Comprehensive Tests (Stabilization Patch v1.0.2)
 ======================================================================
 Tests verify BEHAVIOR, not just coverage.
 
@@ -28,6 +28,15 @@ from core.commands.base import Command
 from core.commands.dispatcher import ai_execution_guard
 from core.commands.outcomes import CommandStatus
 from core.context.actor_context import ActorContext
+from core.permissions import (
+    InMemoryPermissionProvider,
+    PERMISSION_CASH_MOVE,
+    PERMISSION_CMD_EXECUTE_GENERIC,
+    PERMISSION_INVENTORY_MOVE,
+    PERMISSION_POS_SELL,
+    Role,
+    ScopeGrant,
+)
 from core.policy.contracts import BaseRule
 from core.policy.engine import PolicyEngine
 from core.policy.exceptions import (
@@ -51,12 +60,39 @@ from core.policy.integration import (
 )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # TEST STUBS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 BUSINESS_ID = uuid.uuid4()
 FIXED_TIME = datetime(2026, 2, 13, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _default_permission_provider(business_id: uuid.UUID):
+    role = Role(
+        role_id="test-role",
+        permissions=(
+            PERMISSION_INVENTORY_MOVE,
+            PERMISSION_CASH_MOVE,
+            PERMISSION_POS_SELL,
+            PERMISSION_CMD_EXECUTE_GENERIC,
+        ),
+    )
+    actors = (
+        "user-1",
+        "user-42",
+        "ai-1",
+        "ai-advisor-1",
+    )
+    grants = tuple(
+        ScopeGrant(
+            actor_id=actor_id,
+            role_id="test-role",
+            business_id=business_id,
+        )
+        for actor_id in actors
+    )
+    return InMemoryPermissionProvider(roles=(role,), grants=grants)
 
 
 class StubContext:
@@ -66,11 +102,17 @@ class StubContext:
         business_id: Optional[uuid.UUID] = None,
         lifecycle_state: str = "ACTIVE",
         branches: Optional[set] = None,
+        permission_provider=None,
     ):
         self._active = active
         self._business_id = business_id or BUSINESS_ID
         self._lifecycle_state = lifecycle_state
         self._branches = branches or set()
+        self._permission_provider = (
+            permission_provider
+            if permission_provider is not None
+            else _default_permission_provider(self._business_id)
+        )
 
     def has_active_context(self) -> bool:
         return self._active
@@ -83,6 +125,9 @@ class StubContext:
 
     def get_business_lifecycle_state(self) -> str:
         return self._lifecycle_state
+
+    def get_permission_provider(self):
+        return self._permission_provider
 
 
 def make_command(
@@ -108,9 +153,9 @@ def make_command(
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # FIXTURES
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 @pytest.fixture
 def registry():
@@ -133,21 +178,21 @@ def context():
     return StubContext()
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# FIX 1: FAIL-SAFE â€” RULE EXCEPTION CONVERTS TO BLOCK
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
+# FIX 1: FAIL-SAFE — RULE EXCEPTION CONVERTS TO BLOCK
+# ══════════════════════════════════════════════════════════════
 
 class TestFailSafeBehavior:
-    """Fix 1: evaluate() NEVER raises. Exceptions â†’ BLOCK."""
+    """Fix 1: evaluate() NEVER raises. Exceptions → BLOCK."""
 
     def test_rule_exception_converts_to_block(self):
-        """Broken rule â†’ BLOCK RuleResult, not exception."""
+        """Broken rule → BLOCK RuleResult, not exception."""
 
         class BrokenRule(BaseRule):
             rule_id = "BRK-001"
             version = "1.0.0"
             domain = "test"
-            severity = Severity.WARN  # Even if WARN, error â†’ BLOCK
+            severity = Severity.WARN  # Even if WARN, error → BLOCK
             applies_to = ["test.thing.do.request"]
 
             def evaluate(self, c, ctx, s):
@@ -177,7 +222,7 @@ class TestFailSafeBehavior:
         assert decision.violations[0].rule_id == "BRK-001"
 
     def test_evaluation_never_raises_on_any_exception(self):
-        """Any exception type is caught â€” never propagates."""
+        """Any exception type is caught — never propagates."""
 
         class TypeErrorRule(BaseRule):
             rule_id = "ERR-001"
@@ -221,7 +266,7 @@ class TestFailSafeBehavior:
             source_engine="test",
         )
 
-        # MUST NOT raise â€” all caught
+        # MUST NOT raise — all caught
         decision = eng.evaluate(
             cmd, StubContext(), {}, policy_version="1.0.0",
             evaluation_time=FIXED_TIME,
@@ -230,7 +275,7 @@ class TestFailSafeBehavior:
         assert len(decision.violations) == 3
 
     def test_invalid_return_type_converts_to_block(self):
-        """Rule returning wrong type â†’ BLOCK, not crash."""
+        """Rule returning wrong type → BLOCK, not crash."""
 
         class BadReturnRule(BaseRule):
             rule_id = "BAD-001"
@@ -260,9 +305,9 @@ class TestFailSafeBehavior:
         assert decision.violations[0].metadata["error_type"] == "INVALID_RETURN_TYPE"
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# FIX 2: TIME INJECTION â€” NO SYSTEM CLOCK
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
+# FIX 2: TIME INJECTION — NO SYSTEM CLOCK
+# ══════════════════════════════════════════════════════════════
 
 class TestTimeInjection:
     """Fix 2: Time from command context, never datetime.now()."""
@@ -282,7 +327,9 @@ class TestTimeInjection:
         """PolicyAwareDispatcher passes command.issued_at, not now()."""
         eng = PolicyEngine(registry=registry)
         dispatcher = PolicyAwareDispatcher(
-            context=context, policy_engine=eng
+            context=context,
+            policy_engine=eng,
+            permission_provider=context.get_permission_provider(),
         )
 
         specific_time = datetime(2025, 6, 15, 10, 30, 0, tzinfo=timezone.utc)
@@ -310,9 +357,9 @@ class TestTimeInjection:
         assert decision.explanation_tree["evaluation_time"] is None
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # FIX 3: VERSION SNAPSHOT INTEGRITY
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestVersionSnapshots:
     """Fix 3: Version-scoped rule registry with frozen snapshots."""
@@ -335,7 +382,7 @@ class TestVersionSnapshots:
         assert "INV-001" in rule_ids
 
     def test_unknown_version_returns_empty(self, registry):
-        """Unknown version â†’ empty rule set (fail-safe)."""
+        """Unknown version → empty rule set (fail-safe)."""
         rules = registry.get_rules_for_command(
             "inventory.stock.move.request",
             policy_version="99.99.99",
@@ -343,7 +390,7 @@ class TestVersionSnapshots:
         assert rules == []
 
     def test_unknown_version_evaluation_allows(self, registry):
-        """Unknown version â†’ no rules â†’ allowed (fail-safe)."""
+        """Unknown version → no rules → allowed (fail-safe)."""
         eng = PolicyEngine(registry=registry)
         cmd = make_command(payload={"quantity": 9999})
 
@@ -352,7 +399,7 @@ class TestVersionSnapshots:
             policy_version="99.99.99",
             evaluation_time=FIXED_TIME,
         )
-        # No rules found â†’ allowed (no violations)
+        # No rules found → allowed (no violations)
         assert decision.allowed
         assert decision.explanation_tree["rules_evaluated"] == 0
 
@@ -380,9 +427,9 @@ class TestVersionSnapshots:
         assert any(r.rule_id == "INV-001" for r in rules)
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# FIX 4: CONTRACT VALIDATION â€” SEMVER ENFORCEMENT
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
+# FIX 4: CONTRACT VALIDATION — SEMVER ENFORCEMENT
+# ══════════════════════════════════════════════════════════════
 
 class TestContractValidation:
     """Fix 4: BaseRule contract validated at class creation time."""
@@ -474,9 +521,9 @@ class TestContractValidation:
                     return self.pass_rule()
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# FIX 5: ESCALATE â†’ REVIEW_REQUIRED ENFORCEMENT
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
+# FIX 5: ESCALATE → REVIEW_REQUIRED ENFORCEMENT
+# ══════════════════════════════════════════════════════════════
 
 class TestEscalateEnforcement:
     """Fix 5: ESCALATE forces event_status=REVIEW_REQUIRED."""
@@ -488,7 +535,9 @@ class TestEscalateEnforcement:
         eng = PolicyEngine(registry=reg)
 
         dispatcher = PolicyAwareDispatcher(
-            context=context, policy_engine=eng
+            context=context,
+            policy_engine=eng,
+            permission_provider=context.get_permission_provider(),
         )
 
         cmd = make_command(
@@ -510,7 +559,9 @@ class TestEscalateEnforcement:
     def test_no_escalation_means_final(self, registry, context):
         eng = PolicyEngine(registry=registry)
         dispatcher = PolicyAwareDispatcher(
-            context=context, policy_engine=eng
+            context=context,
+            policy_engine=eng,
+            permission_provider=context.get_permission_provider(),
         )
 
         cmd = make_command(payload={"quantity": 1})
@@ -527,7 +578,9 @@ class TestEscalateEnforcement:
     def test_rejected_command_status_final(self, registry, context):
         eng = PolicyEngine(registry=registry)
         dispatcher = PolicyAwareDispatcher(
-            context=context, policy_engine=eng
+            context=context,
+            policy_engine=eng,
+            permission_provider=context.get_permission_provider(),
         )
 
         cmd = make_command(payload={"quantity": 999})
@@ -542,9 +595,9 @@ class TestEscalateEnforcement:
         assert result.enforced_event_status == EVENT_STATUS_FINAL
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # FIX 6: EXPLANATION TREE ENHANCED
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestExplanationTreeEnhanced:
     """Fix 6: Explanation includes metadata, version, evaluation_time."""
@@ -581,9 +634,9 @@ class TestExplanationTreeEnhanced:
         assert decision.explanation_tree["evaluation_time"] == FIXED_TIME.isoformat()
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # FIX 7: PROHIBIT DUPLICATE RULES
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestDuplicateRulePrevention:
     """Fix 7: Duplicate rule_id + version hard fails."""
@@ -601,12 +654,12 @@ class TestDuplicateRulePrevention:
             reg.register_rule(NegativeStockBlock())
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # DETERMINISTIC REPLAY (Fix 2 + Fix 3 combined)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestDeterministicReplay:
-    """Replay with same version + same time â†’ identical result."""
+    """Replay with same version + same time → identical result."""
 
     def test_replay_identical_results(self, engine, context):
         cmd = make_command(payload={"quantity": 50})
@@ -641,14 +694,14 @@ class TestDeterministicReplay:
         cmd = make_command(payload={"quantity": 100})
         state = {"available_stock": 10}
 
-        # Version 1.0.0 has rules â†’ BLOCKED
+        # Version 1.0.0 has rules → BLOCKED
         d1 = eng.evaluate(
             cmd, StubContext(), state,
             policy_version="1.0.0",
             evaluation_time=FIXED_TIME,
         )
 
-        # Version 99.0.0 has no snapshot â†’ no rules â†’ ALLOWED
+        # Version 99.0.0 has no snapshot → no rules → ALLOWED
         d2 = eng.evaluate(
             cmd, StubContext(), state,
             policy_version="99.0.0",
@@ -671,9 +724,9 @@ class TestDeterministicReplay:
         assert state == state_copy
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # INDIVIDUAL RULE TESTS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestNegativeStockBlock:
     def test_insufficient_stock_blocks(self):
@@ -772,9 +825,9 @@ class TestMissingVATEscalate:
         assert result.passed
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # REGISTRY TESTS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestPolicyRegistry:
     def test_register_and_query(self):
@@ -803,9 +856,9 @@ class TestPolicyRegistry:
         assert "1.0.0" in reg.get_locked_versions()
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # RESULT SERIALIZATION
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestResultSerialization:
     def test_to_payload(self, engine, context):
@@ -822,14 +875,14 @@ class TestResultSerialization:
         assert payload["policy_version"] == "1.0.0"
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # INTEGRATION: PolicyAwareDispatcher
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestPolicyAwareDispatcher:
     def test_block_produces_rejected(self, registry, context):
         eng = PolicyEngine(registry=registry)
-        d = PolicyAwareDispatcher(context=context, policy_engine=eng)
+        d = PolicyAwareDispatcher(context=context, policy_engine=eng, permission_provider=context.get_permission_provider())
 
         cmd = make_command(payload={"quantity": 100})
         result = d.dispatch(
@@ -839,7 +892,7 @@ class TestPolicyAwareDispatcher:
         assert result.is_rejected
 
     def test_legacy_policies_still_work(self, context):
-        d = PolicyAwareDispatcher(context=context)
+        d = PolicyAwareDispatcher(context=context, permission_provider=context.get_permission_provider())
         d.register_policy(ai_execution_guard)
 
         cmd = make_command(actor_type="AI")
@@ -847,7 +900,7 @@ class TestPolicyAwareDispatcher:
         assert result.is_rejected
 
     def test_no_policy_engine_backward_compat(self, context):
-        d = PolicyAwareDispatcher(context=context)
+        d = PolicyAwareDispatcher(context=context, permission_provider=context.get_permission_provider())
         cmd = make_command()
         result = d.dispatch(cmd)
         assert result.is_accepted
@@ -855,7 +908,7 @@ class TestPolicyAwareDispatcher:
 
     def test_policy_version_preserved(self, registry, context):
         eng = PolicyEngine(registry=registry)
-        d = PolicyAwareDispatcher(context=context, policy_engine=eng)
+        d = PolicyAwareDispatcher(context=context, policy_engine=eng, permission_provider=context.get_permission_provider())
 
         cmd = make_command(payload={"quantity": 1})
         result = d.dispatch(
@@ -866,9 +919,9 @@ class TestPolicyAwareDispatcher:
         assert result.policy_version == "1.0.0"
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # FULL INTEGRATION FLOW
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestFullStabilizedFlow:
     def test_complete_block_flow(self):
@@ -881,7 +934,7 @@ class TestFullStabilizedFlow:
         reg.lock(version="1.0.0")
         eng = PolicyEngine(registry=reg)
 
-        d = PolicyAwareDispatcher(context=ctx, policy_engine=eng)
+        d = PolicyAwareDispatcher(context=ctx, policy_engine=eng, permission_provider=ctx.get_permission_provider())
 
         cmd = Command(
             command_id=uuid.uuid4(),
@@ -916,7 +969,7 @@ class TestFullStabilizedFlow:
         reg.lock(version="1.0.0")
         eng = PolicyEngine(registry=reg)
 
-        d = PolicyAwareDispatcher(context=ctx, policy_engine=eng)
+        d = PolicyAwareDispatcher(context=ctx, policy_engine=eng, permission_provider=ctx.get_permission_provider())
 
         cmd = Command(
             command_id=uuid.uuid4(),
@@ -941,5 +994,8 @@ class TestFullStabilizedFlow:
         assert result.requires_review
         assert result.enforced_event_status == EVENT_STATUS_REVIEW_REQUIRED
         assert result.policy_decision.escalations[0].rule_id == "PROMO-001"
+
+
+
 
 

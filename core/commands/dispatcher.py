@@ -1,7 +1,7 @@
 """
-BOS Command Layer — Command Dispatcher
-=========================================
-Accept Command → Validate → Evaluate Policies → Produce Outcome.
+BOS Command Layer - Command Dispatcher
+======================================
+Accept Command -> Validate -> Evaluate Policies -> Produce Outcome.
 
 The Dispatcher is the DECISION MAKER. It decides ACCEPTED or REJECTED.
 
@@ -13,7 +13,7 @@ The Dispatcher DOES NOT:
 
 It only produces a deterministic CommandOutcome.
 
-Policy evaluation is pluggable — policies are registered as callables
+Policy evaluation is pluggable - policies are registered as callables
 that return Optional[RejectionReason]. If any policy rejects, the
 command is REJECTED with the first rejection reason.
 """
@@ -33,35 +33,25 @@ from core.commands.validator import (
     validate_command,
 )
 from core.identity.policy import actor_scope_authorization_guard
+from core.policy.permission_policy import permission_authorization_guard
 
 logger = logging.getLogger("bos.commands")
 
 
-# ══════════════════════════════════════════════════════════════
-# POLICY TYPE
-# ══════════════════════════════════════════════════════════════
-
-# A policy is a callable:
-#   (Command, context) → Optional[RejectionReason]
-#   Returns None if policy passes, RejectionReason if it rejects.
 PolicyEvaluator = Callable[
     [Command, CommandContextProtocol],
     Optional[RejectionReason],
 ]
 
 
-# ══════════════════════════════════════════════════════════════
-# BUILT-IN POLICIES
-# ══════════════════════════════════════════════════════════════
-
 def ai_execution_guard(
     command: Command, context: CommandContextProtocol
 ) -> Optional[RejectionReason]:
     """
     AI actors cannot produce execution commands.
-    AI is advisory only — BOS Doctrine.
+    AI is advisory only - BOS Doctrine.
 
-    This is a placeholder enforcement — full AI advisory
+    This is a placeholder enforcement - full AI advisory
     policy will be richer in later phases.
     """
     if command.actor_type == "AI":
@@ -75,10 +65,6 @@ def ai_execution_guard(
         )
     return None
 
-
-# ══════════════════════════════════════════════════════════════
-# COMMAND DISPATCHER
-# ══════════════════════════════════════════════════════════════
 
 class CommandDispatcher:
     """
@@ -98,15 +84,31 @@ class CommandDispatcher:
         # outcome.is_accepted or outcome.is_rejected
 
     Policies are evaluated in registration order.
-    First rejection wins — remaining policies are skipped.
+    First rejection wins - remaining policies are skipped.
     """
 
-    def __init__(self, context: CommandContextProtocol):
+    def __init__(
+        self,
+        context: CommandContextProtocol,
+        permission_provider=None,
+    ):
         self._context = context
-        # Default identity boundary policy is always active.
+        self._permission_provider = permission_provider
         self._policies: List[PolicyEvaluator] = [
-            actor_scope_authorization_guard
+            actor_scope_authorization_guard,
+            self._permission_authorization_policy,
         ]
+
+    def _permission_authorization_policy(
+        self,
+        command: Command,
+        context: CommandContextProtocol,
+    ) -> Optional[RejectionReason]:
+        return permission_authorization_guard(
+            command=command,
+            context=context,
+            provider=self._permission_provider,
+        )
 
     def register_policy(self, policy: PolicyEvaluator) -> None:
         """
@@ -123,28 +125,23 @@ class CommandDispatcher:
         policy_name = getattr(policy, "__qualname__", str(policy))
         logger.debug(f"Policy registered: {policy_name}")
 
-    # ══════════════════════════════════════════════════════════
-    # DISPATCH
-    # ══════════════════════════════════════════════════════════
-
     def dispatch(self, command: Command) -> CommandOutcome:
         """
         Evaluate command and produce outcome.
 
         Flow:
-        1. Validate structure + context → if fails, REJECTED
-        2. Evaluate policies → if any rejects, REJECTED
-        3. All clear → ACCEPTED
+        1. Validate structure + context -> if fails, REJECTED
+        2. Evaluate policies -> if any rejects, REJECTED
+        3. All clear -> ACCEPTED
 
         Args:
             command: Command to evaluate.
 
         Returns:
-            CommandOutcome — never None, never ambiguous.
+            CommandOutcome - never None, never ambiguous.
         """
         now = datetime.now(timezone.utc)
 
-        # ── Step 1: Structural validation ─────────────────────
         try:
             validate_command(command, self._context)
         except CommandValidationError as exc:
@@ -163,7 +160,6 @@ class CommandDispatcher:
                 occurred_at=now,
             )
 
-        # ── Step 2: Policy evaluation ─────────────────────────
         for policy in self._policies:
             rejection = policy(command, self._context)
             if rejection is not None:
@@ -185,7 +181,6 @@ class CommandDispatcher:
                     occurred_at=now,
                 )
 
-        # ── Step 3: All clear → ACCEPTED ──────────────────────
         logger.info(f"Command {command.command_id} ACCEPTED")
         return CommandOutcome(
             command_id=command.command_id,

@@ -1,16 +1,16 @@
-﻿"""
-BOS Command Layer â€” Comprehensive Tests
+"""
+BOS Command Layer — Comprehensive Tests
 ==========================================
-Tests for the entire Command â†’ Outcome â†’ Event chain.
+Tests for the entire Command → Outcome → Event chain.
 
 Required test scenarios:
-1. Valid command â†’ ACCEPTED
-2. Invalid structure â†’ validation error
-3. Policy failure â†’ REJECTED outcome
+1. Valid command → ACCEPTED
+2. Invalid structure → validation error
+3. Policy failure → REJECTED outcome
 4. REJECTED produces event
 5. ACCEPTED produces event (via engine handler)
 6. No silent path
-7. Wrong namespace â†’ rejected
+7. Wrong namespace → rejected
 8. AI actor cannot produce execution command
 9. Additional: rejection event naming, frozen immutability,
    bus orchestration, multi-tenant enforcement
@@ -46,11 +46,20 @@ from core.commands.bus import (
 )
 from core.context.actor_context import ActorContext
 from core.context.scope import SCOPE_BRANCH_REQUIRED
+from core.permissions import (
+    InMemoryPermissionProvider,
+    PERMISSION_CASH_MOVE,
+    PERMISSION_CMD_EXECUTE_GENERIC,
+    PERMISSION_INVENTORY_MOVE,
+    PERMISSION_POS_SELL,
+    Role,
+    ScopeGrant,
+)
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# TEST INFRASTRUCTURE â€” STUBS (no Django)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
+# TEST INFRASTRUCTURE — STUBS (no Django)
+# ══════════════════════════════════════════════════════════════
 
 class StubContext:
     """
@@ -64,11 +73,17 @@ class StubContext:
         business_id: Optional[uuid.UUID] = None,
         branches: Optional[set] = None,
         lifecycle_state: str = "ACTIVE",
+        permission_provider=None,
     ):
         self._active = active
         self._business_id = business_id or uuid.uuid4()
         self._branches = branches or set()
         self._lifecycle_state = lifecycle_state
+        self._permission_provider = (
+            permission_provider
+            if permission_provider is not None
+            else _default_permission_provider(self._business_id)
+        )
 
     def has_active_context(self) -> bool:
         return self._active
@@ -81,6 +96,9 @@ class StubContext:
 
     def get_business_lifecycle_state(self) -> str:
         return self._lifecycle_state
+
+    def get_permission_provider(self):
+        return self._permission_provider
 
 
 class StubEngineService:
@@ -121,12 +139,40 @@ class StubEventTypeRegistry:
         return event_type in self._registered
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # FIXTURES
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 BUSINESS_ID = uuid.uuid4()
 BRANCH_ID = uuid.uuid4()
+
+
+def _default_permission_provider(business_id: uuid.UUID):
+    role = Role(
+        role_id="test-role",
+        permissions=(
+            PERMISSION_INVENTORY_MOVE,
+            PERMISSION_CASH_MOVE,
+            PERMISSION_POS_SELL,
+            PERMISSION_CMD_EXECUTE_GENERIC,
+        ),
+    )
+    actors = (
+        "user-1",
+        "user-42",
+        "user-123",
+        "ai-1",
+        "ai-advisor-1",
+    )
+    grants = tuple(
+        ScopeGrant(
+            actor_id=actor_id,
+            role_id="test-role",
+            business_id=business_id,
+        )
+        for actor_id in actors
+    )
+    return InMemoryPermissionProvider(roles=(role,), grants=grants)
 
 
 @pytest.fixture
@@ -175,7 +221,7 @@ def ai_command():
 
 @pytest.fixture
 def dispatcher(context):
-    d = CommandDispatcher(context=context)
+    d = CommandDispatcher(context=context, permission_provider=context.get_permission_provider())
     d.register_policy(ai_execution_guard)
     return d
 
@@ -205,9 +251,9 @@ def command_bus(dispatcher, persist_event_stub, context, event_type_registry):
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# 1. VALID COMMAND â†’ ACCEPTED
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
+# 1. VALID COMMAND → ACCEPTED
+# ══════════════════════════════════════════════════════════════
 
 class TestValidCommandAccepted:
     """Scenario 1: Valid command produces ACCEPTED outcome."""
@@ -235,9 +281,9 @@ class TestValidCommandAccepted:
         assert engine_service.executed_commands[0] is valid_command
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# 2. INVALID STRUCTURE â†’ VALIDATION ERROR
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
+# 2. INVALID STRUCTURE → VALIDATION ERROR
+# ══════════════════════════════════════════════════════════════
 
 class TestInvalidStructure:
     """Scenario 2: Invalid command structure fails validation."""
@@ -327,9 +373,9 @@ class TestInvalidStructure:
             valid_command.command_type = "hacked"
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# 3. POLICY FAILURE â†’ REJECTED OUTCOME
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
+# 3. POLICY FAILURE → REJECTED OUTCOME
+# ══════════════════════════════════════════════════════════════
 
 class TestPolicyRejection:
     """Scenario 3: Policy evaluation produces REJECTED outcome."""
@@ -338,11 +384,11 @@ class TestPolicyRejection:
         def deny_all(cmd, ctx):
             return RejectionReason(
                 code="ALWAYS_DENY",
-                message="Testing â€” always deny.",
+                message="Testing — always deny.",
                 policy_name="deny_all_policy",
             )
 
-        dispatcher = CommandDispatcher(context=context)
+        dispatcher = CommandDispatcher(context=context, permission_provider=context.get_permission_provider())
         dispatcher.register_policy(deny_all)
 
         outcome = dispatcher.dispatch(valid_command)
@@ -361,7 +407,7 @@ class TestPolicyRejection:
                 code="POLICY_B", message="B", policy_name="b"
             )
 
-        dispatcher = CommandDispatcher(context=context)
+        dispatcher = CommandDispatcher(context=context, permission_provider=context.get_permission_provider())
         dispatcher.register_policy(policy_a)
         dispatcher.register_policy(policy_b)
 
@@ -372,16 +418,16 @@ class TestPolicyRejection:
         def allow_all(cmd, ctx):
             return None  # Pass
 
-        dispatcher = CommandDispatcher(context=context)
+        dispatcher = CommandDispatcher(context=context, permission_provider=context.get_permission_provider())
         dispatcher.register_policy(allow_all)
 
         outcome = dispatcher.dispatch(valid_command)
         assert outcome.is_accepted
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # 4. REJECTED PRODUCES EVENT
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestRejectedProducesEvent:
     """Scenario 4: REJECTED commands produce rejection events."""
@@ -389,8 +435,8 @@ class TestRejectedProducesEvent:
     def test_rejection_event_persisted(
         self, command_bus, persist_event_stub, ai_command
     ):
-        # AI command â†’ rejected by ai_execution_guard
-        # No handler needed â€” rejection path doesn't call handler
+        # AI command → rejected by ai_execution_guard
+        # No handler needed — rejection path doesn't call handler
         result = command_bus.handle(ai_command)
 
         assert result.is_rejected
@@ -430,9 +476,9 @@ class TestRejectedProducesEvent:
         assert event_data["correlation_id"] == ai_command.correlation_id
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # 5. ACCEPTED PRODUCES EVENT (via engine handler)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestAcceptedProducesEvent:
     """Scenario 5: ACCEPTED commands trigger engine handler."""
@@ -467,9 +513,9 @@ class TestAcceptedProducesEvent:
             command_bus.handle(valid_command)
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # 6. NO SILENT PATH
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestNoSilentPath:
     """Scenario 6: Every command produces a traceable result."""
@@ -507,9 +553,9 @@ class TestNoSilentPath:
         assert outcome.reason.message is not None
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# 7. WRONG NAMESPACE â†’ REJECTED
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
+# 7. WRONG NAMESPACE → REJECTED
+# ══════════════════════════════════════════════════════════════
 
 class TestNamespaceEnforcement:
     """Scenario 7: Namespace mismatch is rejected."""
@@ -531,9 +577,9 @@ class TestNamespaceEnforcement:
             )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # 8. AI ACTOR CANNOT EXECUTE
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestAIExecutionGuard:
     """Scenario 8: AI actor cannot produce execution commands."""
@@ -554,9 +600,9 @@ class TestAIExecutionGuard:
         assert outcome.is_accepted
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # 9. MULTI-TENANT ENFORCEMENT
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestMultiTenantEnforcement:
     """Multi-tenant context enforcement."""
@@ -570,7 +616,7 @@ class TestMultiTenantEnforcement:
 
     def test_no_active_context_rejected(self, valid_command):
         ctx = StubContext(active=False)
-        dispatcher = CommandDispatcher(context=ctx)
+        dispatcher = CommandDispatcher(context=ctx, permission_provider=ctx.get_permission_provider())
         outcome = dispatcher.dispatch(valid_command)
 
         assert outcome.is_rejected
@@ -596,7 +642,7 @@ class TestMultiTenantEnforcement:
             source_engine="inventory",
             scope_requirement=SCOPE_BRANCH_REQUIRED,
         )
-        dispatcher = CommandDispatcher(context=ctx)
+        dispatcher = CommandDispatcher(context=ctx, permission_provider=ctx.get_permission_provider())
         outcome = dispatcher.dispatch(cmd)
 
         assert outcome.is_rejected
@@ -608,7 +654,7 @@ class TestMultiTenantEnforcement:
             business_id=BUSINESS_ID,
             lifecycle_state="SUSPENDED",
         )
-        dispatcher = CommandDispatcher(context=ctx)
+        dispatcher = CommandDispatcher(context=ctx, permission_provider=ctx.get_permission_provider())
         outcome = dispatcher.dispatch(valid_command)
 
         assert outcome.is_rejected
@@ -620,7 +666,7 @@ class TestMultiTenantEnforcement:
             business_id=BUSINESS_ID,
             lifecycle_state="CLOSED",
         )
-        dispatcher = CommandDispatcher(context=ctx)
+        dispatcher = CommandDispatcher(context=ctx, permission_provider=ctx.get_permission_provider())
         outcome = dispatcher.dispatch(valid_command)
 
         assert outcome.is_rejected
@@ -632,7 +678,7 @@ class TestMultiTenantEnforcement:
             business_id=BUSINESS_ID,
             lifecycle_state="LEGAL_HOLD",
         )
-        dispatcher = CommandDispatcher(context=ctx)
+        dispatcher = CommandDispatcher(context=ctx, permission_provider=ctx.get_permission_provider())
         outcome = dispatcher.dispatch(valid_command)
 
         assert outcome.is_rejected
@@ -657,7 +703,7 @@ class TestMultiTenantEnforcement:
             correlation_id=uuid.uuid4(),
             source_engine="inventory",
         )
-        dispatcher = CommandDispatcher(context=ctx)
+        dispatcher = CommandDispatcher(context=ctx, permission_provider=ctx.get_permission_provider())
         outcome = dispatcher.dispatch(cmd)
 
         assert outcome.is_rejected
@@ -682,16 +728,16 @@ class TestMultiTenantEnforcement:
             correlation_id=uuid.uuid4(),
             source_engine="inventory",
         )
-        dispatcher = CommandDispatcher(context=ctx)
+        dispatcher = CommandDispatcher(context=ctx, permission_provider=ctx.get_permission_provider())
         outcome = dispatcher.dispatch(cmd)
 
         assert outcome.is_rejected
         assert outcome.reason.code == "BRANCH_NOT_IN_BUSINESS"
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # EVENT NAMING LAW
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestEventNamingLaw:
     """Event type derivation from command type."""
@@ -717,9 +763,9 @@ class TestEventNamingLaw:
         assert derive_source_engine("cash.session.open.request") == "cash"
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # OUTCOME INVARIANTS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestOutcomeInvariants:
     """CommandOutcome frozen contract enforcement."""
@@ -750,9 +796,9 @@ class TestOutcomeInvariants:
             outcome.status = CommandStatus.REJECTED
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # REJECTION REASON STRUCTURE
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestRejectionReason:
     """RejectionReason structure validation."""
@@ -790,22 +836,22 @@ class TestRejectionReason:
             r.code = "HACKED"
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 # FULL INTEGRATION FLOW
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
 
 class TestFullIntegrationFlow:
     """End-to-end command lifecycle."""
 
     def test_complete_accepted_flow(self):
-        """Command â†’ validate â†’ policies â†’ ACCEPTED â†’ handler â†’ event."""
+        """Command → validate → policies → ACCEPTED → handler → event."""
         biz_id = uuid.uuid4()
         ctx = StubContext(active=True, business_id=biz_id)
         persist_fn = StubPersistEvent()
         etr = StubEventTypeRegistry()
         service = StubEngineService(return_value="inventory.stock.moved persisted")
 
-        dispatcher = CommandDispatcher(context=ctx)
+        dispatcher = CommandDispatcher(context=ctx, permission_provider=ctx.get_permission_provider())
         dispatcher.register_policy(ai_execution_guard)
 
         bus = CommandBus(
@@ -841,13 +887,13 @@ class TestFullIntegrationFlow:
         assert len(persist_fn.persisted_events) == 0
 
     def test_complete_rejected_flow(self):
-        """Command â†’ validate â†’ policies â†’ REJECTED â†’ rejection event."""
+        """Command → validate → policies → REJECTED → rejection event."""
         biz_id = uuid.uuid4()
         ctx = StubContext(active=True, business_id=biz_id)
         persist_fn = StubPersistEvent()
         etr = StubEventTypeRegistry()
 
-        dispatcher = CommandDispatcher(context=ctx)
+        dispatcher = CommandDispatcher(context=ctx, permission_provider=ctx.get_permission_provider())
         dispatcher.register_policy(ai_execution_guard)
 
         bus = CommandBus(
@@ -886,7 +932,7 @@ class TestFullIntegrationFlow:
         assert event["payload"]["command_id"] == str(cmd.command_id)
 
     def test_context_failure_produces_rejection_event(self):
-        """Suspended business â†’ REJECTED â†’ rejection event persisted."""
+        """Suspended business → REJECTED → rejection event persisted."""
         biz_id = uuid.uuid4()
         ctx = StubContext(
             active=True,
@@ -896,7 +942,7 @@ class TestFullIntegrationFlow:
         persist_fn = StubPersistEvent()
         etr = StubEventTypeRegistry()
 
-        dispatcher = CommandDispatcher(context=ctx)
+        dispatcher = CommandDispatcher(context=ctx, permission_provider=ctx.get_permission_provider())
         bus = CommandBus(
             dispatcher=dispatcher,
             persist_event=persist_fn,
@@ -925,5 +971,6 @@ class TestFullIntegrationFlow:
         event = persist_fn.persisted_events[0]
         assert event["event_type"] == "cash.session.open.rejected"
         assert event["payload"]["rejection"]["code"] == "BUSINESS_SUSPENDED"
+
 
 
