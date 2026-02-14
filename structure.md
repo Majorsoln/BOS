@@ -115,4 +115,4 @@ bos/
     ├── doctrine/
     ├── architecture/
     ├── implementation/
-    └── ownership/
+    └── ownership
