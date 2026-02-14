@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from core.context.scope import SCOPE_BUSINESS_ALLOWED
 from core.engines.registry import (
     EngineRegistry,
     RegistryNotLockedError,
@@ -222,6 +223,7 @@ def enforced_persist_event(
     event_type_registry: Any,
     engine_registry: EngineRegistry,
     subscriber_registry: Any = None,
+    scope_requirement: str = SCOPE_BUSINESS_ALLOWED,
 ):
     """
     Engine-contract-aware wrapper around persist_event().
@@ -262,6 +264,7 @@ def enforced_persist_event(
         context=context,
         registry=event_type_registry,
         subscriber_registry=subscriber_registry,
+        scope_requirement=scope_requirement,
     )
 
 

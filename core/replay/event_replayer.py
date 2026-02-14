@@ -1,10 +1,10 @@
-"""
-BOS Replay Engine — Event Replayer
+﻿"""
+BOS Replay Engine â€” Event Replayer
 =====================================
 Reads historical events and replays them through the Event Bus.
 
 Replay doctrine:
-- READ events only — never write to Event Store
+- READ events only â€” never write to Event Store
 - Never modify events
 - Deterministic order: received_at ASC
 - Verify hash-chain before replay
@@ -36,7 +36,8 @@ from core.replay.checkpoints import (
     clear_checkpoint,
 )
 from core.replay.context import ReplayContext, is_replay_active
-from core.replay.errors import ReplayChainBrokenError, ReplayError
+from core.replay.errors import ReplayChainBrokenError
+from core.replay.scope import ReplayScope, validate_replay_scope
 
 logger = logging.getLogger("bos.replay")
 
@@ -44,9 +45,9 @@ logger = logging.getLogger("bos.replay")
 # ReplayContext and is_replay_active are imported from core.replay.context
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # REPLAY RESULT
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @dataclass
 class ReplayResult:
@@ -65,9 +66,9 @@ class ReplayResult:
         return self.chain_verified and self.dispatch_failures == 0
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # EVENT QUERY BUILDER
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def _build_event_queryset(
     business_id: Optional[uuid.UUID] = None,
@@ -103,16 +104,17 @@ def _build_event_queryset(
     return qs.order_by("received_at", "event_id")
 
 
-# ══════════════════════════════════════════════════════════════
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # CHAIN VERIFICATION (PRE-REPLAY)
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def verify_chain_before_replay(
     business_id: Optional[uuid.UUID] = None,
 ) -> bool:
     """
     Lightweight chain verification before replay starts.
-    Checks structural integrity — not full hash recomputation.
+    Checks structural integrity â€” not full hash recomputation.
 
     Verifies:
     - No empty event_hash
@@ -179,12 +181,12 @@ def _verify_full_hash_chain(
     business_id: Optional[uuid.UUID] = None,
 ) -> bool:
     """
-    Full hash recomputation — verifies every event's hash by recomputing.
+    Full hash recomputation â€” verifies every event's hash by recomputing.
 
     For each event:
     - Recompute: compute_event_hash(payload, previous_event_hash)
     - Compare with stored event_hash
-    - If mismatch → raise ReplayIntegrityError
+    - If mismatch â†’ raise ReplayIntegrityError
 
     This is expensive. Use only when tamper detection is needed.
     """
@@ -218,17 +220,18 @@ def _verify_full_hash_chain(
                     actual_hash=recomputed,
                 )
 
-    logger.info("Full hash recomputation passed — no tampering detected.")
+    logger.info("Full hash recomputation passed â€” no tampering detected.")
     return True
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # CORE REPLAY FUNCTION
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def replay_events(
     subscriber_registry: SubscriberRegistry,
     business_id: Optional[uuid.UUID] = None,
+    replay_scope: ReplayScope = ReplayScope.BUSINESS,
     until: Optional[datetime] = None,
     projection_name: Optional[str] = None,
     use_checkpoint: bool = False,
@@ -249,7 +252,8 @@ def replay_events(
 
     Args:
         subscriber_registry: Bus registry with handlers for replay.
-        business_id:         Scope replay to single business (optional).
+        business_id:         Business scope identifier.
+        replay_scope:        BUSINESS (default) or explicit UNSCOPED.
         until:               Replay events up to this timestamp (optional).
         projection_name:     Name for checkpoint tracking (optional).
         use_checkpoint:      Resume from last checkpoint if available.
@@ -265,24 +269,31 @@ def replay_events(
         ReplayIntegrityError:   If full hash recompute detects mismatch.
     """
     result = ReplayResult(dry_run=dry_run)
+    resolved_scope = validate_replay_scope(
+        business_id=business_id,
+        replay_scope=replay_scope,
+    )
+    scoped_business_id = (
+        None if resolved_scope == ReplayScope.UNSCOPED else business_id
+    )
 
-    # ── Step 1: Verify chain integrity ────────────────────────
-    verify_chain_before_replay(business_id=business_id)
+    # â”€â”€ Step 1: Verify chain integrity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    verify_chain_before_replay(business_id=scoped_business_id)
     result.chain_verified = True
 
-    # ── Step 1b: Optional full hash recompute ─────────────────
+    # â”€â”€ Step 1b: Optional full hash recompute â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if full_hash_verify:
-        _verify_full_hash_chain(business_id=business_id)
+        _verify_full_hash_chain(business_id=scoped_business_id)
         logger.info("Full hash recomputation verified.")
 
-    # ── Step 2: Determine resume point (composite cursor) ─────
+    # â”€â”€ Step 2: Determine resume point (composite cursor) â”€â”€â”€â”€â”€
     after_received_at = None
     after_event_id = None
 
     if use_checkpoint and projection_name:
         checkpoint = load_checkpoint(
             projection_name=projection_name,
-            business_id=business_id,
+            business_id=scoped_business_id,
         )
         if checkpoint is not None:
             after_received_at = checkpoint.last_received_at
@@ -292,9 +303,9 @@ def replay_events(
                 f"(after {after_received_at}, event {after_event_id})"
             )
 
-    # ── Step 3: Build queryset ────────────────────────────────
+    # â”€â”€ Step 3: Build queryset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     events_qs = _build_event_queryset(
-        business_id=business_id,
+        business_id=scoped_business_id,
         until=until,
         after_received_at=after_received_at,
         after_event_id=after_event_id,
@@ -310,7 +321,7 @@ def replay_events(
         result.events_processed = total
         return result
 
-    # ── Step 4: Replay with isolation ─────────────────────────
+    # â”€â”€ Step 4: Replay with isolation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     last_event = None
 
     with ReplayContext():
@@ -342,17 +353,17 @@ def replay_events(
 
             last_event = event
 
-    # ── Step 5: Save checkpoint ───────────────────────────────
+    # â”€â”€ Step 5: Save checkpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if last_event is not None and projection_name:
         save_checkpoint(
             projection_name=projection_name,
             last_event_id=last_event.event_id,
             last_received_at=last_event.received_at,
-            business_id=business_id,
+            business_id=scoped_business_id,
         )
         result.checkpoint_saved = True
         logger.info(
-            f"Checkpoint saved: {projection_name} → "
+            f"Checkpoint saved: {projection_name} â†’ "
             f"{last_event.event_id}"
         )
 
@@ -363,3 +374,4 @@ def replay_events(
     )
 
     return result
+

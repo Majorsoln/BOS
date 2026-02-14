@@ -30,6 +30,7 @@ from typing import Any, Optional
 
 from django.db import IntegrityError, transaction
 
+from core.context.scope import SCOPE_BUSINESS_ALLOWED
 from core.event_store.idempotency.guard import (
     check_idempotency,
     handle_integrity_error,
@@ -51,6 +52,7 @@ def persist_event(
     context: BusinessContextProtocol,
     registry: EventTypeRegistry,
     subscriber_registry: Optional["SubscriberRegistry"] = None,
+    scope_requirement: str = SCOPE_BUSINESS_ALLOWED,
 ) -> ValidationResult:
     """
     The ONE lawful entry point for persisting events into BOS.
@@ -68,6 +70,8 @@ def persist_event(
         context:              Active business context (dependency injection).
         registry:             Event type registry (dependency injection).
         subscriber_registry:  Optional subscriber registry for dispatch.
+        scope_requirement:    Command-owned scope requirement used for
+                              branch scope enforcement.
 
     Returns:
         ValidationResult — accepted=True with advisory_actor flag,
@@ -92,7 +96,12 @@ def persist_event(
         )
 
     # ── Step 1: Validate event structure ──────────────────────
-    validation_result = validate_event(event_data, context, registry)
+    validation_result = validate_event(
+        event_data=event_data,
+        context=context,
+        registry=registry,
+        scope_requirement=scope_requirement,
+    )
     if not validation_result.accepted:
         return validation_result
 

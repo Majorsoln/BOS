@@ -1,6 +1,6 @@
 """
-BOS Replay Engine — Public API
-================================
+BOS Replay Engine - Public API
+==============================
 Event Store = truth archive.
 Replay Engine = time machine.
 Time machine must never change history.
@@ -8,3 +8,7 @@ Time machine must never change history.
 Imports are deferred to avoid circular import during app loading.
 Use: from core.replay.event_replayer import replay_events
 """
+
+from core.replay.scope import ReplayScope
+
+__all__ = ["ReplayScope"]

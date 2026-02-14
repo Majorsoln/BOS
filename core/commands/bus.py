@@ -308,6 +308,7 @@ class CommandBus:
             event_data=rejection_event_data,
             context=self._context,
             registry=self._event_type_registry,
+            scope_requirement=command.scope_requirement,
         )
 
         return CommandResult(

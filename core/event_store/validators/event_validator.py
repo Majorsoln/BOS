@@ -1,5 +1,5 @@
-"""
-BOS Event Store — Event Validator
+﻿"""
+BOS Event Store â€” Event Validator
 ===================================
 Law enforcement for events. Not convenience code.
 
@@ -20,12 +20,18 @@ This validator does NOT:
 - Check idempotency (Task 0.4)
 - Make business decisions
 
-Pure function: data in → ValidationResult out. No side effects.
+Pure function: data in â†’ ValidationResult out. No side effects.
 """
+
+from __future__ import annotations
 
 import uuid
 from typing import Any
 
+from core.context.scope import (
+    SCOPE_BRANCH_REQUIRED,
+    SCOPE_BUSINESS_ALLOWED,
+)
 from core.event_store.models import ActorType, EventStatus
 from core.event_store.validators.context import BusinessContextProtocol
 from core.event_store.validators.errors import (
@@ -37,9 +43,9 @@ from core.event_store.validators.errors import (
 from core.event_store.validators.registry import EventTypeRegistry
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # MANDATORY FIELDS (no defaults, no silent fill-ins)
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 MANDATORY_FIELDS = (
     "event_id",
@@ -55,17 +61,17 @@ MANDATORY_FIELDS = (
 )
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # VALID ENUM VALUES
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 VALID_ACTOR_TYPES = frozenset(choice[0] for choice in ActorType.choices)
 VALID_STATUSES = frozenset(choice[0] for choice in EventStatus.choices)
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # INDIVIDUAL VALIDATION CHECKS
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def _validate_schema_presence(event_data: dict[str, Any]) -> Rejection | None:
     """
@@ -111,6 +117,7 @@ def _validate_actor(event_data: dict[str, Any]) -> Rejection | None:
 def _validate_business_context(
     event_data: dict[str, Any],
     context: BusinessContextProtocol,
+    scope_requirement: str,
 ) -> Rejection | None:
     """
     Enforce business context rules. Non-negotiable.
@@ -118,7 +125,7 @@ def _validate_business_context(
     - business_id must match active context
     - branch_id (if present) must belong to business
     """
-    if not context.has_active_context():
+    if context is None or not context.has_active_context():
         return Rejection(
             code=RejectionCode.NO_ACTIVE_CONTEXT,
             message="No active business context. Events require context.",
@@ -138,14 +145,25 @@ def _validate_business_context(
             violated_rule=ViolatedRule.BUSINESS_CONTEXT,
         )
 
-    event_branch_id = event_data.get("branch_id")
-    if event_branch_id is not None:
-        if not context.is_branch_in_business(event_branch_id, event_business_id):
+    if scope_requirement == SCOPE_BRANCH_REQUIRED:
+        event_branch_id = event_data.get("branch_id")
+        if event_branch_id is None:
             return Rejection(
-                code=RejectionCode.BRANCH_NOT_IN_BUSINESS,
+                code=RejectionCode.BRANCH_REQUIRED_MISSING,
                 message=(
-                    f"branch_id ({event_branch_id}) does not belong to "
-                    f"business_id ({event_business_id})."
+                    "branch_id is required when scope_requirement is "
+                    "SCOPE_BRANCH_REQUIRED."
+                ),
+                violated_rule=ViolatedRule.BUSINESS_CONTEXT,
+            )
+
+        active_branch_id = context.get_active_branch_id()
+        if active_branch_id != event_branch_id:
+            return Rejection(
+                code=RejectionCode.BRANCH_SCOPE_MISMATCH,
+                message=(
+                    f"Event branch_id ({event_branch_id}) does not match "
+                    f"active context branch_id ({active_branch_id})."
                 ),
                 violated_rule=ViolatedRule.BUSINESS_CONTEXT,
             )
@@ -231,14 +249,15 @@ def _validate_correction(event_data: dict[str, Any]) -> Rejection | None:
     return None
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # MAIN VALIDATOR (orchestrator)
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def validate_event(
     event_data: dict[str, Any],
     context: BusinessContextProtocol,
     registry: EventTypeRegistry,
+    scope_requirement: str = SCOPE_BUSINESS_ALLOWED,
 ) -> ValidationResult:
     """
     Validate an event against BOS system law.
@@ -246,7 +265,7 @@ def validate_event(
     Runs all checks in order. Stops at first rejection.
     Returns ValidationResult with explicit acceptance or rejection.
 
-    This function is PURE — no side effects, no DB writes,
+    This function is PURE â€” no side effects, no DB writes,
     no event dispatch, no business logic.
 
     Args:
@@ -258,40 +277,44 @@ def validate_event(
         ValidationResult with accepted=True or accepted=False + Rejection.
     """
 
-    # ── 1. Schema Presence ────────────────────────────────────
+    # â”€â”€ 1. Schema Presence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     rejection = _validate_schema_presence(event_data)
     if rejection:
         return ValidationResult(accepted=False, rejection=rejection)
 
-    # ── 2. Actor Validation ───────────────────────────────────
+    # â”€â”€ 2. Actor Validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     rejection = _validate_actor(event_data)
     if rejection:
         return ValidationResult(accepted=False, rejection=rejection)
 
-    # ── 3. Business Context Enforcement ───────────────────────
-    rejection = _validate_business_context(event_data, context)
+    # â”€â”€ 3. Business Context Enforcement â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    rejection = _validate_business_context(
+        event_data, context, scope_requirement
+    )
     if rejection:
         return ValidationResult(accepted=False, rejection=rejection)
 
-    # ── 4. Event Type Registry ────────────────────────────────
+    # â”€â”€ 4. Event Type Registry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     rejection = _validate_event_type(event_data, registry)
     if rejection:
         return ValidationResult(accepted=False, rejection=rejection)
 
-    # ── 5. Status Validation ──────────────────────────────────
+    # â”€â”€ 5. Status Validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     rejection = _validate_status(event_data)
     if rejection:
         return ValidationResult(accepted=False, rejection=rejection)
 
-    # ── 6. Correction Rules ───────────────────────────────────
+    # â”€â”€ 6. Correction Rules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     rejection = _validate_correction(event_data)
     if rejection:
         return ValidationResult(accepted=False, rejection=rejection)
 
-    # ── All checks passed ─────────────────────────────────────
+    # â”€â”€ All checks passed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     advisory_actor = event_data.get("actor_type") == ActorType.AI
 
     return ValidationResult(
         accepted=True,
         advisory_actor=advisory_actor,
     )
+
+

@@ -44,6 +44,7 @@ from core.commands.bus import (
     CommandResult,
     NoHandlerRegistered,
 )
+from core.context.scope import SCOPE_BRANCH_REQUIRED
 
 
 # ══════════════════════════════════════════════════════════════
@@ -551,6 +552,13 @@ class TestAIExecutionGuard:
 class TestMultiTenantEnforcement:
     """Multi-tenant context enforcement."""
 
+    def test_missing_business_context_object_rejected(self, valid_command):
+        dispatcher = CommandDispatcher(context=None)
+        outcome = dispatcher.dispatch(valid_command)
+
+        assert outcome.is_rejected
+        assert outcome.reason.code == "INVALID_CONTEXT"
+
     def test_no_active_context_rejected(self, valid_command):
         ctx = StubContext(active=False)
         dispatcher = CommandDispatcher(context=ctx)
@@ -558,6 +566,31 @@ class TestMultiTenantEnforcement:
 
         assert outcome.is_rejected
         assert outcome.reason.code == "NO_ACTIVE_CONTEXT"
+
+    def test_branch_required_missing_rejected(self):
+        ctx = StubContext(
+            active=True,
+            business_id=BUSINESS_ID,
+            branches={BRANCH_ID},
+        )
+        cmd = Command(
+            command_id=uuid.uuid4(),
+            command_type="inventory.stock.move.request",
+            business_id=BUSINESS_ID,
+            branch_id=None,
+            actor_type="HUMAN",
+            actor_id="user-1",
+            payload={"a": 1},
+            issued_at=datetime.now(timezone.utc),
+            correlation_id=uuid.uuid4(),
+            source_engine="inventory",
+            scope_requirement=SCOPE_BRANCH_REQUIRED,
+        )
+        dispatcher = CommandDispatcher(context=ctx)
+        outcome = dispatcher.dispatch(cmd)
+
+        assert outcome.is_rejected
+        assert outcome.reason.code == "BRANCH_REQUIRED_MISSING"
 
     def test_suspended_business_rejected(self, valid_command):
         ctx = StubContext(

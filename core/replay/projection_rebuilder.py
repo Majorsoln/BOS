@@ -29,6 +29,7 @@ from typing import Optional, Protocol, runtime_checkable
 from core.events.registry import SubscriberRegistry
 from core.replay.checkpoints import clear_checkpoint
 from core.replay.event_replayer import ReplayResult, replay_events
+from core.replay.scope import ReplayScope
 
 logger = logging.getLogger("bos.replay")
 
@@ -131,6 +132,11 @@ def rebuild_projection(
     replay_result = replay_events(
         subscriber_registry=subscriber_registry,
         business_id=business_id,
+        replay_scope=(
+            ReplayScope.UNSCOPED
+            if business_id is None
+            else ReplayScope.BUSINESS
+        ),
         until=until,
         projection_name=projection.projection_name,
         use_checkpoint=False,  # Full rebuild — start from beginning

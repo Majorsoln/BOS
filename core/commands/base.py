@@ -24,6 +24,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+from core.context.scope import (
+    SCOPE_BUSINESS_ALLOWED,
+    VALID_SCOPE_REQUIREMENTS,
+)
+
 
 # ══════════════════════════════════════════════════════════════
 # ACTOR TYPES (mirrors Event Store ActorType, no Django import)
@@ -47,6 +52,8 @@ class Command:
                         (e.g. 'inventory.stock.move.request').
         business_id:    Tenant boundary (UUID).
         branch_id:      Branch scope (nullable UUID).
+        scope_requirement:
+                        Scope requirement declaration for this command.
         actor_type:     HUMAN | SYSTEM | DEVICE | AI.
         actor_id:       Identity of the actor.
         payload:        Business intent data (dict).
@@ -79,6 +86,7 @@ class Command:
     issued_at: datetime
     correlation_id: uuid.UUID
     source_engine: str
+    scope_requirement: str = SCOPE_BUSINESS_ALLOWED
 
     def __post_init__(self):
         # ── command_id must be UUID ───────────────────────────
@@ -115,6 +123,13 @@ class Command:
         # ── business_id must be UUID ──────────────────────────
         if not isinstance(self.business_id, uuid.UUID):
             raise ValueError("business_id must be UUID.")
+
+        # ── scope requirement must be valid ───────────────────
+        if self.scope_requirement not in VALID_SCOPE_REQUIREMENTS:
+            raise ValueError(
+                f"scope_requirement '{self.scope_requirement}' not valid. "
+                f"Must be one of: {sorted(VALID_SCOPE_REQUIREMENTS)}"
+            )
 
         # ── actor_type must be valid ──────────────────────────
         if self.actor_type not in VALID_ACTOR_TYPES:

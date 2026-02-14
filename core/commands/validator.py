@@ -26,6 +26,8 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from core.commands.base import Command, VALID_ACTOR_TYPES
+from core.commands.rejection import ReasonCode
+from core.context.scope import SCOPE_BRANCH_REQUIRED
 
 
 # ══════════════════════════════════════════════════════════════
@@ -113,10 +115,19 @@ def validate_command(
             message=f"Expected Command, got {type(command).__name__}.",
         )
 
-    # ── 2. Active context ─────────────────────────────────────
+    # ── 2. Context shape + active context ────────────────────
+    if context is None or not isinstance(context, CommandContextProtocol):
+        raise CommandValidationError(
+            code=ReasonCode.INVALID_CONTEXT,
+            message=(
+                "Invalid business context. Commands require "
+                "BusinessContext-compatible context."
+            ),
+        )
+
     if not context.has_active_context():
         raise CommandValidationError(
-            code="NO_ACTIVE_CONTEXT",
+            code=ReasonCode.NO_ACTIVE_CONTEXT,
             message="No active business context. Commands require context.",
         )
 
@@ -142,33 +153,46 @@ def validate_command(
             ),
         )
 
-    # ── 5. branch_id belongs to business ──────────────────────
+    # ── 5. Scope requirement branch enforcement ───────────────
+    if (
+        command.scope_requirement == SCOPE_BRANCH_REQUIRED
+        and command.branch_id is None
+    ):
+        raise CommandValidationError(
+            code=ReasonCode.BRANCH_REQUIRED_MISSING,
+            message=(
+                "branch_id is required when scope_requirement is "
+                "SCOPE_BRANCH_REQUIRED."
+            ),
+        )
+
+    # ── 6. branch_id belongs to business ──────────────────────
     if command.branch_id is not None:
         if not context.is_branch_in_business(
             command.branch_id, command.business_id
         ):
             raise CommandValidationError(
-                code="BRANCH_NOT_IN_BUSINESS",
+                code=ReasonCode.BRANCH_NOT_IN_BUSINESS,
                 message=(
                     f"branch_id ({command.branch_id}) does not belong "
                     f"to business_id ({command.business_id})."
                 ),
             )
 
-    # ── 6. actor_type valid ───────────────────────────────────
+    # ── 7. actor_type valid ───────────────────────────────────
     if command.actor_type not in VALID_ACTOR_TYPES:
         raise CommandValidationError(
-            code="INVALID_ACTOR",
+            code=ReasonCode.INVALID_ACTOR,
             message=(
                 f"actor_type '{command.actor_type}' not valid. "
                 f"Must be one of: {sorted(VALID_ACTOR_TYPES)}"
             ),
         )
 
-    # ── 7. command_type format ────────────────────────────────
+    # ── 8. command_type format ────────────────────────────────
     if not command.command_type.endswith(".request"):
         raise CommandValidationError(
-            code="INVALID_COMMAND_TYPE",
+            code=ReasonCode.INVALID_COMMAND_TYPE,
             message=(
                 f"command_type '{command.command_type}' must end "
                 f"with '.request'."
@@ -178,17 +202,17 @@ def validate_command(
     parts = command.command_type.split(".")
     if len(parts) < 4:
         raise CommandValidationError(
-            code="INVALID_COMMAND_TYPE",
+            code=ReasonCode.INVALID_COMMAND_TYPE,
             message=(
                 f"command_type '{command.command_type}' must follow "
                 f"engine.domain.action.request format."
             ),
         )
 
-    # ── 8. Namespace: first segment must match source_engine ──
+    # ── 9. Namespace: first segment must match source_engine ──
     if parts[0] != command.source_engine:
         raise CommandValidationError(
-            code="INVALID_NAMESPACE",
+            code=ReasonCode.INVALID_NAMESPACE,
             message=(
                 f"command_type namespace '{parts[0]}' does not match "
                 f"source_engine '{command.source_engine}'."
