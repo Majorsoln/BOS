@@ -1,16 +1,16 @@
-"""
-BOS Command Layer — Comprehensive Tests
+﻿"""
+BOS Command Layer â€” Comprehensive Tests
 ==========================================
-Tests for the entire Command → Outcome → Event chain.
+Tests for the entire Command â†’ Outcome â†’ Event chain.
 
 Required test scenarios:
-1. Valid command → ACCEPTED
-2. Invalid structure → validation error
-3. Policy failure → REJECTED outcome
+1. Valid command â†’ ACCEPTED
+2. Invalid structure â†’ validation error
+3. Policy failure â†’ REJECTED outcome
 4. REJECTED produces event
 5. ACCEPTED produces event (via engine handler)
 6. No silent path
-7. Wrong namespace → rejected
+7. Wrong namespace â†’ rejected
 8. AI actor cannot produce execution command
 9. Additional: rejection event naming, frozen immutability,
    bus orchestration, multi-tenant enforcement
@@ -44,12 +44,13 @@ from core.commands.bus import (
     CommandResult,
     NoHandlerRegistered,
 )
+from core.context.actor_context import ActorContext
 from core.context.scope import SCOPE_BRANCH_REQUIRED
 
 
-# ══════════════════════════════════════════════════════════════
-# TEST INFRASTRUCTURE — STUBS (no Django)
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# TEST INFRASTRUCTURE â€” STUBS (no Django)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class StubContext:
     """
@@ -120,9 +121,9 @@ class StubEventTypeRegistry:
         return event_type in self._registered
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # FIXTURES
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 BUSINESS_ID = uuid.uuid4()
 BRANCH_ID = uuid.uuid4()
@@ -147,6 +148,7 @@ def valid_command():
         branch_id=None,
         actor_type="HUMAN",
         actor_id="user-123",
+        actor_context=ActorContext(actor_type="HUMAN", actor_id="user-123"),
         payload={"sku": "ABC", "quantity": 10},
         issued_at=datetime.now(timezone.utc),
         correlation_id=uuid.uuid4(),
@@ -163,6 +165,7 @@ def ai_command():
         branch_id=None,
         actor_type="AI",
         actor_id="ai-advisor-1",
+        actor_context=ActorContext(actor_type="AI", actor_id="ai-advisor-1"),
         payload={"sku": "ABC", "quantity": 5},
         issued_at=datetime.now(timezone.utc),
         correlation_id=uuid.uuid4(),
@@ -202,9 +205,9 @@ def command_bus(dispatcher, persist_event_stub, context, event_type_registry):
     )
 
 
-# ══════════════════════════════════════════════════════════════
-# 1. VALID COMMAND → ACCEPTED
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# 1. VALID COMMAND â†’ ACCEPTED
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestValidCommandAccepted:
     """Scenario 1: Valid command produces ACCEPTED outcome."""
@@ -232,9 +235,9 @@ class TestValidCommandAccepted:
         assert engine_service.executed_commands[0] is valid_command
 
 
-# ══════════════════════════════════════════════════════════════
-# 2. INVALID STRUCTURE → VALIDATION ERROR
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# 2. INVALID STRUCTURE â†’ VALIDATION ERROR
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestInvalidStructure:
     """Scenario 2: Invalid command structure fails validation."""
@@ -248,6 +251,7 @@ class TestInvalidStructure:
                 branch_id=None,
                 actor_type="HUMAN",
                 actor_id="user-1",
+                actor_context=ActorContext(actor_type="HUMAN", actor_id="user-1"),
                 payload={"a": 1},
                 issued_at=datetime.now(timezone.utc),
                 correlation_id=uuid.uuid4(),
@@ -263,6 +267,7 @@ class TestInvalidStructure:
                 branch_id=None,
                 actor_type="HUMAN",
                 actor_id="user-1",
+                actor_context=ActorContext(actor_type="HUMAN", actor_id="user-1"),
                 payload={"a": 1},
                 issued_at=datetime.now(timezone.utc),
                 correlation_id=uuid.uuid4(),
@@ -278,6 +283,7 @@ class TestInvalidStructure:
                 branch_id=None,
                 actor_type="ROBOT",
                 actor_id="user-1",
+                actor_context=ActorContext(actor_type="ROBOT", actor_id="user-1"),
                 payload={"a": 1},
                 issued_at=datetime.now(timezone.utc),
                 correlation_id=uuid.uuid4(),
@@ -293,6 +299,7 @@ class TestInvalidStructure:
                 branch_id=None,
                 actor_type="HUMAN",
                 actor_id="",
+                actor_context=ActorContext(actor_type="HUMAN", actor_id=""),
                 payload={"a": 1},
                 issued_at=datetime.now(timezone.utc),
                 correlation_id=uuid.uuid4(),
@@ -308,6 +315,7 @@ class TestInvalidStructure:
                 branch_id=None,
                 actor_type="HUMAN",
                 actor_id="user-1",
+                actor_context=ActorContext(actor_type="HUMAN", actor_id="user-1"),
                 payload="not a dict",
                 issued_at=datetime.now(timezone.utc),
                 correlation_id=uuid.uuid4(),
@@ -319,9 +327,9 @@ class TestInvalidStructure:
             valid_command.command_type = "hacked"
 
 
-# ══════════════════════════════════════════════════════════════
-# 3. POLICY FAILURE → REJECTED OUTCOME
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# 3. POLICY FAILURE â†’ REJECTED OUTCOME
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestPolicyRejection:
     """Scenario 3: Policy evaluation produces REJECTED outcome."""
@@ -330,7 +338,7 @@ class TestPolicyRejection:
         def deny_all(cmd, ctx):
             return RejectionReason(
                 code="ALWAYS_DENY",
-                message="Testing — always deny.",
+                message="Testing â€” always deny.",
                 policy_name="deny_all_policy",
             )
 
@@ -371,9 +379,9 @@ class TestPolicyRejection:
         assert outcome.is_accepted
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # 4. REJECTED PRODUCES EVENT
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestRejectedProducesEvent:
     """Scenario 4: REJECTED commands produce rejection events."""
@@ -381,8 +389,8 @@ class TestRejectedProducesEvent:
     def test_rejection_event_persisted(
         self, command_bus, persist_event_stub, ai_command
     ):
-        # AI command → rejected by ai_execution_guard
-        # No handler needed — rejection path doesn't call handler
+        # AI command â†’ rejected by ai_execution_guard
+        # No handler needed â€” rejection path doesn't call handler
         result = command_bus.handle(ai_command)
 
         assert result.is_rejected
@@ -422,9 +430,9 @@ class TestRejectedProducesEvent:
         assert event_data["correlation_id"] == ai_command.correlation_id
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # 5. ACCEPTED PRODUCES EVENT (via engine handler)
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestAcceptedProducesEvent:
     """Scenario 5: ACCEPTED commands trigger engine handler."""
@@ -459,9 +467,9 @@ class TestAcceptedProducesEvent:
             command_bus.handle(valid_command)
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # 6. NO SILENT PATH
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestNoSilentPath:
     """Scenario 6: Every command produces a traceable result."""
@@ -499,9 +507,9 @@ class TestNoSilentPath:
         assert outcome.reason.message is not None
 
 
-# ══════════════════════════════════════════════════════════════
-# 7. WRONG NAMESPACE → REJECTED
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# 7. WRONG NAMESPACE â†’ REJECTED
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestNamespaceEnforcement:
     """Scenario 7: Namespace mismatch is rejected."""
@@ -515,6 +523,7 @@ class TestNamespaceEnforcement:
                 branch_id=None,
                 actor_type="HUMAN",
                 actor_id="user-1",
+                actor_context=ActorContext(actor_type="HUMAN", actor_id="user-1"),
                 payload={"a": 1},
                 issued_at=datetime.now(timezone.utc),
                 correlation_id=uuid.uuid4(),
@@ -522,9 +531,9 @@ class TestNamespaceEnforcement:
             )
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # 8. AI ACTOR CANNOT EXECUTE
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestAIExecutionGuard:
     """Scenario 8: AI actor cannot produce execution commands."""
@@ -545,9 +554,9 @@ class TestAIExecutionGuard:
         assert outcome.is_accepted
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # 9. MULTI-TENANT ENFORCEMENT
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestMultiTenantEnforcement:
     """Multi-tenant context enforcement."""
@@ -580,6 +589,7 @@ class TestMultiTenantEnforcement:
             branch_id=None,
             actor_type="HUMAN",
             actor_id="user-1",
+            actor_context=ActorContext(actor_type="HUMAN", actor_id="user-1"),
             payload={"a": 1},
             issued_at=datetime.now(timezone.utc),
             correlation_id=uuid.uuid4(),
@@ -641,6 +651,7 @@ class TestMultiTenantEnforcement:
             branch_id=None,
             actor_type="HUMAN",
             actor_id="user-1",
+            actor_context=ActorContext(actor_type="HUMAN", actor_id="user-1"),
             payload={"a": 1},
             issued_at=datetime.now(timezone.utc),
             correlation_id=uuid.uuid4(),
@@ -665,6 +676,7 @@ class TestMultiTenantEnforcement:
             branch_id=uuid.uuid4(),  # Branch not in context
             actor_type="HUMAN",
             actor_id="user-1",
+            actor_context=ActorContext(actor_type="HUMAN", actor_id="user-1"),
             payload={"a": 1},
             issued_at=datetime.now(timezone.utc),
             correlation_id=uuid.uuid4(),
@@ -677,9 +689,9 @@ class TestMultiTenantEnforcement:
         assert outcome.reason.code == "BRANCH_NOT_IN_BUSINESS"
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # EVENT NAMING LAW
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestEventNamingLaw:
     """Event type derivation from command type."""
@@ -705,9 +717,9 @@ class TestEventNamingLaw:
         assert derive_source_engine("cash.session.open.request") == "cash"
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # OUTCOME INVARIANTS
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestOutcomeInvariants:
     """CommandOutcome frozen contract enforcement."""
@@ -738,9 +750,9 @@ class TestOutcomeInvariants:
             outcome.status = CommandStatus.REJECTED
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # REJECTION REASON STRUCTURE
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestRejectionReason:
     """RejectionReason structure validation."""
@@ -778,15 +790,15 @@ class TestRejectionReason:
             r.code = "HACKED"
 
 
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # FULL INTEGRATION FLOW
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestFullIntegrationFlow:
     """End-to-end command lifecycle."""
 
     def test_complete_accepted_flow(self):
-        """Command → validate → policies → ACCEPTED → handler → event."""
+        """Command â†’ validate â†’ policies â†’ ACCEPTED â†’ handler â†’ event."""
         biz_id = uuid.uuid4()
         ctx = StubContext(active=True, business_id=biz_id)
         persist_fn = StubPersistEvent()
@@ -811,6 +823,7 @@ class TestFullIntegrationFlow:
             branch_id=None,
             actor_type="HUMAN",
             actor_id="user-42",
+            actor_context=ActorContext(actor_type="HUMAN", actor_id="user-42"),
             payload={"sku": "XYZ", "qty": 5},
             issued_at=datetime.now(timezone.utc),
             correlation_id=uuid.uuid4(),
@@ -828,7 +841,7 @@ class TestFullIntegrationFlow:
         assert len(persist_fn.persisted_events) == 0
 
     def test_complete_rejected_flow(self):
-        """Command → validate → policies → REJECTED → rejection event."""
+        """Command â†’ validate â†’ policies â†’ REJECTED â†’ rejection event."""
         biz_id = uuid.uuid4()
         ctx = StubContext(active=True, business_id=biz_id)
         persist_fn = StubPersistEvent()
@@ -851,6 +864,7 @@ class TestFullIntegrationFlow:
             branch_id=None,
             actor_type="AI",
             actor_id="ai-1",
+            actor_context=ActorContext(actor_type="AI", actor_id="ai-1"),
             payload={"sku": "ABC"},
             issued_at=datetime.now(timezone.utc),
             correlation_id=uuid.uuid4(),
@@ -872,7 +886,7 @@ class TestFullIntegrationFlow:
         assert event["payload"]["command_id"] == str(cmd.command_id)
 
     def test_context_failure_produces_rejection_event(self):
-        """Suspended business → REJECTED → rejection event persisted."""
+        """Suspended business â†’ REJECTED â†’ rejection event persisted."""
         biz_id = uuid.uuid4()
         ctx = StubContext(
             active=True,
@@ -897,6 +911,7 @@ class TestFullIntegrationFlow:
             branch_id=None,
             actor_type="HUMAN",
             actor_id="user-1",
+            actor_context=ActorContext(actor_type="HUMAN", actor_id="user-1"),
             payload={"register": "R1"},
             issued_at=datetime.now(timezone.utc),
             correlation_id=uuid.uuid4(),
@@ -910,3 +925,5 @@ class TestFullIntegrationFlow:
         event = persist_fn.persisted_events[0]
         assert event["event_type"] == "cash.session.open.rejected"
         assert event["payload"]["rejection"]["code"] == "BUSINESS_SUSPENDED"
+
+

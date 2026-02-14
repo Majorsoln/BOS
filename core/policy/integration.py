@@ -46,6 +46,7 @@ from core.commands.validator import (
 from core.commands.dispatcher import PolicyEvaluator
 from core.policy.engine import PolicyEngine
 from core.policy.result import PolicyDecision
+from core.identity.policy import actor_scope_authorization_guard
 
 logger = logging.getLogger("bos.commands")
 
@@ -162,7 +163,10 @@ class PolicyAwareDispatcher:
     ):
         self._context = context
         self._policy_engine = policy_engine
-        self._policies: List[PolicyEvaluator] = []
+        # Default identity boundary policy is always active.
+        self._policies: List[PolicyEvaluator] = [
+            actor_scope_authorization_guard
+        ]
 
     def register_policy(self, policy: PolicyEvaluator) -> None:
         """Register legacy policy evaluator (backward compatible)."""

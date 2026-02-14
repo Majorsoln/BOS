@@ -14,8 +14,15 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
+from core.context.actor_context import ActorContext
 
 BranchOwnershipChecker = Callable[[uuid.UUID, uuid.UUID], bool]
+ActorBusinessAuthorizationChecker = Callable[
+    [ActorContext, uuid.UUID], bool
+]
+ActorBranchAuthorizationChecker = Callable[
+    [ActorContext, uuid.UUID, uuid.UUID], bool
+]
 
 
 @dataclass(frozen=True)
@@ -34,6 +41,12 @@ class BusinessContext:
     _branch_ownership_checker: Optional[BranchOwnershipChecker] = field(
         default=None, repr=False, compare=False
     )
+    _actor_business_authorization_checker: Optional[
+        ActorBusinessAuthorizationChecker
+    ] = field(default=None, repr=False, compare=False)
+    _actor_branch_authorization_checker: Optional[
+        ActorBranchAuthorizationChecker
+    ] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
         if not isinstance(self.business_id, uuid.UUID):
@@ -72,3 +85,33 @@ class BusinessContext:
     def get_business_lifecycle_state(self) -> str:
         return self.lifecycle_state
 
+    def is_actor_authorized_for_business(
+        self,
+        actor_context: ActorContext,
+        business_id: uuid.UUID,
+    ) -> bool:
+        """
+        v1 non-security hook.
+        If no checker is provided, returns True.
+        """
+        checker = self._actor_business_authorization_checker
+        if checker is None:
+            return True
+        return bool(checker(actor_context, business_id))
+
+    def is_actor_authorized_for_branch(
+        self,
+        actor_context: ActorContext,
+        business_id: uuid.UUID,
+        branch_id: uuid.UUID,
+    ) -> bool:
+        """
+        v1 non-security hook.
+        If no checker is provided, returns True.
+        """
+        checker = self._actor_branch_authorization_checker
+        if checker is None:
+            return True
+        return bool(
+            checker(actor_context, business_id, branch_id)
+        )

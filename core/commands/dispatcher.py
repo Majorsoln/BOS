@@ -32,6 +32,7 @@ from core.commands.validator import (
     CommandValidationError,
     validate_command,
 )
+from core.identity.policy import actor_scope_authorization_guard
 
 logger = logging.getLogger("bos.commands")
 
@@ -102,7 +103,10 @@ class CommandDispatcher:
 
     def __init__(self, context: CommandContextProtocol):
         self._context = context
-        self._policies: List[PolicyEvaluator] = []
+        # Default identity boundary policy is always active.
+        self._policies: List[PolicyEvaluator] = [
+            actor_scope_authorization_guard
+        ]
 
     def register_policy(self, policy: PolicyEvaluator) -> None:
         """
