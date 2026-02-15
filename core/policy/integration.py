@@ -13,7 +13,7 @@ Pipeline with policy:
        v
     Validation          (existing - CommandValidator)
        v
-    Boundary Policies   (actor, then permission)
+    Boundary Policies   (actor, permission, feature flags, compliance, document)
        v
     Policy Evaluation   <- PolicyEngine (fail-safe, never raises)
        v
@@ -47,6 +47,7 @@ from core.commands.validator import (
 )
 from core.identity.policy import actor_scope_authorization_guard
 from core.policy.compliance_policy import compliance_authorization_guard
+from core.policy.document_policy import document_authorization_guard
 from core.policy.engine import PolicyEngine
 from core.policy.feature_flag_policy import feature_flag_authorization_guard
 from core.policy.permission_policy import permission_authorization_guard
@@ -115,7 +116,7 @@ class PolicyAwareDispatcher:
 
     Lifecycle:
     1. Validate command structure + context
-    2. Evaluate boundary policies (actor then permission)
+    2. Evaluate boundary policies (actor, permission, feature, compliance, document)
     3. Evaluate policy engine (graduated enforcement)
     4. Evaluate legacy policies (existing PolicyEvaluator functions)
     5. Produce PolicyAwareOutcome
@@ -131,17 +132,20 @@ class PolicyAwareDispatcher:
         permission_provider=None,
         feature_flag_provider=None,
         compliance_provider=None,
+        document_provider=None,
     ):
         self._context = context
         self._policy_engine = policy_engine
         self._permission_provider = permission_provider
         self._feature_flag_provider = feature_flag_provider
         self._compliance_provider = compliance_provider
+        self._document_provider = document_provider
         self._boundary_policies: List[PolicyEvaluator] = [
             actor_scope_authorization_guard,
             self._permission_authorization_policy,
             self._feature_flag_authorization_policy,
             self._compliance_authorization_policy,
+            self._document_authorization_policy,
         ]
         self._policies: List[PolicyEvaluator] = []
 
@@ -176,6 +180,18 @@ class PolicyAwareDispatcher:
             command=command,
             context=context,
             compliance_provider=self._compliance_provider,
+            feature_flag_provider=self._feature_flag_provider,
+        )
+
+    def _document_authorization_policy(
+        self,
+        command: Command,
+        context: CommandContextProtocol,
+    ) -> Optional[RejectionReason]:
+        return document_authorization_guard(
+            command=command,
+            context=context,
+            doc_provider=self._document_provider,
             feature_flag_provider=self._feature_flag_provider,
         )
 
