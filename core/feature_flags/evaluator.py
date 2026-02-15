@@ -81,6 +81,18 @@ class FeatureFlagEvaluator:
         if flag_key is None:
             return FeatureFlagEvaluator._allow()
 
+        return FeatureFlagEvaluator.evaluate_for_flag_key(
+            flag_key=flag_key,
+            command=command,
+            provider=provider,
+        )
+
+    @staticmethod
+    def evaluate_for_flag_key(
+        flag_key: str,
+        command: Command,
+        provider: FeatureFlagProvider | None,
+    ) -> FeatureFlagEvaluationResult:
         if provider is None:
             return FeatureFlagEvaluator._allow()
 
