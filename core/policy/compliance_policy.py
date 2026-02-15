@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from core.admin.registry import is_admin_command_type
 from core.commands.base import Command
 from core.commands.rejection import ReasonCode, RejectionReason
 from core.compliance.evaluator import ComplianceEvaluator
@@ -50,6 +51,9 @@ def compliance_authorization_guard(
     feature_flag_provider=None,
 ) -> Optional[RejectionReason]:
     if command.actor_requirement == SYSTEM_ALLOWED:
+        return None
+
+    if is_admin_command_type(command.command_type):
         return None
 
     resolved_feature_provider = _resolve_feature_flag_provider(
@@ -103,4 +107,3 @@ def compliance_authorization_guard(
         message=message,
         policy_name="compliance_authorization_guard",
     )
-

@@ -6,6 +6,7 @@ BOS Permissions - Command to Permission Registry
 from __future__ import annotations
 
 from core.permissions.constants import (
+    PERMISSION_ADMIN_CONFIGURE,
     PERMISSION_CASH_MOVE,
     PERMISSION_CMD_EXECUTE_GENERIC,
     PERMISSION_DOC_ISSUE,
@@ -23,6 +24,12 @@ COMMAND_PERMISSION_MAP = {
     "doc.receipt.issue.request": PERMISSION_DOC_ISSUE,
     "doc.quote.issue.request": PERMISSION_DOC_ISSUE,
     "doc.invoice.issue.request": PERMISSION_DOC_ISSUE,
+    "admin.feature_flag.set.request": PERMISSION_ADMIN_CONFIGURE,
+    "admin.feature_flag.clear.request": PERMISSION_ADMIN_CONFIGURE,
+    "admin.compliance_profile.upsert.request": PERMISSION_ADMIN_CONFIGURE,
+    "admin.compliance_profile.deactivate.request": PERMISSION_ADMIN_CONFIGURE,
+    "admin.document_template.upsert.request": PERMISSION_ADMIN_CONFIGURE,
+    "admin.document_template.deactivate.request": PERMISSION_ADMIN_CONFIGURE,
     "test.thing.do.request": PERMISSION_CMD_EXECUTE_GENERIC,
     "test.x.y.request": PERMISSION_CMD_EXECUTE_GENERIC,
 }
