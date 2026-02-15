@@ -11,7 +11,10 @@ from datetime import datetime
 from typing import Any
 
 from core.admin.commands import AdminCommandContext
+from core.commands.rejection import ReasonCode, RejectionReason
 from core.context.actor_context import ActorContext
+from core.context.business_context import BusinessContext
+from core.http_api.auth.middleware import resolve_request_context
 from core.http_api.contracts import (
     ActorMetadata,
     BusinessReadRequest,
@@ -42,19 +45,57 @@ def _actor_context(actor: ActorMetadata) -> ActorContext:
 
 def _build_admin_command_context(
     *,
-    business_id: uuid.UUID,
-    actor: ActorMetadata,
+    business_context: BusinessContext,
+    actor_context: ActorContext,
     dependencies,
 ) -> AdminCommandContext:
     return AdminCommandContext(
-        business_id=business_id,
-        actor_type=actor.actor_type,
-        actor_id=actor.actor_id,
-        actor_context=_actor_context(actor),
+        business_id=business_context.business_id,
+        actor_type=actor_context.actor_type,
+        actor_id=actor_context.actor_id,
+        actor_context=actor_context,
         command_id=dependencies.id_provider.new_command_id(),
         correlation_id=dependencies.id_provider.new_correlation_id(),
         issued_at=dependencies.clock.now_issued_at(),
     )
+
+
+def _resolve_handler_context(
+    *,
+    request,
+    dependencies,
+    headers: dict[str, Any] | None,
+    require_actor: bool,
+) -> tuple[ActorContext | None, BusinessContext] | RejectionReason:
+    auth_provider = getattr(dependencies, "auth_provider", None)
+    if auth_provider is not None:
+        resolved = resolve_request_context(
+            headers=headers,
+            body=request,
+            auth_provider=auth_provider,
+        )
+        if isinstance(resolved, RejectionReason):
+            return resolved
+        return resolved
+
+    branch_id = getattr(request, "branch_id", None)
+    business_context = BusinessContext(
+        business_id=request.business_id,
+        branch_id=branch_id,
+    )
+    if not require_actor:
+        return (None, business_context)
+
+    actor_metadata = getattr(request, "actor", None)
+    if actor_metadata is None:
+        return RejectionReason(
+            code=ReasonCode.ACTOR_REQUIRED_MISSING,
+            message="actor is required when auth_provider is not configured.",
+            policy_name="http_api_handler_context",
+        )
+
+    actor_context = _actor_context(actor_metadata)
+    return (actor_context, business_context)
 
 
 def _serialize_feature_flag(flag) -> dict[str, Any]:
@@ -110,9 +151,22 @@ def _serialize_document_template(template) -> dict[str, Any]:
 def list_feature_flags(
     request: BusinessReadRequest,
     dependencies,
+    headers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=False,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    _, business_context = resolved_context
+
     try:
-        flags = dependencies.admin_repository.get_feature_flags(request.business_id)
+        flags = dependencies.admin_repository.get_feature_flags(
+            business_context.business_id
+        )
     except Exception as exc:
         return error_response(
             code="READ_MODEL_ERROR",
@@ -132,10 +186,21 @@ def list_feature_flags(
 def list_compliance_profiles(
     request: BusinessReadRequest,
     dependencies,
+    headers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=False,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    _, business_context = resolved_context
+
     try:
         profiles = dependencies.admin_repository.get_compliance_profiles(
-            request.business_id
+            business_context.business_id
         )
     except Exception as exc:
         return error_response(
@@ -158,10 +223,21 @@ def list_compliance_profiles(
 def list_document_templates(
     request: BusinessReadRequest,
     dependencies,
+    headers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=False,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    _, business_context = resolved_context
+
     try:
         templates = dependencies.admin_repository.get_document_templates(
-            request.business_id
+            business_context.business_id
         )
     except Exception as exc:
         return error_response(
@@ -252,11 +328,22 @@ def _run_write(write_call) -> dict[str, Any]:
 def post_feature_flag_set(
     request: FeatureFlagSetHttpRequest,
     dependencies,
+    headers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
     def _call():
         command_context = _build_admin_command_context(
-            business_id=request.business_id,
-            actor=request.actor,
+            business_context=business_context,
+            actor_context=actor_context,
             dependencies=dependencies,
         )
         return dependencies.admin_service.set_feature_flag(
@@ -272,11 +359,22 @@ def post_feature_flag_set(
 def post_feature_flag_clear(
     request: FeatureFlagClearHttpRequest,
     dependencies,
+    headers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
     def _call():
         command_context = _build_admin_command_context(
-            business_id=request.business_id,
-            actor=request.actor,
+            business_context=business_context,
+            actor_context=actor_context,
             dependencies=dependencies,
         )
         return dependencies.admin_service.clear_feature_flag(
@@ -291,11 +389,22 @@ def post_feature_flag_clear(
 def post_compliance_profile_upsert(
     request: ComplianceProfileUpsertHttpRequest,
     dependencies,
+    headers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
     def _call():
         command_context = _build_admin_command_context(
-            business_id=request.business_id,
-            actor=request.actor,
+            business_context=business_context,
+            actor_context=actor_context,
             dependencies=dependencies,
         )
         return dependencies.admin_service.upsert_compliance_profile(
@@ -312,11 +421,22 @@ def post_compliance_profile_upsert(
 def post_compliance_profile_deactivate(
     request: ComplianceProfileDeactivateHttpRequest,
     dependencies,
+    headers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
     def _call():
         command_context = _build_admin_command_context(
-            business_id=request.business_id,
-            actor=request.actor,
+            business_context=business_context,
+            actor_context=actor_context,
             dependencies=dependencies,
         )
         return dependencies.admin_service.deactivate_compliance_profile(
@@ -330,11 +450,22 @@ def post_compliance_profile_deactivate(
 def post_document_template_upsert(
     request: DocumentTemplateUpsertHttpRequest,
     dependencies,
+    headers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
     def _call():
         command_context = _build_admin_command_context(
-            business_id=request.business_id,
-            actor=request.actor,
+            business_context=business_context,
+            actor_context=actor_context,
             dependencies=dependencies,
         )
         return dependencies.admin_service.upsert_document_template(
@@ -352,11 +483,22 @@ def post_document_template_upsert(
 def post_document_template_deactivate(
     request: DocumentTemplateDeactivateHttpRequest,
     dependencies,
+    headers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
     def _call():
         command_context = _build_admin_command_context(
-            business_id=request.business_id,
-            actor=request.actor,
+            business_context=business_context,
+            actor_context=actor_context,
             dependencies=dependencies,
         )
         return dependencies.admin_service.deactivate_document_template(

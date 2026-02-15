@@ -14,6 +14,7 @@ from core.compliance import OP_EXISTS, RULE_BLOCK, ComplianceRule
 from core.context.actor_context import ActorContext
 from core.documents.models import DOCUMENT_INVOICE, DOCUMENT_QUOTE
 from core.feature_flags.models import FEATURE_ENABLED
+from core.http_api.auth.provider import AuthPrincipal, InMemoryAuthProvider
 from core.http_api.contracts import (
     ActorMetadata,
     BusinessReadRequest,
@@ -146,6 +147,7 @@ def _build_dependencies(
     context=None,
     id_provider=None,
     clock=None,
+    auth_provider=None,
 ):
     projection_store = AdminProjectionStore()
     repository = AdminRepository(projection_store)
@@ -178,6 +180,7 @@ def _build_dependencies(
         admin_repository=repository,
         id_provider=id_provider or FixedIdProvider(),
         clock=clock or FixedClock(FIXED_ISSUED_AT),
+        auth_provider=auth_provider,
     )
     return dependencies, persist_stub
 
@@ -421,3 +424,54 @@ def test_replay_module_has_no_http_api_references():
     source = replay_file.read_text(encoding="utf-8").lower()
     assert "http_api" not in source
     assert "core.http_api" not in source
+
+
+def test_dual_mode_auth_disabled_keeps_legacy_body_actor_flow():
+    dependencies, _ = _build_dependencies(auth_provider=None)
+
+    response = post_feature_flag_set(
+        FeatureFlagSetHttpRequest(
+            business_id=BUSINESS_ID,
+            actor=ACTOR,
+            flag_key="ENABLE_ADVANCED_POLICY_ESCALATION",
+            status=FEATURE_ENABLED,
+        ),
+        dependencies,
+    )
+
+    assert response["ok"] is True
+
+
+def test_auth_enabled_read_write_path_uses_headers_and_ignores_body_actor():
+    principal = AuthPrincipal(
+        actor_id=ACTOR_ID,
+        actor_type="USER",
+        allowed_business_ids=(str(BUSINESS_ID),),
+        allowed_branch_ids_by_business={},
+    )
+    auth_provider = InMemoryAuthProvider({"valid-key": principal})
+    dependencies, _ = _build_dependencies(auth_provider=auth_provider)
+    headers = {
+        "X-API-KEY": "valid-key",
+        "X-BUSINESS-ID": str(BUSINESS_ID),
+    }
+
+    write_response = post_feature_flag_set(
+        FeatureFlagSetHttpRequest(
+            business_id=BUSINESS_ID,
+            actor=None,
+            flag_key="ENABLE_ADVANCED_POLICY_ESCALATION",
+            status=FEATURE_ENABLED,
+        ),
+        dependencies,
+        headers=headers,
+    )
+    read_response = list_feature_flags(
+        BusinessReadRequest(business_id=BUSINESS_ID),
+        dependencies,
+        headers=headers,
+    )
+
+    assert write_response["ok"] is True
+    assert read_response["ok"] is True
+    assert read_response["data"]["count"] >= 1

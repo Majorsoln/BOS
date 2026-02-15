@@ -39,6 +39,68 @@ def _is_actor_authorized_for_branch(
     return bool(checker(actor_context, business_id, branch_id))
 
 
+def evaluate_actor_scope_authorization(
+    *,
+    actor_context,
+    context,
+    business_id,
+    branch_id,
+    policy_name: str,
+) -> Optional[RejectionReason]:
+    if actor_context is None:
+        return RejectionReason(
+            code=ReasonCode.ACTOR_REQUIRED_MISSING,
+            message="actor_context is required for command execution.",
+            policy_name=policy_name,
+        )
+
+    if not isinstance(actor_context, ActorContext):
+        return RejectionReason(
+            code=ReasonCode.ACTOR_INVALID,
+            message="actor_context must be ActorContext.",
+            policy_name=policy_name,
+        )
+
+    try:
+        if not _is_actor_authorized_for_business(
+            context=context,
+            actor_context=actor_context,
+            business_id=business_id,
+        ):
+            return RejectionReason(
+                code=ReasonCode.ACTOR_UNAUTHORIZED_BUSINESS,
+                message=(
+                    f"Actor '{actor_context.actor_id}' is not authorized "
+                    f"for business_id '{business_id}'."
+                ),
+                policy_name=policy_name,
+            )
+
+        if branch_id is not None and not _is_actor_authorized_for_branch(
+            context=context,
+            actor_context=actor_context,
+            business_id=business_id,
+            branch_id=branch_id,
+        ):
+            return RejectionReason(
+                code=ReasonCode.ACTOR_UNAUTHORIZED_BRANCH,
+                message=(
+                    f"Actor '{actor_context.actor_id}' is not authorized "
+                    f"for branch_id '{branch_id}'."
+                ),
+                policy_name=policy_name,
+            )
+    except Exception:
+        # Deterministic fail-closed for invalid/unstable authorization hooks.
+        return RejectionReason(
+            code=ReasonCode.ACTOR_INVALID,
+            message="Actor authorization check failed.",
+            policy_name=policy_name,
+        )
+
+    return None
+
+
 def actor_scope_authorization_guard(
     command: Command,
     context,
@@ -51,58 +113,10 @@ def actor_scope_authorization_guard(
     if command.actor_requirement == SYSTEM_ALLOWED:
         return None
 
-    actor_context = command.actor_context
-    if actor_context is None:
-        return RejectionReason(
-            code=ReasonCode.ACTOR_REQUIRED_MISSING,
-            message="actor_context is required for command execution.",
-            policy_name="actor_scope_authorization_guard",
-        )
-
-    if not isinstance(actor_context, ActorContext):
-        return RejectionReason(
-            code=ReasonCode.ACTOR_INVALID,
-            message="actor_context must be ActorContext.",
-            policy_name="actor_scope_authorization_guard",
-        )
-
-    try:
-        if not _is_actor_authorized_for_business(
-            context=context,
-            actor_context=actor_context,
-            business_id=command.business_id,
-        ):
-            return RejectionReason(
-                code=ReasonCode.ACTOR_UNAUTHORIZED_BUSINESS,
-                message=(
-                    f"Actor '{actor_context.actor_id}' is not authorized "
-                    f"for business_id '{command.business_id}'."
-                ),
-                policy_name="actor_scope_authorization_guard",
-            )
-
-        if command.branch_id is not None and not _is_actor_authorized_for_branch(
-            context=context,
-            actor_context=actor_context,
-            business_id=command.business_id,
-            branch_id=command.branch_id,
-        ):
-            return RejectionReason(
-                code=ReasonCode.ACTOR_UNAUTHORIZED_BRANCH,
-                message=(
-                    f"Actor '{actor_context.actor_id}' is not authorized "
-                    f"for branch_id '{command.branch_id}'."
-                ),
-                policy_name="actor_scope_authorization_guard",
-            )
-
-    except Exception:
-        # Deterministic fail-closed for invalid/unstable authorization hooks.
-        return RejectionReason(
-            code=ReasonCode.ACTOR_INVALID,
-            message="Actor authorization check failed.",
-            policy_name="actor_scope_authorization_guard",
-        )
-
-    return None
-
+    return evaluate_actor_scope_authorization(
+        actor_context=command.actor_context,
+        context=context,
+        business_id=command.business_id,
+        branch_id=command.branch_id,
+        policy_name="actor_scope_authorization_guard",
+    )

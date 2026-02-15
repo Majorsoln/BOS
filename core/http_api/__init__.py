@@ -15,6 +15,14 @@ from core.http_api.contracts import (
     HttpApiErrorBody,
     HttpApiResponse,
 )
+from core.http_api.auth import (
+    AuthPrincipal,
+    AuthProvider,
+    InMemoryAuthProvider,
+    resolve_actor_context,
+    resolve_business_context,
+    resolve_request_context,
+)
 from core.http_api.dependencies import (
     Clock,
     HttpApiDependencies,
@@ -51,6 +59,12 @@ __all__ = [
     "DocumentTemplateDeactivateHttpRequest",
     "HttpApiErrorBody",
     "HttpApiResponse",
+    "AuthPrincipal",
+    "AuthProvider",
+    "InMemoryAuthProvider",
+    "resolve_actor_context",
+    "resolve_business_context",
+    "resolve_request_context",
     "IdProvider",
     "Clock",
     "UuidIdProvider",
@@ -70,4 +84,3 @@ __all__ = [
     "post_document_template_upsert",
     "post_document_template_deactivate",
 ]
-

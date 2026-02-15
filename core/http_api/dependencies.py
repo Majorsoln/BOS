@@ -9,7 +9,10 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from core.http_api.auth.provider import AuthProvider
 
 
 class IdProvider(Protocol):
@@ -44,4 +47,4 @@ class HttpApiDependencies:
     admin_repository: object
     id_provider: IdProvider
     clock: Clock
-
+    auth_provider: "AuthProvider | None" = None
