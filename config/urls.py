@@ -1,6 +1,12 @@
 """
-BOS – Root URL Configuration
-No routes are defined until interfaces/ layer is built.
+BOS Root URL Configuration
+Thin adapter routes only.
 """
 
-urlpatterns = []
+from django.urls import include, path
+
+
+urlpatterns = [
+    path("v1/", include("adapters.django_api.urls")),
+]
+
