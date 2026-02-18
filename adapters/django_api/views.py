@@ -22,8 +22,10 @@ from core.http_api.contracts import (
     BusinessReadRequest,
     ComplianceProfileDeactivateHttpRequest,
     ComplianceProfileUpsertHttpRequest,
+    DocumentRenderRequest,
     DocumentTemplateDeactivateHttpRequest,
     DocumentTemplateUpsertHttpRequest,
+    DocumentVerifyRequest,
     FeatureFlagClearHttpRequest,
     FeatureFlagSetHttpRequest,
     IdentityBootstrapHttpRequest,
@@ -36,6 +38,10 @@ from core.http_api.contracts import (
 )
 from core.http_api.errors import error_response
 from core.http_api.handlers import (
+    get_document_render_html,
+    get_document_render_pdf,
+    get_document_render_plan,
+    get_document_verify,
     list_api_keys,
     list_actors,
     list_compliance_profiles,
@@ -637,3 +643,76 @@ def roles_revoke_view(request: HttpRequest) -> JsonResponse:
         _role_revoke_contract_factory,
         request,
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Document render & verification views
+# ---------------------------------------------------------------------------
+
+def _dispatch_document_read(
+    read_handler,
+    request: HttpRequest,
+    document_id: uuid.UUID,
+) -> JsonResponse:
+    """Dispatch a document-specific read request (render-plan, render-html, etc.)."""
+    headers = _headers_from_request(request)
+    try:
+        business_id_raw = request.GET.get("business_id")
+        if business_id_raw is None:
+            raise ValueError("business_id is required.")
+        contract = DocumentRenderRequest(
+            business_id=_parse_uuid(business_id_raw, "business_id"),
+            document_id=document_id,
+            branch_id=_parse_optional_uuid(
+                request.GET.get("branch_id"), "branch_id"
+            ),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    payload = read_handler(contract, build_dependencies(), headers=headers)
+    return JsonResponse(payload)
+
+
+@csrf_exempt
+def document_render_plan_view(request: HttpRequest, document_id: uuid.UUID) -> JsonResponse:
+    if request.method != "GET":
+        return _method_not_allowed()
+    return _dispatch_document_read(get_document_render_plan, request, document_id)
+
+
+@csrf_exempt
+def document_render_html_view(request: HttpRequest, document_id: uuid.UUID) -> JsonResponse:
+    if request.method != "GET":
+        return _method_not_allowed()
+    return _dispatch_document_read(get_document_render_html, request, document_id)
+
+
+@csrf_exempt
+def document_render_pdf_view(request: HttpRequest, document_id: uuid.UUID) -> JsonResponse:
+    if request.method != "GET":
+        return _method_not_allowed()
+    return _dispatch_document_read(get_document_render_pdf, request, document_id)
+
+
+@csrf_exempt
+def document_verify_view(request: HttpRequest, document_id: uuid.UUID) -> JsonResponse:
+    if request.method != "GET":
+        return _method_not_allowed()
+    headers = _headers_from_request(request)
+    try:
+        business_id_raw = request.GET.get("business_id")
+        if business_id_raw is None:
+            raise ValueError("business_id is required.")
+        contract = DocumentVerifyRequest(
+            business_id=_parse_uuid(business_id_raw, "business_id"),
+            document_id=document_id,
+            branch_id=_parse_optional_uuid(
+                request.GET.get("branch_id"), "branch_id"
+            ),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    payload = get_document_verify(contract, build_dependencies(), headers=headers)
+    return JsonResponse(payload)

@@ -36,4 +36,9 @@ urlpatterns = [
     path("docs/receipt/issue", views.issue_receipt_view),
     path("docs/quote/issue", views.issue_quote_view),
     path("docs/invoice/issue", views.issue_invoice_view),
+    # Phase 3: render & verification
+    path("docs/<uuid:document_id>/render-plan", views.document_render_plan_view),
+    path("docs/<uuid:document_id>/render-html", views.document_render_html_view),
+    path("docs/<uuid:document_id>/render-pdf", views.document_render_pdf_view),
+    path("docs/<uuid:document_id>/verify", views.document_verify_view),
 ]

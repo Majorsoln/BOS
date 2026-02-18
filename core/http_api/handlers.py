@@ -41,8 +41,10 @@ from core.http_api.contracts import (
     BusinessReadRequest,
     ComplianceProfileDeactivateHttpRequest,
     ComplianceProfileUpsertHttpRequest,
+    DocumentRenderRequest,
     DocumentTemplateDeactivateHttpRequest,
     DocumentTemplateUpsertHttpRequest,
+    DocumentVerifyRequest,
     FeatureFlagClearHttpRequest,
     FeatureFlagSetHttpRequest,
     IdentityBootstrapHttpRequest,
@@ -1483,3 +1485,229 @@ def post_issue_invoice(
         command_type=DOC_INVOICE_ISSUE_REQUEST,
         issue_method_name="issue_invoice",
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Render & Verification handlers
+# ---------------------------------------------------------------------------
+
+def _get_document_record(request, dependencies):
+    """
+    Resolve a document record from the issuance repository.
+    Returns the record or None.
+    """
+    repository = getattr(dependencies, "document_issuance_repository", None)
+    if repository is None:
+        return None
+    # Try get_by_id first (DB-backed), fall back to scanning projection store
+    get_by_id = getattr(repository, "get_by_id", None)
+    if callable(get_by_id):
+        return get_by_id(
+            document_id=request.document_id,
+            business_id=request.business_id,
+        )
+    # Fallback: scan all records
+    get_documents = getattr(repository, "get_documents", None)
+    if callable(get_documents):
+        records = get_documents(business_id=request.business_id)
+        for rec in records:
+            if getattr(rec, "document_id", None) == request.document_id:
+                return rec
+    return None
+
+
+def get_document_render_plan(
+    request: DocumentRenderRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    GET /v1/docs/<document_id>/render-plan
+    Returns the stored render_plan for a document.
+    """
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=False,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    _, business_context = resolved_context
+
+    record = _get_document_record(request, dependencies)
+    if record is None or getattr(record, "business_id", None) != business_context.business_id:
+        return error_response(
+            code="DOCUMENT_NOT_FOUND",
+            message=f"Document '{request.document_id}' not found.",
+            details={"document_id": str(request.document_id)},
+        )
+
+    render_plan = getattr(record, "render_plan", None)
+    if not isinstance(render_plan, dict):
+        return error_response(
+            code="RENDER_PLAN_UNAVAILABLE",
+            message="Render plan not stored for this document.",
+            details={"document_id": str(request.document_id)},
+        )
+
+    return success_response({
+        "document_id": str(record.document_id),
+        "doc_type": record.doc_type,
+        "doc_number": getattr(record, "doc_number", None),
+        "render_plan_hash": getattr(record, "render_plan_hash", None),
+        "render_plan": render_plan,
+    })
+
+
+def get_document_render_html(
+    request: DocumentRenderRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    GET /v1/docs/<document_id>/render-html
+    Returns the HTML preview of a document as a string.
+    """
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=False,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    _, business_context = resolved_context
+
+    record = _get_document_record(request, dependencies)
+    if record is None or getattr(record, "business_id", None) != business_context.business_id:
+        return error_response(
+            code="DOCUMENT_NOT_FOUND",
+            message=f"Document '{request.document_id}' not found.",
+            details={"document_id": str(request.document_id)},
+        )
+
+    render_plan = getattr(record, "render_plan", None)
+    if not isinstance(render_plan, dict):
+        return error_response(
+            code="RENDER_PLAN_UNAVAILABLE",
+            message="Render plan not stored for this document.",
+            details={"document_id": str(request.document_id)},
+        )
+
+    try:
+        from core.documents.renderer import render_html
+        doc_hash = getattr(record, "render_plan_hash", None)
+        html_content = render_html(render_plan, doc_hash=doc_hash)
+    except Exception as exc:
+        return error_response(
+            code="RENDER_FAILED",
+            message="HTML rendering failed.",
+            details={"error_type": type(exc).__name__, "error": str(exc)},
+        )
+
+    return success_response({
+        "document_id": str(record.document_id),
+        "doc_type": record.doc_type,
+        "doc_number": getattr(record, "doc_number", None),
+        "content_type": "text/html",
+        "html": html_content,
+    })
+
+
+def get_document_render_pdf(
+    request: DocumentRenderRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    GET /v1/docs/<document_id>/render-pdf
+    Returns the PDF of a document as base64-encoded bytes.
+    """
+    import base64
+
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=False,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    _, business_context = resolved_context
+
+    record = _get_document_record(request, dependencies)
+    if record is None or getattr(record, "business_id", None) != business_context.business_id:
+        return error_response(
+            code="DOCUMENT_NOT_FOUND",
+            message=f"Document '{request.document_id}' not found.",
+            details={"document_id": str(request.document_id)},
+        )
+
+    render_plan = getattr(record, "render_plan", None)
+    if not isinstance(render_plan, dict):
+        return error_response(
+            code="RENDER_PLAN_UNAVAILABLE",
+            message="Render plan not stored for this document.",
+            details={"document_id": str(request.document_id)},
+        )
+
+    try:
+        from core.documents.renderer import render_pdf
+        doc_hash = getattr(record, "render_plan_hash", None)
+        pdf_bytes = render_pdf(render_plan, doc_hash=doc_hash)
+        pdf_b64 = base64.b64encode(pdf_bytes).decode("ascii")
+    except Exception as exc:
+        return error_response(
+            code="RENDER_FAILED",
+            message="PDF rendering failed.",
+            details={"error_type": type(exc).__name__, "error": str(exc)},
+        )
+
+    return success_response({
+        "document_id": str(record.document_id),
+        "doc_type": record.doc_type,
+        "doc_number": getattr(record, "doc_number", None),
+        "content_type": "application/pdf",
+        "pdf_base64": pdf_b64,
+        "size_bytes": len(pdf_bytes),
+    })
+
+
+def get_document_verify(
+    request: DocumentVerifyRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    GET /v1/docs/<document_id>/verify
+    Verifies the integrity of a document by checking its render_plan hash.
+    Returns VALID | TAMPERED | NOT_FOUND.
+    """
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=False,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    _, business_context = resolved_context
+
+    record = _get_document_record(request, dependencies)
+
+    try:
+        from core.documents.verification import verify_document
+        result = verify_document(
+            document_id=request.document_id,
+            business_id=business_context.business_id,
+            record=record,
+        )
+    except Exception as exc:
+        return error_response(
+            code="VERIFICATION_FAILED",
+            message="Verification check failed.",
+            details={"error_type": type(exc).__name__, "error": str(exc)},
+        )
+
+    return success_response(result.as_dict())

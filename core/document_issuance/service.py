@@ -27,6 +27,7 @@ from core.document_issuance.registry import (
 )
 from core.documents.builder import DocumentBuilder
 from core.documents.registry import resolve_document_type
+from core.documents.numbering.provider import NumberingProvider
 
 
 class EventFactoryProtocol(Protocol):
@@ -80,6 +81,7 @@ class DocumentIssuanceService:
         event_type_registry,
         projection_store: DocumentIssuanceProjectionStore | None = None,
         document_provider=None,
+        numbering_provider: NumberingProvider | None = None,
     ):
         self._business_context = business_context
         self._dispatcher = dispatcher
@@ -89,6 +91,7 @@ class DocumentIssuanceService:
         self._event_type_registry = event_type_registry
         self._projection_store = projection_store or DocumentIssuanceProjectionStore()
         self._document_provider = document_provider
+        self._numbering_provider = numbering_provider
 
         register_document_issuance_event_types(self._event_type_registry)
         self._register_handlers()
@@ -133,10 +136,26 @@ class DocumentIssuanceService:
             doc_type=doc_type,
             provider=self._document_provider,
         )
+
+        # Assign document number from numbering provider if configured
+        doc_number: Optional[str] = None
+        if self._numbering_provider is not None:
+            policy = self._numbering_provider.get_policy(
+                business_id_str=str(command.business_id),
+                doc_type=doc_type,
+                branch_id_str=str(command.branch_id) if command.branch_id else None,
+            )
+            if policy is not None:
+                doc_number = self._numbering_provider.get_and_advance(
+                    policy=policy,
+                    issued_at=command.issued_at,
+                )
+
         payload = build_document_issued_payload(
             command=command,
             doc_type=doc_type,
             render_plan=render_plan,
+            doc_number=doc_number,
         )
 
         event_data = self._event_factory(
