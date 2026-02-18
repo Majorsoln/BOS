@@ -397,6 +397,44 @@ class RoleRevokeHttpRequest:
 
 
 @dataclass(frozen=True)
+class DocumentRenderRequest:
+    """Request to render a document as HTML or PDF by document_id."""
+    business_id: uuid.UUID
+    document_id: uuid.UUID
+    actor: ActorMetadata | None = None
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not isinstance(self.business_id, uuid.UUID):
+            raise ValueError("business_id must be UUID.")
+        if not isinstance(self.document_id, uuid.UUID):
+            raise ValueError("document_id must be UUID.")
+        if self.actor is not None and not isinstance(self.actor, ActorMetadata):
+            raise ValueError("actor must be ActorMetadata.")
+        if self.branch_id is not None and not isinstance(self.branch_id, uuid.UUID):
+            raise ValueError("branch_id must be UUID or None.")
+
+
+@dataclass(frozen=True)
+class DocumentVerifyRequest:
+    """Request to verify a document's integrity by document_id."""
+    business_id: uuid.UUID
+    document_id: uuid.UUID
+    actor: ActorMetadata | None = None
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not isinstance(self.business_id, uuid.UUID):
+            raise ValueError("business_id must be UUID.")
+        if not isinstance(self.document_id, uuid.UUID):
+            raise ValueError("document_id must be UUID.")
+        if self.actor is not None and not isinstance(self.actor, ActorMetadata):
+            raise ValueError("actor must be ActorMetadata.")
+        if self.branch_id is not None and not isinstance(self.branch_id, uuid.UUID):
+            raise ValueError("branch_id must be UUID or None.")
+
+
+@dataclass(frozen=True)
 class HttpApiErrorBody:
     code: str
     message: str

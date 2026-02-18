@@ -83,6 +83,9 @@ class IssuedDocumentRecord:
     correlation_id: uuid.UUID
     status: str
     totals: dict[str, Any]
+    doc_number: str | None = None
+    render_plan: dict | None = None
+    render_plan_hash: str | None = None
 
 
 class DocumentIssuanceProjectionStore:
@@ -98,6 +101,13 @@ class DocumentIssuanceProjectionStore:
         if not isinstance(payload, dict):
             return
 
+        raw_render_plan = payload.get("render_plan")
+        stored_render_plan = dict(raw_render_plan) if isinstance(raw_render_plan, dict) else None
+        raw_hash = payload.get("render_plan_hash")
+        stored_hash = str(raw_hash) if raw_hash else None
+        raw_doc_number = payload.get("doc_number")
+        stored_doc_number = str(raw_doc_number) if raw_doc_number is not None else None
+
         record = IssuedDocumentRecord(
             business_id=_coerce_uuid(payload["business_id"]),
             branch_id=_coerce_optional_uuid(payload.get("branch_id")),
@@ -111,6 +121,9 @@ class DocumentIssuanceProjectionStore:
             correlation_id=_coerce_correlation_id(payload.get("correlation_id")),
             status=str(payload.get("status", "ISSUED")),
             totals=_extract_minimal_totals(payload),
+            doc_number=stored_doc_number,
+            render_plan=stored_render_plan,
+            render_plan_hash=stored_hash,
         )
         self._records[
             (record.business_id, record.branch_id, record.document_id)
