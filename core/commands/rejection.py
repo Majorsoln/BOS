@@ -38,6 +38,8 @@ class RejectionReason:
     code: str
     message: str
     policy_name: str
+    message_key: str | None = None
+    message_params: dict | None = None
 
     def __post_init__(self):
         if not self.code or not isinstance(self.code, str):
@@ -49,13 +51,25 @@ class RejectionReason:
         if not self.policy_name or not isinstance(self.policy_name, str):
             raise ValueError("policy_name must be a non-empty string.")
 
+        if self.message_key is not None:
+            if not isinstance(self.message_key, str) or not self.message_key.strip():
+                raise ValueError("message_key must be a non-empty string or None.")
+
+        if self.message_params is not None and not isinstance(self.message_params, dict):
+            raise ValueError("message_params must be a dict or None.")
+
     def to_dict(self) -> dict:
         """Serialize for event payload."""
-        return {
+        result = {
             "code": self.code,
             "message": self.message,
             "policy_name": self.policy_name,
         }
+        if self.message_key is not None:
+            result["message_key"] = self.message_key
+        if self.message_params is not None:
+            result["message_params"] = dict(self.message_params)
+        return result
 
 
 # ══════════════════════════════════════════════════════════════

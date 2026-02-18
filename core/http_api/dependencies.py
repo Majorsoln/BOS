@@ -19,6 +19,9 @@ class IdProvider(Protocol):
     def new_command_id(self) -> uuid.UUID:
         ...
 
+    def new_document_id(self) -> uuid.UUID:
+        ...
+
     def new_correlation_id(self) -> uuid.UUID:
         ...
 
@@ -30,6 +33,9 @@ class Clock(Protocol):
 
 class UuidIdProvider:
     def new_command_id(self) -> uuid.UUID:
+        return uuid.uuid4()
+
+    def new_document_id(self) -> uuid.UUID:
         return uuid.uuid4()
 
     def new_correlation_id(self) -> uuid.UUID:
@@ -48,3 +54,6 @@ class HttpApiDependencies:
     id_provider: IdProvider
     clock: Clock
     auth_provider: "AuthProvider | None" = None
+    permission_provider: object | None = None
+    document_issuance_service: object | None = None
+    document_issuance_repository: object | None = None

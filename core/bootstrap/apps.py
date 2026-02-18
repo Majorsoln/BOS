@@ -10,8 +10,9 @@ Rules:
 - If self-check fails → SystemBootstrapError prevents startup
 """
 
-import sys
 import logging
+import os
+import sys
 
 from django.apps import AppConfig
 
@@ -42,6 +43,13 @@ def _is_management_command_skip():
     return False
 
 
+def _is_pytest_context() -> bool:
+    return (
+        "PYTEST_CURRENT_TEST" in os.environ
+        or "pytest" in sys.modules
+    )
+
+
 class BootstrapConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "core.bootstrap"
@@ -49,9 +57,9 @@ class BootstrapConfig(AppConfig):
     verbose_name = "BOS Bootstrap"
 
     def ready(self):
-        if _is_management_command_skip():
+        if _is_management_command_skip() or _is_pytest_context():
             logger.info(
-                f"Bootstrap self-check skipped for command: {sys.argv[1]}"
+                "Bootstrap self-check skipped for management/test context."
             )
             return
 

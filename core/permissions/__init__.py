@@ -15,16 +15,26 @@ from core.permissions.constants import (
     SCOPE_GRANT_BRANCH,
     SCOPE_GRANT_BUSINESS,
 )
-from core.permissions.evaluator import (
-    PermissionEvaluationResult,
-    PermissionEvaluator,
-)
+from core.permissions.db_provider import DbPermissionProvider
 from core.permissions.models import Role, ScopeGrant
 from core.permissions.provider import (
     InMemoryPermissionProvider,
     PermissionProvider,
 )
 from core.permissions.registry import resolve_required_permission
+
+
+def __getattr__(name: str):
+    if name in {"PermissionEvaluator", "PermissionEvaluationResult"}:
+        from core.permissions.evaluator import (
+            PermissionEvaluationResult,
+            PermissionEvaluator,
+        )
+
+        if name == "PermissionEvaluator":
+            return PermissionEvaluator
+        return PermissionEvaluationResult
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 __all__ = [
     "PERMISSION_CMD_EXECUTE_GENERIC",
@@ -41,6 +51,7 @@ __all__ = [
     "ScopeGrant",
     "PermissionProvider",
     "InMemoryPermissionProvider",
+    "DbPermissionProvider",
     "PermissionEvaluator",
     "PermissionEvaluationResult",
     "resolve_required_permission",

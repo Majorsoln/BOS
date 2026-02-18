@@ -37,20 +37,25 @@ from core.event_store.hashing.hasher import (
 from core.event_store.validators.errors import Rejection, ValidationResult
 
 
-def _get_last_event_hash(business_id: uuid.UUID) -> str:
+def _get_last_event_hash(
+    business_id: uuid.UUID,
+    *,
+    lock: bool = False,
+) -> str:
     """
     Fetch the event_hash of the most recent event for a business.
     If no events exist → return GENESIS_HASH.
 
-    Uses received_at ordering to determine the latest event.
+    Uses created_at/event_id ordering to determine the latest event.
     """
-    last_event = (
-        Event.objects
-        .filter(business_id=business_id)
-        .order_by("-received_at")
-        .values_list("event_hash", flat=True)
-        .first()
+    query = (
+        Event.objects.filter(business_id=business_id)
+        .order_by("-created_at", "-event_id")
     )
+    if lock:
+        query = query.select_for_update()
+
+    last_event = query.values_list("event_hash", flat=True).first()
 
     if last_event is None:
         return GENESIS_HASH
@@ -63,6 +68,8 @@ def verify_hash_chain(
     previous_event_hash: str,
     payload: Any,
     event_hash: str,
+    *,
+    lock: bool = False,
 ) -> ValidationResult:
     """
     Verify hash-chain integrity for a new event.
@@ -84,7 +91,10 @@ def verify_hash_chain(
     """
 
     # ── 1. Chain continuity check ─────────────────────────────
-    actual_last_hash = _get_last_event_hash(business_id)
+    actual_last_hash = _get_last_event_hash(
+        business_id,
+        lock=lock,
+    )
 
     if previous_event_hash != actual_last_hash:
         return ValidationResult(

@@ -349,6 +349,12 @@ class DocumentBuilder:
         doc_type: str,
         provider: DocumentProvider | None,
     ) -> dict:
+        payload = command.payload
+        if isinstance(payload, dict):
+            render_inputs = payload.get("render_inputs")
+            if isinstance(render_inputs, dict):
+                payload = render_inputs
+
         template = DocumentBuilder.resolve_template(
             business_id=command.business_id,
             branch_id=command.branch_id,
@@ -358,5 +364,5 @@ class DocumentBuilder:
         return DocumentBuilder.build_render_plan(
             doc_type=doc_type,
             template=template,
-            payload=command.payload,
+            payload=payload,
         )

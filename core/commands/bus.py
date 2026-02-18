@@ -274,6 +274,7 @@ class CommandBus:
         rejection_event_type = derive_rejection_event_type(
             command.command_type
         )
+        self._ensure_rejection_event_type_registered(rejection_event_type)
 
         rejection_event_data = {
             "event_id": uuid.uuid4(),
@@ -310,8 +311,33 @@ class CommandBus:
             registry=self._event_type_registry,
             scope_requirement=command.scope_requirement,
         )
+        rejection_event_persisted = self._is_persist_accepted(persist_result)
 
         return CommandResult(
             outcome=outcome,
-            rejection_event_persisted=True,
+            rejection_event_persisted=rejection_event_persisted,
         )
+
+    def _is_persist_accepted(self, persist_result: Any) -> bool:
+        if hasattr(persist_result, "accepted"):
+            return bool(getattr(persist_result, "accepted"))
+        if isinstance(persist_result, dict):
+            return bool(persist_result.get("accepted"))
+        return bool(persist_result)
+
+    def _ensure_rejection_event_type_registered(self, event_type: str) -> None:
+        registry = self._event_type_registry
+        if registry is None:
+            return
+
+        has_is_registered = hasattr(registry, "is_registered") and callable(
+            getattr(registry, "is_registered")
+        )
+        has_register = hasattr(registry, "register") and callable(
+            getattr(registry, "register")
+        )
+        if not has_is_registered or not has_register:
+            return
+
+        if not registry.is_registered(event_type):
+            registry.register(event_type)

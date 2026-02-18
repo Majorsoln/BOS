@@ -7,16 +7,37 @@ Pure handler functions over contracts and injected dependencies.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
+from core.auth.service import ApiKeyService, serialize_api_key_credential
+from core.commands.base import Command
 from core.admin.commands import AdminCommandContext
+from core.permissions.evaluator import PermissionEvaluator
 from core.commands.rejection import ReasonCode, RejectionReason
 from core.context.actor_context import ActorContext
 from core.context.business_context import BusinessContext
+from core.identity_store.service import (
+    assign_role as assign_identity_role,
+    bootstrap_identity as bootstrap_identity_store,
+    list_actors_for_business as list_identity_actors_for_business,
+    list_role_assignments_for_business as list_identity_assignments_for_business,
+    list_roles_for_business as list_identity_roles_for_business,
+    revoke_role as revoke_identity_role,
+)
+from core.document_issuance.registry import (
+    DOC_INVOICE_ISSUE_REQUEST,
+    DOC_QUOTE_ISSUE_REQUEST,
+    DOC_RECEIPT_ISSUE_REQUEST,
+    resolve_doc_type_for_issue_command,
+)
+from core.document_issuance.repository import DocumentCursorError
 from core.http_api.auth.middleware import resolve_request_context
 from core.http_api.contracts import (
     ActorMetadata,
+    ApiKeyCreateHttpRequest,
+    ApiKeyRevokeHttpRequest,
+    ApiKeyRotateHttpRequest,
     BusinessReadRequest,
     ComplianceProfileDeactivateHttpRequest,
     ComplianceProfileUpsertHttpRequest,
@@ -24,14 +45,82 @@ from core.http_api.contracts import (
     DocumentTemplateUpsertHttpRequest,
     FeatureFlagClearHttpRequest,
     FeatureFlagSetHttpRequest,
+    IdentityBootstrapHttpRequest,
+    IssueInvoiceHttpRequest,
+    IssueQuoteHttpRequest,
+    IssueReceiptHttpRequest,
+    IssuedDocumentsReadRequest,
+    RoleAssignHttpRequest,
+    RoleRevokeHttpRequest,
 )
 from core.http_api.errors import error_response, rejection_response, success_response
+
+ADMIN_API_KEY_CREATE_REQUEST = "admin.api_key.create.request"
+ADMIN_API_KEY_REVOKE_REQUEST = "admin.api_key.revoke.request"
+ADMIN_API_KEY_ROTATE_REQUEST = "admin.api_key.rotate.request"
+ADMIN_API_KEY_LIST_REQUEST = "admin.api_key.list.request"
+ADMIN_IDENTITY_BOOTSTRAP_REQUEST = "admin.identity.bootstrap.request"
+ADMIN_ROLES_ASSIGN_REQUEST = "admin.roles.assign.request"
+ADMIN_ROLES_REVOKE_REQUEST = "admin.roles.revoke.request"
+ADMIN_ROLES_LIST_REQUEST = "admin.roles.list.request"
+ADMIN_ACTORS_LIST_REQUEST = "admin.actors.list.request"
+
+_PERMISSION_PROBE_COMMAND_ID = uuid.UUID(int=0)
+_PERMISSION_PROBE_CORRELATION_ID = uuid.UUID(int=1)
+_PERMISSION_PROBE_ISSUED_AT = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 def _iso_or_none(value: datetime | None) -> str | None:
     if value is None:
         return None
     return value.isoformat()
+
+
+def _iso_datetime_value(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
+def _new_document_id(dependencies) -> uuid.UUID:
+    id_provider = dependencies.id_provider
+    candidate_factory = getattr(id_provider, "new_document_id", None)
+    value = (
+        candidate_factory()
+        if callable(candidate_factory)
+        else id_provider.new_command_id()
+    )
+    if isinstance(value, uuid.UUID):
+        return value
+    return uuid.UUID(str(value))
+
+
+def _resolve_language(headers: dict[str, Any] | None) -> str:
+    for key, value in (headers or {}).items():
+        if str(key).strip().lower() != "accept-language":
+            continue
+        raw = str(value).strip().lower()
+        if not raw:
+            break
+        first_segment = raw.split(",")[0]
+        lang = first_segment.split(";")[0].strip()
+        if lang:
+            return lang
+        break
+    return "en"
+
+
+def _success_with_language(
+    data: Any,
+    *,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return success_response(
+        data,
+        meta={"lang": _resolve_language(headers)},
+    )
 
 
 def _actor_context(actor: ActorMetadata) -> ActorContext:
@@ -58,6 +147,70 @@ def _build_admin_command_context(
         correlation_id=dependencies.id_provider.new_correlation_id(),
         issued_at=dependencies.clock.now_issued_at(),
     )
+
+
+def _enforce_admin_permission(
+    *,
+    dependencies,
+    actor_context: ActorContext | None,
+    business_context: BusinessContext,
+    branch_id: uuid.UUID | None,
+    command_type: str,
+) -> RejectionReason | None:
+    if actor_context is None:
+        return RejectionReason(
+            code=ReasonCode.ACTOR_REQUIRED_MISSING,
+            message="actor_context is required for admin API key operations.",
+            policy_name="http_api_admin_permission_guard",
+        )
+
+    permission_provider = getattr(dependencies, "permission_provider", None)
+    if permission_provider is None:
+        return RejectionReason(
+            code=ReasonCode.PERMISSION_DENIED,
+            message="Permission provider is not configured.",
+            policy_name="http_api_admin_permission_guard",
+        )
+
+    try:
+        probe_command = Command(
+            command_id=_PERMISSION_PROBE_COMMAND_ID,
+            command_type=command_type,
+            business_id=business_context.business_id,
+            branch_id=branch_id,
+            actor_type=actor_context.actor_type,
+            actor_id=actor_context.actor_id,
+            actor_context=actor_context,
+            payload={},
+            issued_at=_PERMISSION_PROBE_ISSUED_AT,
+            correlation_id=_PERMISSION_PROBE_CORRELATION_ID,
+            source_engine="admin",
+        )
+        result = PermissionEvaluator.evaluate(
+            command=probe_command,
+            actor_context=actor_context,
+            business_context=business_context,
+            provider=permission_provider,
+        )
+    except Exception:
+        return RejectionReason(
+            code=ReasonCode.PERMISSION_DENIED,
+            message="Permission authorization check failed.",
+            policy_name="http_api_admin_permission_guard",
+        )
+
+    if result.allowed:
+        return None
+
+    return RejectionReason(
+        code=result.rejection_code or ReasonCode.PERMISSION_DENIED,
+        message=result.message or "Permission denied.",
+        policy_name="http_api_admin_permission_guard",
+    )
+
+
+def _new_raw_api_key(dependencies) -> str:
+    return f"bos_{dependencies.id_provider.new_command_id().hex}"
 
 
 def _resolve_handler_context(
@@ -148,6 +301,55 @@ def _serialize_document_template(template) -> dict[str, Any]:
     }
 
 
+def _serialize_issued_document(record) -> dict[str, Any]:
+    doc_id = str(record.document_id)
+    template_id = _canonical_uuid_text(record.template_id, namespace="template")
+    correlation_id = _canonical_uuid_text(
+        getattr(record, "correlation_id", None),
+        namespace="correlation",
+    )
+    return {
+        "doc_id": doc_id,
+        "doc_type": record.doc_type,
+        "status": str(record.status),
+        "business_id": str(record.business_id),
+        "branch_id": None if record.branch_id is None else str(record.branch_id),
+        "issued_at": _iso_datetime_value(record.issued_at),
+        "issued_by_actor_id": str(record.actor_id),
+        "correlation_id": correlation_id,
+        "template_id": template_id,
+        "template_version": int(record.template_version),
+        "schema_version": int(record.schema_version),
+        "totals": _normalize_totals(getattr(record, "totals", {})),
+        "links": {
+            "self": f"/v1/docs/{doc_id}",
+            "render_plan": f"/v1/docs/{doc_id}/render-plan",
+        },
+    }
+
+
+def _canonical_uuid_text(value, *, namespace: str) -> str:
+    if value is None:
+        return str(uuid.UUID(int=0))
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    raw = str(value)
+    try:
+        return str(uuid.UUID(raw))
+    except Exception:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{namespace}:{raw}"))
+
+
+def _normalize_totals(value) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    ordered = sorted(
+        ((str(key), value[key]) for key in value.keys()),
+        key=lambda item: item[0],
+    )
+    return {key: item_value for key, item_value in ordered}
+
+
 def list_feature_flags(
     request: BusinessReadRequest,
     dependencies,
@@ -175,11 +377,12 @@ def list_feature_flags(
         )
 
     ordered = tuple(sorted(flags, key=lambda item: item.sort_key()))
-    return success_response(
+    return _success_with_language(
         {
             "items": tuple(_serialize_feature_flag(flag) for flag in ordered),
             "count": len(ordered),
-        }
+        },
+        headers=headers,
     )
 
 
@@ -210,13 +413,14 @@ def list_compliance_profiles(
         )
 
     ordered = tuple(sorted(profiles, key=lambda item: item.sort_key()))
-    return success_response(
+    return _success_with_language(
         {
             "items": tuple(
                 _serialize_compliance_profile(profile) for profile in ordered
             ),
             "count": len(ordered),
-        }
+        },
+        headers=headers,
     )
 
 
@@ -247,17 +451,417 @@ def list_document_templates(
         )
 
     ordered = tuple(sorted(templates, key=lambda item: item.sort_key()))
-    return success_response(
+    return _success_with_language(
         {
             "items": tuple(
                 _serialize_document_template(template) for template in ordered
             ),
             "count": len(ordered),
-        }
+        },
+        headers=headers,
     )
 
 
-def _write_result_response(command_result) -> dict[str, Any]:
+def list_issued_documents(
+    request: IssuedDocumentsReadRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=False,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    _, business_context = resolved_context
+
+    repository = getattr(dependencies, "document_issuance_repository", None)
+    if repository is None:
+        return error_response(
+            code="READ_MODEL_ERROR",
+            message="Failed to read issued documents.",
+            details={"error_type": "RepositoryNotConfigured"},
+        )
+
+    branch_filter = (
+        business_context.branch_id
+        if business_context.branch_id is not None
+        else request.branch_id
+    )
+
+    next_cursor = None
+    try:
+        get_documents_page = getattr(repository, "get_documents_page", None)
+        if callable(get_documents_page):
+            records, next_cursor = get_documents_page(
+                business_id=business_context.business_id,
+                branch_id=branch_filter,
+                limit=request.limit,
+                cursor=request.cursor,
+            )
+        else:
+            if request.cursor is not None:
+                return error_response(
+                    code="INVALID_REQUEST",
+                    message="cursor pagination is not supported by repository.",
+                    details={},
+                )
+            all_records = repository.get_documents(
+                business_context.business_id,
+                branch_filter,
+            )
+            records = tuple(all_records[: request.limit])
+            next_cursor = None
+    except (DocumentCursorError, ValueError) as exc:
+        return error_response(
+            code="INVALID_REQUEST",
+            message=str(exc),
+            details={},
+        )
+    except Exception as exc:
+        return error_response(
+            code="READ_MODEL_ERROR",
+            message="Failed to read issued documents.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(
+        {
+            "items": tuple(_serialize_issued_document(item) for item in records),
+            "count": len(records),
+            "next_cursor": next_cursor,
+        },
+        headers=headers,
+    )
+
+
+def list_api_keys(
+    request: BusinessReadRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=False,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    if getattr(dependencies, "auth_provider", None) is not None:
+        permission_rejection = _enforce_admin_permission(
+            dependencies=dependencies,
+            actor_context=actor_context,
+            business_context=business_context,
+            branch_id=business_context.branch_id,
+            command_type=ADMIN_API_KEY_LIST_REQUEST,
+        )
+        if permission_rejection is not None:
+            return rejection_response(permission_rejection)
+
+    try:
+        rows = ApiKeyService.list_api_keys_for_business(
+            business_id=business_context.business_id
+        )
+    except ValueError as exc:
+        return error_response(
+            code="INVALID_REQUEST",
+            message=str(exc),
+            details={},
+        )
+    except Exception as exc:
+        return error_response(
+            code="READ_MODEL_ERROR",
+            message="Failed to read API keys.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    items = tuple(serialize_api_key_credential(row) for row in rows)
+    return _success_with_language(
+        {
+            "items": items,
+            "count": len(items),
+        },
+        headers=headers,
+    )
+
+
+def list_roles(
+    request: BusinessReadRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=False,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    if getattr(dependencies, "auth_provider", None) is not None:
+        permission_rejection = _enforce_admin_permission(
+            dependencies=dependencies,
+            actor_context=actor_context,
+            business_context=business_context,
+            branch_id=business_context.branch_id,
+            command_type=ADMIN_ROLES_LIST_REQUEST,
+        )
+        if permission_rejection is not None:
+            return rejection_response(permission_rejection)
+
+    try:
+        roles = list_identity_roles_for_business(business_context.business_id)
+        assignments = list_identity_assignments_for_business(
+            business_context.business_id
+        )
+    except ValueError as exc:
+        return error_response(
+            code="INVALID_REQUEST",
+            message=str(exc),
+            details={},
+        )
+    except Exception as exc:
+        return error_response(
+            code="READ_MODEL_ERROR",
+            message="Failed to read roles.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(
+        {
+            "roles": roles,
+            "assignments": assignments,
+            "role_count": len(roles),
+            "assignment_count": len(assignments),
+        },
+        headers=headers,
+    )
+
+
+def list_actors(
+    request: BusinessReadRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=False,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    if getattr(dependencies, "auth_provider", None) is not None:
+        permission_rejection = _enforce_admin_permission(
+            dependencies=dependencies,
+            actor_context=actor_context,
+            business_context=business_context,
+            branch_id=business_context.branch_id,
+            command_type=ADMIN_ACTORS_LIST_REQUEST,
+        )
+        if permission_rejection is not None:
+            return rejection_response(permission_rejection)
+
+    try:
+        items = list_identity_actors_for_business(business_context.business_id)
+    except ValueError as exc:
+        return error_response(
+            code="INVALID_REQUEST",
+            message=str(exc),
+            details={},
+        )
+    except Exception as exc:
+        return error_response(
+            code="READ_MODEL_ERROR",
+            message="Failed to read actors.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(
+        {
+            "items": items,
+            "count": len(items),
+        },
+        headers=headers,
+    )
+
+
+def post_identity_bootstrap(
+    request: IdentityBootstrapHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=request.branch_id,
+        command_type=ADMIN_IDENTITY_BOOTSTRAP_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        bootstrap_data = bootstrap_identity_store(
+            business_id=request.business_id,
+            business_name=request.business_name,
+            default_currency=request.default_currency,
+            default_language=request.default_language,
+            branches=request.branches,
+            admin_actor_id=request.admin_actor_id,
+            cashier_actor_id=request.cashier_actor_id,
+        )
+    except ValueError as exc:
+        return error_response(
+            code="INVALID_REQUEST",
+            message=str(exc),
+            details={},
+        )
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to bootstrap identity.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(bootstrap_data, headers=headers)
+
+
+def post_role_assign(
+    request: RoleAssignHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=request.branch_id,
+        command_type=ADMIN_ROLES_ASSIGN_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        assignment = assign_identity_role(
+            business_id=request.business_id,
+            actor_id=request.actor_id,
+            actor_type=request.actor_type,
+            role_name=request.role_name,
+            branch_id=request.branch_id,
+            display_name=request.display_name,
+        )
+    except ValueError as exc:
+        return error_response(
+            code="INVALID_REQUEST",
+            message=str(exc),
+            details={},
+        )
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to assign role.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language({"assignment": assignment}, headers=headers)
+
+
+def post_role_revoke(
+    request: RoleRevokeHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=request.branch_id,
+        command_type=ADMIN_ROLES_REVOKE_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        assignment = revoke_identity_role(
+            business_id=request.business_id,
+            actor_id=request.actor_id,
+            role_name=request.role_name,
+            branch_id=request.branch_id,
+        )
+    except ValueError as exc:
+        return error_response(
+            code="INVALID_REQUEST",
+            message=str(exc),
+            details={},
+        )
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to revoke role.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    if assignment is None:
+        return error_response(
+            code="ROLE_ASSIGNMENT_NOT_FOUND",
+            message="Role assignment was not found.",
+            details={},
+        )
+
+    return _success_with_language(
+        {
+            "revoked": True,
+            "assignment": assignment,
+        },
+        headers=headers,
+    )
+
+
+def _write_result_response(
+    command_result,
+    *,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     status = command_result.outcome.status.value
     command_id = str(command_result.outcome.command_id)
     rejection = command_result.outcome.reason
@@ -294,7 +898,7 @@ def _write_result_response(command_result) -> dict[str, Any]:
                     if identifier_value is not None:
                         created_identifiers[identifier_key] = identifier_value
 
-    return success_response(
+    return _success_with_language(
         {
             "status": status,
             "command_id": command_id,
@@ -303,11 +907,16 @@ def _write_result_response(command_result) -> dict[str, Any]:
             "correlation_id": correlation_id,
             "created_identifiers": created_identifiers,
             "projection_applied": projection_applied,
-        }
+        },
+        headers=headers,
     )
 
 
-def _run_write(write_call) -> dict[str, Any]:
+def _run_write(
+    write_call,
+    *,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     try:
         command_result = write_call()
     except ValueError as exc:
@@ -322,7 +931,271 @@ def _run_write(write_call) -> dict[str, Any]:
             message="Failed to execute admin command.",
             details={"error_type": type(exc).__name__},
         )
-    return _write_result_response(command_result)
+    return _write_result_response(command_result, headers=headers)
+
+
+def _issue_result_response(
+    command_result,
+    *,
+    document_id: uuid.UUID,
+    doc_type: str,
+    issued_at: datetime,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if command_result.is_rejected:
+        rejection = command_result.outcome.reason
+        if rejection is None:
+            return error_response(
+                code="UNKNOWN_REJECTION",
+                message="Command rejected without rejection details.",
+                details={
+                    "status": command_result.outcome.status.value,
+                    "command_id": str(command_result.outcome.command_id),
+                },
+            )
+        return rejection_response(
+            rejection,
+            extra_details={
+                "status": command_result.outcome.status.value,
+                "command_id": str(command_result.outcome.command_id),
+            },
+        )
+
+    payload = {}
+    execution = command_result.execution_result
+    if execution is not None:
+        event_data = getattr(execution, "event_data", None)
+        if isinstance(event_data, dict):
+            event_payload = event_data.get("payload")
+            if isinstance(event_payload, dict):
+                payload = event_payload
+
+    resolved_document_id = payload.get("document_id", document_id)
+    resolved_doc_type = payload.get("doc_type", doc_type)
+    resolved_issued_at = payload.get("issued_at", issued_at)
+
+    return _success_with_language(
+        {
+            "document_id": str(resolved_document_id),
+            "doc_type": str(resolved_doc_type),
+            "issued_at": _iso_datetime_value(resolved_issued_at),
+        },
+        headers=headers,
+    )
+
+
+def _run_issue_write(
+    write_call,
+    *,
+    document_id: uuid.UUID,
+    doc_type: str,
+    issued_at: datetime,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    try:
+        command_result = write_call()
+    except ValueError as exc:
+        return error_response(
+            code="INVALID_REQUEST",
+            message=str(exc),
+            details={},
+        )
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to execute document issuance command.",
+            details={"error_type": type(exc).__name__},
+        )
+    return _issue_result_response(
+        command_result,
+        document_id=document_id,
+        doc_type=doc_type,
+        issued_at=issued_at,
+        headers=headers,
+    )
+
+
+def post_api_key_create(
+    request: ApiKeyCreateHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=request.branch_id,
+        command_type=ADMIN_API_KEY_CREATE_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        raw_api_key = _new_raw_api_key(dependencies)
+        credential = ApiKeyService.create_api_key_credential(
+            api_key=raw_api_key,
+            actor_id=request.actor_id,
+            actor_type=request.actor_type,
+            allowed_business_ids=request.allowed_business_ids,
+            allowed_branch_ids_by_business=request.allowed_branch_ids_by_business,
+            created_by_actor_id=actor_context.actor_id,
+            label=request.label,
+        )
+    except ValueError as exc:
+        return error_response(
+            code="INVALID_REQUEST",
+            message=str(exc),
+            details={},
+        )
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to create API key.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(
+        {
+            "api_key": raw_api_key,
+            "credential": serialize_api_key_credential(credential),
+        },
+        headers=headers,
+    )
+
+
+def post_api_key_revoke(
+    request: ApiKeyRevokeHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=request.branch_id,
+        command_type=ADMIN_API_KEY_REVOKE_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        credential = ApiKeyService.revoke_api_key_credential(
+            key_id=request.key_id,
+            key_hash=request.key_hash,
+            revoked_by_actor_id=actor_context.actor_id,
+        )
+    except ValueError as exc:
+        return error_response(
+            code="INVALID_REQUEST",
+            message=str(exc),
+            details={},
+        )
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to revoke API key.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    if credential is None:
+        return error_response(
+            code="API_KEY_NOT_FOUND",
+            message="API key credential was not found.",
+            details={},
+        )
+
+    return _success_with_language(
+        {
+            "revoked": True,
+            "credential": serialize_api_key_credential(credential),
+        },
+        headers=headers,
+    )
+
+
+def post_api_key_rotate(
+    request: ApiKeyRotateHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=request.branch_id,
+        command_type=ADMIN_API_KEY_ROTATE_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        raw_api_key = _new_raw_api_key(dependencies)
+        rotated = ApiKeyService.rotate_api_key_credential(
+            new_api_key=raw_api_key,
+            key_id=request.key_id,
+            key_hash=request.key_hash,
+            rotated_by_actor_id=actor_context.actor_id,
+            label=request.label,
+        )
+    except ValueError as exc:
+        return error_response(
+            code="INVALID_REQUEST",
+            message=str(exc),
+            details={},
+        )
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to rotate API key.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    if rotated is None:
+        return error_response(
+            code="API_KEY_NOT_FOUND",
+            message="API key credential was not found.",
+            details={},
+        )
+
+    revoked_credential, replacement_credential = rotated
+    return _success_with_language(
+        {
+            "api_key": raw_api_key,
+            "revoked_credential": serialize_api_key_credential(revoked_credential),
+            "credential": serialize_api_key_credential(replacement_credential),
+        },
+        headers=headers,
+    )
 
 
 def post_feature_flag_set(
@@ -353,7 +1226,7 @@ def post_feature_flag_set(
             branch_id=request.branch_id,
         )
 
-    return _run_write(_call)
+    return _run_write(_call, headers=headers)
 
 
 def post_feature_flag_clear(
@@ -383,7 +1256,7 @@ def post_feature_flag_clear(
             branch_id=request.branch_id,
         )
 
-    return _run_write(_call)
+    return _run_write(_call, headers=headers)
 
 
 def post_compliance_profile_upsert(
@@ -415,7 +1288,7 @@ def post_compliance_profile_upsert(
             version=request.version,
         )
 
-    return _run_write(_call)
+    return _run_write(_call, headers=headers)
 
 
 def post_compliance_profile_deactivate(
@@ -444,7 +1317,7 @@ def post_compliance_profile_deactivate(
             branch_id=request.branch_id,
         )
 
-    return _run_write(_call)
+    return _run_write(_call, headers=headers)
 
 
 def post_document_template_upsert(
@@ -477,7 +1350,7 @@ def post_document_template_upsert(
             version=request.version,
         )
 
-    return _run_write(_call)
+    return _run_write(_call, headers=headers)
 
 
 def post_document_template_deactivate(
@@ -507,4 +1380,106 @@ def post_document_template_deactivate(
             branch_id=request.branch_id,
         )
 
-    return _run_write(_call)
+    return _run_write(_call, headers=headers)
+
+
+def _post_issue_document(
+    *,
+    request,
+    dependencies,
+    headers: dict[str, Any] | None,
+    command_type: str,
+    issue_method_name: str,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    issuance_service = getattr(dependencies, "document_issuance_service", None)
+    if issuance_service is None:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Document issuance service is not configured.",
+            details={},
+        )
+
+    document_id = _new_document_id(dependencies)
+    command_id = dependencies.id_provider.new_command_id()
+    correlation_id = dependencies.id_provider.new_correlation_id()
+    issued_at = dependencies.clock.now_issued_at()
+    doc_type = resolve_doc_type_for_issue_command(command_type)
+    if doc_type is None:
+        return error_response(
+            code="INVALID_REQUEST",
+            message=f"Unsupported issue command type: {command_type}",
+            details={},
+        )
+
+    def _call():
+        issue_method = getattr(issuance_service, issue_method_name)
+        return issue_method(
+            business_id=business_context.business_id,
+            branch_id=business_context.branch_id,
+            document_id=document_id,
+            payload=request.payload,
+            actor_context=actor_context,
+            command_id=command_id,
+            correlation_id=correlation_id,
+            issued_at=issued_at,
+        )
+
+    return _run_issue_write(
+        _call,
+        document_id=document_id,
+        doc_type=doc_type,
+        issued_at=issued_at,
+        headers=headers,
+    )
+
+
+def post_issue_receipt(
+    request: IssueReceiptHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _post_issue_document(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        command_type=DOC_RECEIPT_ISSUE_REQUEST,
+        issue_method_name="issue_receipt",
+    )
+
+
+def post_issue_quote(
+    request: IssueQuoteHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _post_issue_document(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        command_type=DOC_QUOTE_ISSUE_REQUEST,
+        issue_method_name="issue_quote",
+    )
+
+
+def post_issue_invoice(
+    request: IssueInvoiceHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _post_issue_document(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        command_type=DOC_INVOICE_ISSUE_REQUEST,
+        issue_method_name="issue_invoice",
+    )

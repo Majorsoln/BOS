@@ -20,12 +20,15 @@ This service does NOT:
 - Dispatch before commit (dispatch is AFTER commit via on_commit)
 - Touch projections
 - Interpret payload meaning
-- Auto-generate missing fields
+- Auto-generate missing non-hash fields
 - Retry on failure
 - Swallow errors silently
 """
 
+from __future__ import annotations
+
 import logging
+import uuid
 from typing import Any, Optional
 
 from django.db import IntegrityError, transaction
@@ -35,16 +38,143 @@ from core.event_store.idempotency.guard import (
     check_idempotency,
     handle_integrity_error,
 )
-from core.event_store.hashing.verifier import verify_hash_chain
+from core.event_store.hashing.errors import (
+    HashRejectionCode,
+    HashViolatedRule,
+)
+from core.event_store.hashing.hasher import GENESIS_HASH, compute_event_hash
 from core.event_store.persistence.errors import (
     PersistenceRejectionCode,
     PersistenceViolatedRule,
 )
-from core.event_store.persistence.repository import save_event
+from core.event_store.persistence.repository import (
+    get_latest_event_for_business,
+    save_event,
+)
 from core.event_store.validators.context import BusinessContextProtocol
 from core.event_store.validators.errors import Rejection, ValidationResult
 from core.event_store.validators.event_validator import validate_event
 from core.event_store.validators.registry import EventTypeRegistry
+
+
+def _build_chain_broken_rejection(
+    *,
+    provided_previous_hash: str,
+    expected_previous_hash: str,
+) -> ValidationResult:
+    return ValidationResult(
+        accepted=False,
+        rejection=Rejection(
+            code=HashRejectionCode.HASH_CHAIN_BROKEN,
+            message=(
+                "Previous event hash does not match the latest stored "
+                f"event. Provided: '{provided_previous_hash}', "
+                f"expected: '{expected_previous_hash}'."
+            ),
+            violated_rule=HashViolatedRule.EVENT_HASH_CHAIN,
+        ),
+    )
+
+
+def _build_hash_mismatch_rejection(
+    *,
+    provided_event_hash: str,
+    expected_event_hash: str,
+) -> ValidationResult:
+    return ValidationResult(
+        accepted=False,
+        rejection=Rejection(
+            code=HashRejectionCode.HASH_COMPUTATION_MISMATCH,
+            message=(
+                "Provided event_hash does not match computed hash. "
+                f"Provided: '{provided_event_hash}', "
+                f"computed: '{expected_event_hash}'."
+            ),
+            violated_rule=HashViolatedRule.EVENT_HASH_CHAIN,
+        ),
+    )
+
+
+def _expected_previous_hash(
+    *,
+    business_id: uuid.UUID,
+    lock_latest: bool,
+) -> str:
+    latest = get_latest_event_for_business(
+        business_id,
+        lock=lock_latest,
+    )
+    if latest is None:
+        return GENESIS_HASH
+    return latest.event_hash
+
+
+def _resolve_and_validate_hash_fields(
+    event_data: dict[str, Any],
+    *,
+    lock_latest: bool,
+) -> ValidationResult | None:
+    expected_previous_hash = _expected_previous_hash(
+        business_id=event_data["business_id"],
+        lock_latest=lock_latest,
+    )
+
+    provided_previous_hash = event_data.get("previous_event_hash")
+    if provided_previous_hash is None:
+        event_data["previous_event_hash"] = expected_previous_hash
+    elif provided_previous_hash != expected_previous_hash:
+        return _build_chain_broken_rejection(
+            provided_previous_hash=str(provided_previous_hash),
+            expected_previous_hash=expected_previous_hash,
+        )
+
+    expected_event_hash = compute_event_hash(
+        event_data["payload"],
+        event_data["previous_event_hash"],
+    )
+
+    provided_event_hash = event_data.get("event_hash")
+    if provided_event_hash is None:
+        event_data["event_hash"] = expected_event_hash
+    elif provided_event_hash != expected_event_hash:
+        return _build_hash_mismatch_rejection(
+            provided_event_hash=str(provided_event_hash),
+            expected_event_hash=expected_event_hash,
+        )
+
+    return None
+
+
+def _extract_constraint_name(exc: IntegrityError) -> str | None:
+    cause = getattr(exc, "__cause__", None)
+    diag = getattr(cause, "diag", None)
+    constraint_name = getattr(diag, "constraint_name", None)
+    if isinstance(constraint_name, str) and constraint_name:
+        return constraint_name
+    return None
+
+
+def _is_chain_uniqueness_conflict(exc: IntegrityError) -> bool:
+    constraint_name = _extract_constraint_name(exc)
+    if constraint_name == "uq_evt_biz_prev_hash":
+        return True
+    return "uq_evt_biz_prev_hash" in str(exc)
+
+
+def _build_chain_conflict_rejection(event_data: dict[str, Any]) -> ValidationResult:
+    provided_previous_hash = event_data.get("previous_event_hash")
+    return ValidationResult(
+        accepted=False,
+        rejection=Rejection(
+            code=HashRejectionCode.HASH_CHAIN_BROKEN,
+            message=(
+                "Concurrent append conflict: previous_event_hash is no longer "
+                "the chain head for this business. "
+                f"Provided: '{provided_previous_hash}'."
+            ),
+            violated_rule=HashViolatedRule.EVENT_HASH_CHAIN,
+        ),
+    )
 
 
 def persist_event(
@@ -111,14 +241,12 @@ def persist_event(
         return idempotency_result
 
     # ── Step 3: Hash-chain verification ───────────────────────
-    hash_result = verify_hash_chain(
-        business_id=event_data["business_id"],
-        previous_event_hash=event_data["previous_event_hash"],
-        payload=event_data["payload"],
-        event_hash=event_data["event_hash"],
+    hash_resolution = _resolve_and_validate_hash_fields(
+        event_data,
+        lock_latest=False,
     )
-    if not hash_result.accepted:
-        return hash_result
+    if hash_resolution is not None:
+        return hash_resolution
 
     # ── Step 4: Atomic persistence ────────────────────────────
     try:
@@ -128,13 +256,11 @@ def persist_event(
             if not idempotency_recheck.accepted:
                 return idempotency_recheck
 
-            hash_recheck = verify_hash_chain(
-                business_id=event_data["business_id"],
-                previous_event_hash=event_data["previous_event_hash"],
-                payload=event_data["payload"],
-                event_hash=event_data["event_hash"],
+            hash_recheck = _resolve_and_validate_hash_fields(
+                event_data,
+                lock_latest=True,
             )
-            if not hash_recheck.accepted:
+            if hash_recheck is not None:
                 return hash_recheck
 
             persisted_event = save_event(event_data)
@@ -148,6 +274,8 @@ def persist_event(
                 )
 
     except IntegrityError as exc:
+        if _is_chain_uniqueness_conflict(exc):
+            return _build_chain_conflict_rejection(event_data)
         return handle_integrity_error(event_data["event_id"], exc)
 
     except Exception as exc:

@@ -31,6 +31,9 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     # ── BOS Modules (added in build order) ────────────────
     "core.event_store",
+    "core.auth.apps.CoreAuthConfig",
+    "core.identity_store.apps.CoreIdentityStoreConfig",
+    "core.permissions_store.apps.CorePermissionsStoreConfig",
     "core.bootstrap",
 ]
 
@@ -46,13 +49,18 @@ ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 
 # ── Database ──────────────────────────────────────────────────
-# SQLite for development. Production DB configured separately.
+#psspg annotations5123
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'bos_project',
+        'USER': 'postgres',
+        'PASSWORD': 'annotations5123',
+        'HOST': 'localhost',
+        'PORT': '5432',
     }
 }
+
 
 # ── Internationalization ──────────────────────────────────────
 LANGUAGE_CODE = "en-us"

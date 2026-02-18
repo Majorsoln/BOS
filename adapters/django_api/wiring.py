@@ -6,16 +6,16 @@ Constructs HttpApiDependencies for local/staging live runs.
 This module is adapter-only glue:
 - no core contract changes
 - no replay/event-store logic changes
-- in-memory persistence/projections for phase smoke usage
 """
 
 from __future__ import annotations
 
-import copy
 import threading
 import uuid
 from typing import Any
 
+from core.auth.provider import DbAuthProvider
+from core.auth.service import ApiKeyService, hash_api_key
 from core.admin.projections import AdminProjectionStore
 from core.admin.repository import (
     AdminRepository,
@@ -27,16 +27,22 @@ from core.admin.service import AdminDataService
 from core.commands.bus import CommandBus
 from core.commands.dispatcher import CommandDispatcher
 from core.context.business_context import BusinessContext
-from core.event_store.hashing.hasher import GENESIS_HASH, compute_event_hash
-from core.event_store.validators.registry import EventTypeRegistry
-from core.http_api.auth import AuthPrincipal, InMemoryAuthProvider
-from core.http_api.dependencies import HttpApiDependencies, UtcClock, UuidIdProvider
-from core.permissions import (
-    InMemoryPermissionProvider,
-    PERMISSION_ADMIN_CONFIGURE,
-    Role,
-    ScopeGrant,
+from core.document_issuance.projections import DocumentIssuanceProjectionStore
+from core.document_issuance.registry import is_document_issuance_event_type
+from core.document_issuance.repository import DocumentIssuanceRepository
+from core.document_issuance.service import DocumentIssuanceService
+from core.event_store.persistence import (
+    load_events_for_business,
+    persist_event,
 )
+from core.event_store.validators.registry import EventTypeRegistry
+from core.http_api.dependencies import HttpApiDependencies, UtcClock, UuidIdProvider
+from core.identity_store.service import (
+    DEFAULT_CASHIER_ROLE,
+    assign_role as assign_identity_role,
+    bootstrap_identity as bootstrap_identity_store,
+)
+from core.permissions import DbPermissionProvider
 
 
 DEV_ADMIN_API_KEY = "dev-admin-key"
@@ -53,42 +59,82 @@ _DEPENDENCIES_LOCK = threading.Lock()
 _DEPENDENCIES: HttpApiDependencies | None = None
 
 
-class _InMemoryEventLedger:
-    def __init__(self):
-        self._events: list[dict[str, Any]] = []
-        self._last_hash_by_business: dict[uuid.UUID, str] = {}
-        self._lock = threading.Lock()
-
-    def previous_hash_for_business(self, business_id: uuid.UUID) -> str:
-        with self._lock:
-            return self._last_hash_by_business.get(business_id, GENESIS_HASH)
-
-    def record(self, event_data: dict[str, Any]) -> None:
-        with self._lock:
-            stored = copy.deepcopy(event_data)
-            self._events.append(stored)
-            business_id = stored.get("business_id")
-            event_hash = stored.get("event_hash")
-            if isinstance(business_id, uuid.UUID) and isinstance(event_hash, str):
-                self._last_hash_by_business[business_id] = event_hash
-
-    def all_events(self) -> tuple[dict[str, Any], ...]:
-        with self._lock:
-            return tuple(copy.deepcopy(self._events))
+def _coerce_uuid_or_passthrough(value: Any) -> Any:
+    if value is None or isinstance(value, uuid.UUID):
+        return value
+    if isinstance(value, str):
+        try:
+            return uuid.UUID(value)
+        except ValueError:
+            return value
+    return value
 
 
-class _InMemoryPersistEvent:
-    """
-    Adapter-level persistence stub for live smoke usage.
-    Core persist_event path remains unchanged and unmodified.
-    """
+def _normalize_admin_event_for_projection(
+    event_data: dict[str, Any],
+) -> dict[str, Any]:
+    payload = dict(event_data.get("payload", {}))
+    payload["business_id"] = _coerce_uuid_or_passthrough(payload.get("business_id"))
+    payload["branch_id"] = _coerce_uuid_or_passthrough(payload.get("branch_id"))
 
-    def __init__(self, ledger: _InMemoryEventLedger):
-        self._ledger = ledger
+    normalized = dict(event_data)
+    normalized["business_id"] = _coerce_uuid_or_passthrough(
+        normalized.get("business_id")
+    )
+    normalized["branch_id"] = _coerce_uuid_or_passthrough(normalized.get("branch_id"))
+    normalized["payload"] = payload
+    return normalized
 
-    def __call__(self, event_data: dict[str, Any], context, registry, **kwargs):
-        self._ledger.record(event_data)
-        return {"accepted": True}
+
+def _rebuild_admin_projection_store_from_events(
+    projection_store: AdminProjectionStore,
+    business_id: uuid.UUID,
+) -> None:
+    for event_data in load_events_for_business(business_id):
+        event_type = event_data.get("event_type")
+        if not isinstance(event_type, str) or not event_type.startswith("admin."):
+            continue
+        projection_store.apply(_normalize_admin_event_for_projection(event_data))
+
+
+def _normalize_document_issuance_payload_for_projection(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    normalized = dict(payload)
+    normalized["business_id"] = _coerce_uuid_or_passthrough(
+        normalized.get("business_id")
+    )
+    normalized["branch_id"] = _coerce_uuid_or_passthrough(
+        normalized.get("branch_id")
+    )
+    normalized["document_id"] = _coerce_uuid_or_passthrough(
+        normalized.get("document_id")
+    )
+    normalized["correlation_id"] = _coerce_uuid_or_passthrough(
+        normalized.get("correlation_id")
+    )
+    return normalized
+
+
+def _rebuild_document_issuance_projection_store_from_events(
+    projection_store: DocumentIssuanceProjectionStore,
+    business_id: uuid.UUID,
+) -> None:
+    for event_data in load_events_for_business(business_id):
+        event_type = event_data.get("event_type")
+        if not isinstance(event_type, str):
+            continue
+        if not is_document_issuance_event_type(event_type):
+            continue
+
+        payload = event_data.get("payload")
+        if not isinstance(payload, dict):
+            continue
+
+        projection_store.apply(
+            event_type=event_type,
+            payload=_normalize_document_issuance_payload_for_projection(payload),
+        )
 
 
 def _build_business_context() -> BusinessContext:
@@ -104,54 +150,91 @@ def _build_business_context() -> BusinessContext:
     )
 
 
-def _build_permission_provider() -> InMemoryPermissionProvider:
-    admin_role = Role(
-        role_id="live-admin-configure",
-        permissions=(PERMISSION_ADMIN_CONFIGURE,),
-    )
-    admin_grant = ScopeGrant(
-        actor_id=_DEV_ADMIN_ACTOR_ID,
-        role_id=admin_role.role_id,
+def _build_permission_provider() -> DbPermissionProvider:
+    return DbPermissionProvider()
+
+
+def _ensure_dev_identity_records() -> None:
+    bootstrap_identity_store(
         business_id=DEV_BUSINESS_ID,
+        business_name="BOS Dev Business",
+        default_currency="USD",
+        default_language="en",
+        branches=(
+            {
+                "branch_id": str(DEV_ADMIN_BRANCH_ID),
+                "name": "ADMIN",
+                "timezone": "UTC",
+            },
+            {
+                "branch_id": str(DEV_CASHIER_BRANCH_ID),
+                "name": "CASHIER",
+                "timezone": "UTC",
+            },
+        ),
+        admin_actor_id=_DEV_ADMIN_ACTOR_ID,
+        cashier_actor_id=None,
     )
-    return InMemoryPermissionProvider(
-        roles=(admin_role,),
-        grants=(admin_grant,),
-    )
-
-
-def _build_auth_provider() -> InMemoryAuthProvider:
-    admin_principal = AuthPrincipal(
-        actor_id=_DEV_ADMIN_ACTOR_ID,
-        actor_type="USER",
-        allowed_business_ids=(str(DEV_BUSINESS_ID),),
-        allowed_branch_ids_by_business={
-            str(DEV_BUSINESS_ID): (
-                str(DEV_ADMIN_BRANCH_ID),
-                str(DEV_CASHIER_BRANCH_ID),
-            )
-        },
-    )
-    cashier_principal = AuthPrincipal(
+    assign_identity_role(
+        business_id=DEV_BUSINESS_ID,
         actor_id=_DEV_CASHIER_ACTOR_ID,
         actor_type="USER",
-        allowed_business_ids=(str(DEV_BUSINESS_ID),),
-        allowed_branch_ids_by_business={
-            str(DEV_BUSINESS_ID): (str(DEV_CASHIER_BRANCH_ID),)
+        role_name=DEFAULT_CASHIER_ROLE,
+        branch_id=DEV_CASHIER_BRANCH_ID,
+        display_name=_DEV_CASHIER_ACTOR_ID,
+    )
+
+
+def _ensure_dev_api_key_credentials() -> None:
+    credential_specs = (
+        {
+            "api_key": DEV_ADMIN_API_KEY,
+            "actor_id": _DEV_ADMIN_ACTOR_ID,
+            "actor_type": "USER",
+            "allowed_business_ids": (str(DEV_BUSINESS_ID),),
+            "allowed_branch_ids_by_business": {
+                str(DEV_BUSINESS_ID): (
+                    str(DEV_ADMIN_BRANCH_ID),
+                    str(DEV_CASHIER_BRANCH_ID),
+                )
+            },
+            "label": "Dev Admin Key",
+        },
+        {
+            "api_key": DEV_CASHIER_API_KEY,
+            "actor_id": _DEV_CASHIER_ACTOR_ID,
+            "actor_type": "USER",
+            "allowed_business_ids": (str(DEV_BUSINESS_ID),),
+            "allowed_branch_ids_by_business": {
+                str(DEV_BUSINESS_ID): (str(DEV_CASHIER_BRANCH_ID),)
+            },
+            "label": "Dev Cashier Key",
         },
     )
-    return InMemoryAuthProvider(
-        {
-            DEV_ADMIN_API_KEY: admin_principal,
-            DEV_CASHIER_API_KEY: cashier_principal,
-        }
-    )
+
+    for spec in credential_specs:
+        existing = ApiKeyService.find_by_reference(
+            key_hash=hash_api_key(spec["api_key"])
+        )
+        if existing is not None:
+            continue
+        ApiKeyService.create_api_key_credential(
+            api_key=spec["api_key"],
+            actor_id=spec["actor_id"],
+            actor_type=spec["actor_type"],
+            allowed_business_ids=spec["allowed_business_ids"],
+            allowed_branch_ids_by_business=spec["allowed_branch_ids_by_business"],
+            created_by_actor_id="system.bootstrap",
+            label=spec["label"],
+        )
 
 
-def _build_event_factory(ledger: _InMemoryEventLedger):
+def _build_auth_provider() -> DbAuthProvider:
+    return DbAuthProvider()
+
+
+def _build_event_factory():
     def _event_factory(*, command, event_type: str, payload: dict) -> dict[str, Any]:
-        previous_hash = ledger.previous_hash_for_business(command.business_id)
-        event_hash = compute_event_hash(payload, previous_hash)
         return {
             "event_id": command.command_id,
             "event_type": event_type,
@@ -168,18 +251,29 @@ def _build_event_factory(ledger: _InMemoryEventLedger):
             "created_at": command.issued_at,
             "status": "FINAL",
             "correction_of": None,
-            "previous_event_hash": previous_hash,
-            "event_hash": event_hash,
         }
 
     return _event_factory
 
 
 def _create_dependencies() -> HttpApiDependencies:
-    projection_store = AdminProjectionStore()
-    repository = AdminRepository(projection_store)
-    event_ledger = _InMemoryEventLedger()
-    persist_event = _InMemoryPersistEvent(event_ledger)
+    _ensure_dev_identity_records()
+    _ensure_dev_api_key_credentials()
+
+    admin_projection_store = AdminProjectionStore()
+    _rebuild_admin_projection_store_from_events(
+        admin_projection_store,
+        DEV_BUSINESS_ID,
+    )
+    repository = AdminRepository(admin_projection_store)
+    document_issuance_projection_store = DocumentIssuanceProjectionStore()
+    _rebuild_document_issuance_projection_store_from_events(
+        document_issuance_projection_store,
+        DEV_BUSINESS_ID,
+    )
+    document_issuance_repository = DocumentIssuanceRepository(
+        document_issuance_projection_store
+    )
 
     business_context = _build_business_context()
     permission_provider = _build_permission_provider()
@@ -195,6 +289,7 @@ def _create_dependencies() -> HttpApiDependencies:
         document_provider=document_provider,
     )
     event_type_registry = EventTypeRegistry()
+    event_factory = _build_event_factory()
     command_bus = CommandBus(
         dispatcher=dispatcher,
         persist_event=persist_event,
@@ -205,10 +300,20 @@ def _create_dependencies() -> HttpApiDependencies:
         business_context=business_context,
         dispatcher=dispatcher,
         command_bus=command_bus,
-        event_factory=_build_event_factory(event_ledger),
+        event_factory=event_factory,
         persist_event=persist_event,
         event_type_registry=event_type_registry,
-        projection_store=projection_store,
+        projection_store=admin_projection_store,
+    )
+    document_issuance_service = DocumentIssuanceService(
+        business_context=business_context,
+        dispatcher=dispatcher,
+        command_bus=command_bus,
+        event_factory=event_factory,
+        persist_event=persist_event,
+        event_type_registry=event_type_registry,
+        projection_store=document_issuance_projection_store,
+        document_provider=document_provider,
     )
 
     return HttpApiDependencies(
@@ -217,6 +322,9 @@ def _create_dependencies() -> HttpApiDependencies:
         id_provider=UuidIdProvider(),
         clock=UtcClock(),
         auth_provider=_build_auth_provider(),
+        permission_provider=permission_provider,
+        document_issuance_service=document_issuance_service,
+        document_issuance_repository=document_issuance_repository,
     )
 
 
@@ -229,4 +337,3 @@ def build_dependencies() -> HttpApiDependencies:
         if _DEPENDENCIES is None:
             _DEPENDENCIES = _create_dependencies()
         return _DEPENDENCIES
-

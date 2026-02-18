@@ -28,15 +28,33 @@ def error_response(
     ).to_dict()
 
 
-def success_response(data: Any) -> dict[str, Any]:
-    return HttpApiResponse(ok=True, data=data).to_dict()
+def success_response(
+    data: Any,
+    *,
+    meta: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    return HttpApiResponse(ok=True, data=data, meta=meta).to_dict()
 
 
 def map_rejection_reason(reason: RejectionReason) -> HttpApiErrorBody:
+    message_key = (
+        reason.message_key
+        if reason.message_key is not None
+        else f"rejection.{reason.code.lower()}"
+    )
+    message_params = (
+        {}
+        if reason.message_params is None
+        else dict(reason.message_params)
+    )
     return HttpApiErrorBody(
         code=reason.code,
         message=reason.message,
-        details={"policy_name": reason.policy_name},
+        details={
+            "policy_name": reason.policy_name,
+            "message_key": message_key,
+            "message_params": message_params,
+        },
     )
 
 
@@ -54,4 +72,3 @@ def rejection_response(
         message=mapped.message,
         details=details,
     )
-

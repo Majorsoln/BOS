@@ -222,6 +222,18 @@ class Event(models.Model):
         ordering = ["received_at"]
         indexes = [
             models.Index(
+                fields=["business_id", "created_at", "event_id"],
+                name="idx_evt_biz_created_id",
+            ),
+            models.Index(
+                fields=["business_id", "event_id"],
+                name="idx_evt_biz_event_id",
+            ),
+            models.Index(
+                fields=["business_id", "branch_id", "created_at"],
+                name="idx_evt_biz_branch_created",
+            ),
+            models.Index(
                 fields=["business_id", "received_at"],
                 name="idx_evt_business_time",
             ),
@@ -248,6 +260,12 @@ class Event(models.Model):
             models.Index(
                 fields=["causation_id"],
                 name="idx_evt_causation",
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["business_id", "previous_event_hash"],
+                name="uq_evt_biz_prev_hash",
             ),
         ]
 
