@@ -15,6 +15,7 @@ from engines.restaurant.events import (
     build_table_opened_payload, build_table_closed_payload,
     build_order_placed_payload, build_order_item_served_payload,
     build_order_cancelled_payload, build_bill_settled_payload,
+    build_kitchen_ticket_sent_payload, build_bill_split_payload,
 )
 
 
@@ -67,6 +68,15 @@ class RestaurantProjectionStore:
         elif event_type.startswith("restaurant.bill.settled"):
             self._total_revenue += payload["total_amount"]
             self._total_tips += payload.get("tip_amount", 0)
+        elif event_type.startswith("restaurant.kitchen.ticket.sent"):
+            oid = payload.get("order_id")
+            if oid in self._orders:
+                self._orders[oid].setdefault("kitchen_tickets", []).append(payload.get("ticket_id"))
+        elif event_type.startswith("restaurant.bill.split"):
+            tid = payload.get("table_id")
+            if tid in self._tables:
+                self._tables[tid]["split_id"] = payload.get("split_id")
+                self._tables[tid]["split_type"] = payload.get("split_type")
 
     def get_table(self, table_id: str) -> Optional[dict]:
         return self._tables.get(table_id)
@@ -94,6 +104,8 @@ PAYLOAD_BUILDERS = {
     "restaurant.order.serve_item.request": build_order_item_served_payload,
     "restaurant.order.cancel.request": build_order_cancelled_payload,
     "restaurant.bill.settle.request": build_bill_settled_payload,
+    "restaurant.kitchen.ticket.send.request": build_kitchen_ticket_sent_payload,
+    "restaurant.bill.split.request": build_bill_split_payload,
 }
 
 

@@ -25,6 +25,9 @@ PROCUREMENT_ORDER_APPROVE_REQUEST = "procurement.order.approve.request"
 PROCUREMENT_ORDER_RECEIVE_REQUEST = "procurement.order.receive.request"
 PROCUREMENT_ORDER_CANCEL_REQUEST = "procurement.order.cancel.request"
 PROCUREMENT_INVOICE_MATCH_REQUEST = "procurement.invoice.match.request"
+PROCUREMENT_REQUISITION_CREATE_REQUEST = "procurement.requisition.create.request"
+PROCUREMENT_REQUISITION_APPROVE_REQUEST = "procurement.requisition.approve.request"
+PROCUREMENT_PAYMENT_RELEASE_REQUEST = "procurement.payment.release.request"
 
 PROCUREMENT_COMMAND_TYPES = frozenset({
     PROCUREMENT_ORDER_CREATE_REQUEST,
@@ -32,11 +35,18 @@ PROCUREMENT_COMMAND_TYPES = frozenset({
     PROCUREMENT_ORDER_RECEIVE_REQUEST,
     PROCUREMENT_ORDER_CANCEL_REQUEST,
     PROCUREMENT_INVOICE_MATCH_REQUEST,
+    PROCUREMENT_REQUISITION_CREATE_REQUEST,
+    PROCUREMENT_REQUISITION_APPROVE_REQUEST,
+    PROCUREMENT_PAYMENT_RELEASE_REQUEST,
 })
 
 VALID_CANCEL_REASONS = frozenset({
     "SUPPLIER_UNAVAILABLE", "BUDGET_EXCEEDED", "DUPLICATE_ORDER",
     "BUSINESS_DECISION", "QUALITY_CONCERN",
+})
+
+VALID_PAYMENT_METHODS = frozenset({
+    "CASH", "BANK_TRANSFER", "CHEQUE", "MOBILE",
 })
 
 
@@ -274,6 +284,119 @@ class InvoiceMatchRequest:
             },
             issued_at=issued_at,
             correlation_id=correlation_id,
+            source_engine="procurement",
+            scope_requirement=SCOPE_BUSINESS_ALLOWED,
+            actor_requirement=ACTOR_REQUIRED,
+        )
+
+
+@dataclass(frozen=True)
+class RequisitionCreateRequest:
+    """Request to create a purchase requisition."""
+    requisition_id: str
+    lines: tuple
+    currency: str
+    total_estimated: int = 0
+    justification: str = ""
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.requisition_id:
+            raise ValueError("requisition_id must be non-empty.")
+        if not isinstance(self.lines, tuple) or not self.lines:
+            raise ValueError("lines must be a non-empty tuple.")
+        if not self.currency or len(self.currency) != 3:
+            raise ValueError("currency must be 3-letter ISO code.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id, correlation_id, issued_at):
+        return Command(
+            command_id=command_id,
+            command_type=PROCUREMENT_REQUISITION_CREATE_REQUEST,
+            business_id=business_id, branch_id=self.branch_id,
+            actor_type=actor_type, actor_id=actor_id,
+            payload={
+                "requisition_id": self.requisition_id,
+                "lines": list(self.lines),
+                "currency": self.currency,
+                "total_estimated": self.total_estimated,
+                "justification": self.justification,
+            },
+            issued_at=issued_at, correlation_id=correlation_id,
+            source_engine="procurement",
+            scope_requirement=SCOPE_BUSINESS_ALLOWED,
+            actor_requirement=ACTOR_REQUIRED,
+        )
+
+
+@dataclass(frozen=True)
+class RequisitionApproveRequest:
+    """Request to approve a purchase requisition."""
+    requisition_id: str
+    notes: str = ""
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.requisition_id:
+            raise ValueError("requisition_id must be non-empty.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id, correlation_id, issued_at):
+        return Command(
+            command_id=command_id,
+            command_type=PROCUREMENT_REQUISITION_APPROVE_REQUEST,
+            business_id=business_id, branch_id=self.branch_id,
+            actor_type=actor_type, actor_id=actor_id,
+            payload={
+                "requisition_id": self.requisition_id,
+                "notes": self.notes,
+            },
+            issued_at=issued_at, correlation_id=correlation_id,
+            source_engine="procurement",
+            scope_requirement=SCOPE_BUSINESS_ALLOWED,
+            actor_requirement=ACTOR_REQUIRED,
+        )
+
+
+@dataclass(frozen=True)
+class PaymentReleaseRequest:
+    """Request to release payment for a received purchase order."""
+    payment_id: str
+    order_id: str
+    amount: int
+    currency: str
+    payment_method: str
+    reference_id: Optional[str] = None
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.payment_id:
+            raise ValueError("payment_id must be non-empty.")
+        if not self.order_id:
+            raise ValueError("order_id must be non-empty.")
+        if not isinstance(self.amount, int) or self.amount <= 0:
+            raise ValueError("amount must be positive integer.")
+        if not self.currency or len(self.currency) != 3:
+            raise ValueError("currency must be 3-letter ISO code.")
+        if self.payment_method not in VALID_PAYMENT_METHODS:
+            raise ValueError(f"payment_method must be one of {sorted(VALID_PAYMENT_METHODS)}.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id, correlation_id, issued_at):
+        return Command(
+            command_id=command_id,
+            command_type=PROCUREMENT_PAYMENT_RELEASE_REQUEST,
+            business_id=business_id, branch_id=self.branch_id,
+            actor_type=actor_type, actor_id=actor_id,
+            payload={
+                "payment_id": self.payment_id,
+                "order_id": self.order_id,
+                "amount": self.amount,
+                "currency": self.currency,
+                "payment_method": self.payment_method,
+                "reference_id": self.reference_id,
+            },
+            issued_at=issued_at, correlation_id=correlation_id,
             source_engine="procurement",
             scope_requirement=SCOPE_BUSINESS_ALLOWED,
             actor_requirement=ACTOR_REQUIRED,

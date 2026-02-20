@@ -24,6 +24,9 @@ PROCUREMENT_ORDER_APPROVED_V1 = "procurement.order.approved.v1"
 PROCUREMENT_ORDER_RECEIVED_V1 = "procurement.order.received.v1"
 PROCUREMENT_ORDER_CANCELLED_V1 = "procurement.order.cancelled.v1"
 PROCUREMENT_INVOICE_MATCHED_V1 = "procurement.invoice.matched.v1"
+PROCUREMENT_REQUISITION_CREATED_V1 = "procurement.requisition.created.v1"
+PROCUREMENT_REQUISITION_APPROVED_V1 = "procurement.requisition.approved.v1"
+PROCUREMENT_PAYMENT_RELEASED_V1 = "procurement.payment.released.v1"
 
 PROCUREMENT_EVENT_TYPES = (
     PROCUREMENT_ORDER_CREATED_V1,
@@ -31,6 +34,9 @@ PROCUREMENT_EVENT_TYPES = (
     PROCUREMENT_ORDER_RECEIVED_V1,
     PROCUREMENT_ORDER_CANCELLED_V1,
     PROCUREMENT_INVOICE_MATCHED_V1,
+    PROCUREMENT_REQUISITION_CREATED_V1,
+    PROCUREMENT_REQUISITION_APPROVED_V1,
+    PROCUREMENT_PAYMENT_RELEASED_V1,
 )
 
 
@@ -44,6 +50,9 @@ COMMAND_TO_EVENT_TYPE = {
     "procurement.order.receive.request": PROCUREMENT_ORDER_RECEIVED_V1,
     "procurement.order.cancel.request": PROCUREMENT_ORDER_CANCELLED_V1,
     "procurement.invoice.match.request": PROCUREMENT_INVOICE_MATCHED_V1,
+    "procurement.requisition.create.request": PROCUREMENT_REQUISITION_CREATED_V1,
+    "procurement.requisition.approve.request": PROCUREMENT_REQUISITION_APPROVED_V1,
+    "procurement.payment.release.request": PROCUREMENT_PAYMENT_RELEASED_V1,
 }
 
 
@@ -127,5 +136,44 @@ def build_invoice_matched_payload(command: Command) -> dict:
         "invoice_amount": command.payload["invoice_amount"],
         "currency": command.payload["currency"],
         "matched_at": command.issued_at,
+    })
+    return payload
+
+
+def build_requisition_created_payload(command: Command) -> dict:
+    payload = _base_payload(command)
+    payload.update({
+        "requisition_id": command.payload["requisition_id"],
+        "requested_by": command.actor_id,
+        "lines": command.payload["lines"],
+        "total_estimated": command.payload.get("total_estimated", 0),
+        "currency": command.payload["currency"],
+        "justification": command.payload.get("justification", ""),
+        "created_at": command.issued_at,
+    })
+    return payload
+
+
+def build_requisition_approved_payload(command: Command) -> dict:
+    payload = _base_payload(command)
+    payload.update({
+        "requisition_id": command.payload["requisition_id"],
+        "approved_by": command.actor_id,
+        "approved_at": command.issued_at,
+        "notes": command.payload.get("notes", ""),
+    })
+    return payload
+
+
+def build_payment_released_payload(command: Command) -> dict:
+    payload = _base_payload(command)
+    payload.update({
+        "payment_id": command.payload["payment_id"],
+        "order_id": command.payload["order_id"],
+        "amount": command.payload["amount"],
+        "currency": command.payload["currency"],
+        "payment_method": command.payload["payment_method"],
+        "reference_id": command.payload.get("reference_id"),
+        "released_at": command.issued_at,
     })
     return payload

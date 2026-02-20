@@ -72,6 +72,9 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "procurement.order.receive.request": FLAG_ENABLE_PROCUREMENT_ENGINE,
     "procurement.invoice.match.request": FLAG_ENABLE_PROCUREMENT_ENGINE,
     "procurement.order.cancel.request": FLAG_ENABLE_PROCUREMENT_ENGINE,
+    "procurement.requisition.create.request": FLAG_ENABLE_PROCUREMENT_ENGINE,
+    "procurement.requisition.approve.request": FLAG_ENABLE_PROCUREMENT_ENGINE,
+    "procurement.payment.release.request": FLAG_ENABLE_PROCUREMENT_ENGINE,
 
     # ── Retail Engine ─────────────────────────────────────────
     "retail.sale.open.request": FLAG_ENABLE_RETAIL_ENGINE,
@@ -89,6 +92,8 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "restaurant.bill.settle.request": FLAG_ENABLE_RESTAURANT_ENGINE,
     "restaurant.table.close.request": FLAG_ENABLE_RESTAURANT_ENGINE,
     "restaurant.order.cancel.request": FLAG_ENABLE_RESTAURANT_ENGINE,
+    "restaurant.kitchen.ticket.send.request": FLAG_ENABLE_RESTAURANT_ENGINE,
+    "restaurant.bill.split.request": FLAG_ENABLE_RESTAURANT_ENGINE,
 
     # ── Workshop Engine ───────────────────────────────────────
     "workshop.job.create.request": FLAG_ENABLE_WORKSHOP_ENGINE,

@@ -19,6 +19,8 @@ RESTAURANT_ORDER_PLACE_REQUEST = "restaurant.order.place.request"
 RESTAURANT_ORDER_SERVE_ITEM_REQUEST = "restaurant.order.serve_item.request"
 RESTAURANT_ORDER_CANCEL_REQUEST = "restaurant.order.cancel.request"
 RESTAURANT_BILL_SETTLE_REQUEST = "restaurant.bill.settle.request"
+RESTAURANT_KITCHEN_TICKET_SEND_REQUEST = "restaurant.kitchen.ticket.send.request"
+RESTAURANT_BILL_SPLIT_REQUEST = "restaurant.bill.split.request"
 
 RESTAURANT_COMMAND_TYPES = frozenset({
     RESTAURANT_TABLE_OPEN_REQUEST,
@@ -27,6 +29,8 @@ RESTAURANT_COMMAND_TYPES = frozenset({
     RESTAURANT_ORDER_SERVE_ITEM_REQUEST,
     RESTAURANT_ORDER_CANCEL_REQUEST,
     RESTAURANT_BILL_SETTLE_REQUEST,
+    RESTAURANT_KITCHEN_TICKET_SEND_REQUEST,
+    RESTAURANT_BILL_SPLIT_REQUEST,
 })
 
 VALID_PAYMENT_METHODS = frozenset({"CASH", "CARD", "MOBILE", "SPLIT"})
@@ -176,3 +180,95 @@ class BillSettleRequest:
                       "total_amount": self.total_amount, "tip_amount": self.tip_amount,
                       "currency": self.currency, "payment_method": self.payment_method},
                      branch_id=self.branch_id, **kw)
+
+
+@dataclass(frozen=True)
+class SendKitchenTicketRequest:
+    """Send an order ticket to a kitchen/bar preparation station."""
+    ticket_id: str
+    order_id: str
+    table_id: str
+    station: str
+    items: tuple
+    priority: str = "NORMAL"
+    branch_id: Optional[uuid.UUID] = None
+
+    VALID_STATIONS = frozenset({"KITCHEN", "BAR", "GRILL", "COLD", "PASTRY"})
+    VALID_PRIORITIES = frozenset({"NORMAL", "URGENT", "RUSH"})
+
+    def __post_init__(self):
+        if not self.ticket_id:
+            raise ValueError("ticket_id must be non-empty.")
+        if not self.order_id:
+            raise ValueError("order_id must be non-empty.")
+        if not self.table_id:
+            raise ValueError("table_id must be non-empty.")
+        if not self.station:
+            raise ValueError("station must be non-empty.")
+        if not isinstance(self.items, tuple) or not self.items:
+            raise ValueError("items must be a non-empty tuple.")
+        if self.priority not in self.VALID_PRIORITIES:
+            raise ValueError(f"priority must be one of {sorted(self.VALID_PRIORITIES)}.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id, correlation_id, issued_at):
+        return _cmd(
+            RESTAURANT_KITCHEN_TICKET_SEND_REQUEST,
+            {
+                "ticket_id": self.ticket_id,
+                "order_id": self.order_id,
+                "table_id": self.table_id,
+                "station": self.station,
+                "items": list(self.items),
+                "priority": self.priority,
+            },
+            business_id=business_id, actor_type=actor_type, actor_id=actor_id,
+            command_id=command_id, correlation_id=correlation_id, issued_at=issued_at,
+            branch_id=self.branch_id,
+        )
+
+
+VALID_SPLIT_TYPES = frozenset({"BY_GUEST", "BY_ITEM", "EQUAL"})
+
+
+@dataclass(frozen=True)
+class SplitBillRequest:
+    """Split a table bill among guests."""
+    split_id: str
+    table_id: str
+    split_type: str
+    splits: tuple
+    total_amount: int
+    currency: str
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.split_id:
+            raise ValueError("split_id must be non-empty.")
+        if not self.table_id:
+            raise ValueError("table_id must be non-empty.")
+        if self.split_type not in VALID_SPLIT_TYPES:
+            raise ValueError(f"split_type must be one of {sorted(VALID_SPLIT_TYPES)}.")
+        if not isinstance(self.splits, tuple) or not self.splits:
+            raise ValueError("splits must be a non-empty tuple.")
+        if not isinstance(self.total_amount, int) or self.total_amount <= 0:
+            raise ValueError("total_amount must be positive integer.")
+        if not self.currency or len(self.currency) != 3:
+            raise ValueError("currency must be 3-letter ISO code.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id, correlation_id, issued_at):
+        return _cmd(
+            RESTAURANT_BILL_SPLIT_REQUEST,
+            {
+                "split_id": self.split_id,
+                "table_id": self.table_id,
+                "split_type": self.split_type,
+                "splits": list(self.splits),
+                "total_amount": self.total_amount,
+                "currency": self.currency,
+            },
+            business_id=business_id, actor_type=actor_type, actor_id=actor_id,
+            command_id=command_id, correlation_id=correlation_id, issued_at=issued_at,
+            branch_id=self.branch_id,
+        )

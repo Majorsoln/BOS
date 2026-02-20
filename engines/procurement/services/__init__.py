@@ -20,6 +20,9 @@ from engines.procurement.events import (
     build_order_received_payload,
     build_order_cancelled_payload,
     build_invoice_matched_payload,
+    build_requisition_created_payload,
+    build_requisition_approved_payload,
+    build_payment_released_payload,
 )
 
 
@@ -52,6 +55,8 @@ class ProcurementProjectionStore:
         self._events: List[dict] = []
         # order_id → order data
         self._orders: Dict[str, dict] = {}
+        self._requisitions: Dict[str, dict] = {}
+        self._payments: Dict[str, dict] = {}
         self._total_ordered: int = 0
 
     def apply(self, event_type: str, payload: dict) -> None:
@@ -97,6 +102,34 @@ class ProcurementProjectionStore:
                 self._orders[oid]["invoice_id"] = payload["invoice_id"]
                 self._orders[oid]["invoice_amount"] = payload["invoice_amount"]
 
+        elif event_type.startswith("procurement.requisition.created"):
+            rid = payload["requisition_id"]
+            self._requisitions[rid] = {
+                "status": "PENDING",
+                "requested_by": payload.get("requested_by"),
+                "lines": payload.get("lines", []),
+                "total_estimated": payload.get("total_estimated", 0),
+                "currency": payload.get("currency", ""),
+            }
+
+        elif event_type.startswith("procurement.requisition.approved"):
+            rid = payload["requisition_id"]
+            if rid in self._requisitions:
+                self._requisitions[rid]["status"] = "APPROVED"
+                self._requisitions[rid]["approved_by"] = payload.get("approved_by")
+
+        elif event_type.startswith("procurement.payment.released"):
+            pid = payload["payment_id"]
+            self._payments[pid] = {
+                "order_id": payload.get("order_id"),
+                "amount": payload.get("amount", 0),
+                "currency": payload.get("currency", ""),
+                "payment_method": payload.get("payment_method"),
+            }
+            oid = payload.get("order_id")
+            if oid and oid in self._orders:
+                self._orders[oid]["status"] = "PAID"
+
     def get_order(self, order_id: str) -> Optional[dict]:
         return self._orders.get(order_id)
 
@@ -119,6 +152,9 @@ PAYLOAD_BUILDERS = {
     "procurement.order.receive.request": build_order_received_payload,
     "procurement.order.cancel.request": build_order_cancelled_payload,
     "procurement.invoice.match.request": build_invoice_matched_payload,
+    "procurement.requisition.create.request": build_requisition_created_payload,
+    "procurement.requisition.approve.request": build_requisition_approved_payload,
+    "procurement.payment.release.request": build_payment_released_payload,
 }
 
 
