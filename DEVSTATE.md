@@ -1,6 +1,6 @@
 # BOS — Developer State File
 > Maintained by: Codex (Claude AI Engineer)
-> Last updated: Phase 7 complete
+> Last updated: GAP-01, 02, 03, 04, 05, 06, 09 complete — 629 tests passing
 > Read this file at the start of every session before touching any code.
 
 ---
@@ -23,9 +23,9 @@ Phase 0  ✅ Core Kernel         (event store, hash-chain, command bus, engine r
 Phase 1  ✅ Governance           (policy engine, compliance, admin layer)
 Phase 2  ✅ HTTP API             (contracts, handlers, auth middleware, Django adapter)
 Phase 3  ✅ Document Engine      (builder, HTML+PDF renderer, numbering, verification, hash)
-Phase 4  ⚠️ Business Primitives  (ledger, item, inventory, party, obligation — 4 missing, see GAP-04)
-Phase 5  ⚠️ Enterprise Engines   (accounting, cash, inventory, procurement — all wired but subscriptions pass, see GAP-03)
-Phase 6  ⚠️ Vertical Modules     (retail ✅, restaurant ⚠️, workshop ⚠️ — critical gaps, see GAP-02 & GAP-09)
+Phase 4  ✅ Business Primitives  (ledger, item, inventory, party, obligation, actor, approval, workflow, document — GAP-04 done)
+Phase 5  ✅ Enterprise Engines   (accounting, cash, inventory, procurement — GAP-03 subscriptions wired, GAP-05 reporting done, GAP-06 requisition+payment done)
+Phase 6  ✅ Vertical Modules     (retail ✅, restaurant ✅ kitchen+split, workshop ✅ formula+cutlist — GAP-02 & GAP-09 done)
 Phase 7  ⏳ AI & Decision Intel  (promotion ✅ done, HR ✅ done — but AI advisory system = empty stubs)
 Phase 8  ❌ Security & Isolation (not started)
 Phase 9  ❌ Integration Layer    (not started)
@@ -37,22 +37,23 @@ Phase 13 ❌ Documentation        (not started)
 
 ---
 
-## ENGINES IMPLEMENTED (9/9)
+## ENGINES IMPLEMENTED (10/10)
 
-All 9 engines have full structure: `events.py`, `commands/`, `services/`, `policies/`, `subscriptions.py`
+All 10 engines have full structure: `events.py`, `commands/`, `services/`, `policies/`, `subscriptions.py`
 
 | Engine | Phase | Event Types | Tests | Feature Flag | Subscription Wired |
 |--------|-------|-------------|-------|--------------|-------------------|
-| accounting | 5 | 5 | ✅ 53 tests (phase5) | ❌ MISSING | ❌ pass stubs |
-| inventory | 5 | 6 | ✅ | ❌ MISSING | ❌ pass stubs |
-| cash | 5 | 5 | ✅ | ❌ MISSING | ❌ pass stubs |
-| procurement | 6 | 5 | ✅ 41 tests (phase6) | ❌ MISSING | ❌ pass stubs |
-| retail | 6 | 7 | ✅ | ❌ MISSING | N/A (emitter only) |
-| restaurant | 7 | 6 | ✅ 19 tests (phase7) | ❌ MISSING | N/A |
-| workshop | 7 | 5 | ✅ | ❌ MISSING | N/A |
-| promotion | 7 | 5 | ✅ | ❌ MISSING | N/A |
-| hr | 7 | 5 | ✅ | ❌ MISSING | N/A |
-| **TOTAL** | | **49** | **113** | **0/9** | **0/4** |
+| accounting | 5 | 5 | ✅ | ✅ GAP-01 | ✅ GAP-03 |
+| inventory | 5 | 6 | ✅ | ✅ GAP-01 | ✅ GAP-03 |
+| cash | 5 | 5 | ✅ | ✅ GAP-01 | ✅ GAP-03 |
+| procurement | 6 | 8 | ✅ | ✅ GAP-01 | N/A |
+| retail | 6 | 7 | ✅ | ✅ GAP-01 | N/A (emitter only) |
+| restaurant | 7 | 8 | ✅ | ✅ GAP-01 | N/A |
+| workshop | 7 | 8 | ✅ | ✅ GAP-01 | N/A |
+| promotion | 7 | 5 | ✅ | ✅ GAP-01 | N/A |
+| hr | 7 | 5 | ✅ | ✅ GAP-01 | N/A |
+| **reporting** | **5.5** | **3** | **✅ GAP-05** | **✅** | **✅ subscribes to 8 events** |
+| **TOTAL** | | **60** | **629** | **10/10** | **4/4 + reporting** |
 
 Test commands (always run before commit):
 ```bash
@@ -190,20 +191,21 @@ Modules in `core/` defined in `structure.md` that are completely empty:
 ## EXECUTION ORDER (Next Sessions)
 
 ```
-IMMEDIATE (doctrine compliance):
-  1. GAP-01 — Feature flags in all 9 engines
-  2. GAP-02 — Workshop parametric geometry + cutting engine
-  3. GAP-03 — Wire cross-engine subscriptions
+COMPLETED ✅:
+  GAP-01 — Feature flags in all 9 engines
+  GAP-02 — Workshop parametric geometry + cutting engine (formula_engine.py)
+  GAP-03 — Wire cross-engine subscriptions (inventory, cash, accounting)
+  GAP-04 — Add missing primitives (actor, approval, workflow, document)
+  GAP-05 — Build Reporting/BI engine (engines/reporting/ — 43 tests)
+  GAP-06 — Procurement: Requisition + Payment steps
+  GAP-09 — Restaurant: kitchen workflow + split billing
 
-NEXT (roadmap completeness):
-  4. GAP-04 — Add missing primitives (actor, approval, workflow, document)
-  5. GAP-05 — Build Reporting/BI engine (engines/reporting/)
-  6. GAP-06 — Procurement: add Requisition + Payment steps
-
-THEN:
-  7. GAP-07 — Inventory FIFO/LIFO lot tracking
-  8. GAP-08 — HR payroll + ledger integration
-  9. GAP-09 — Restaurant kitchen workflow + split billing
+NEXT (medium priority):
+  GAP-07 — Inventory FIFO/LIFO lot tracking
+  GAP-08 — HR payroll + ledger integration
+  GAP-10 — Scope guards enforcement in engines
+  GAP-11 — Core stubs (audit, time, business, resilience, config)
+  GAP-12 — Invariant tests (boundary, determinism, replay, tenant isolation)
 
 THEN PHASES:
   Phase 8 — Security & Isolation
