@@ -31,6 +31,7 @@ from core.feature_flags.registry import (
     FLAG_ENABLE_WORKSHOP_ENGINE,
     FLAG_ENABLE_PROMOTION_ENGINE,
     FLAG_ENABLE_HR_ENGINE,
+    FLAG_ENABLE_REPORTING_ENGINE,
     resolve_flag_for_command,
 )
 
@@ -56,5 +57,6 @@ __all__ = [
     "FLAG_ENABLE_WORKSHOP_ENGINE",
     "FLAG_ENABLE_PROMOTION_ENGINE",
     "FLAG_ENABLE_HR_ENGINE",
+    "FLAG_ENABLE_REPORTING_ENGINE",
     "resolve_flag_for_command",
 ]

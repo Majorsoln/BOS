@@ -29,6 +29,7 @@ FLAG_ENABLE_RESTAURANT_ENGINE = "ENABLE_RESTAURANT_ENGINE"
 FLAG_ENABLE_WORKSHOP_ENGINE = "ENABLE_WORKSHOP_ENGINE"
 FLAG_ENABLE_PROMOTION_ENGINE = "ENABLE_PROMOTION_ENGINE"
 FLAG_ENABLE_HR_ENGINE = "ENABLE_HR_ENGINE"
+FLAG_ENABLE_REPORTING_ENGINE = "ENABLE_REPORTING_ENGINE"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -119,6 +120,11 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "hr.shift.start.request": FLAG_ENABLE_HR_ENGINE,
     "hr.shift.end.request": FLAG_ENABLE_HR_ENGINE,
     "hr.leave.request.request": FLAG_ENABLE_HR_ENGINE,
+
+    # ── Reporting / BI Engine ─────────────────────────────────
+    "reporting.snapshot.record.request": FLAG_ENABLE_REPORTING_ENGINE,
+    "reporting.kpi.record.request": FLAG_ENABLE_REPORTING_ENGINE,
+    "reporting.report.generate.request": FLAG_ENABLE_REPORTING_ENGINE,
 }
 
 
