@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
 from core.commands.base import Command
+from core.feature_flags.evaluator import FeatureFlagEvaluator
 from engines.inventory.commands import INVENTORY_COMMAND_TYPES
 from engines.inventory.events import (
     resolve_inventory_event_type,
@@ -157,6 +158,7 @@ class InventoryService:
         persist_event: PersistEventProtocol,
         event_type_registry,
         projection_store: InventoryProjectionStore | None = None,
+        feature_flag_provider=None,
     ):
         self._business_context = business_context
         self._command_bus = command_bus
@@ -164,6 +166,7 @@ class InventoryService:
         self._persist_event = persist_event
         self._event_type_registry = event_type_registry
         self._projection_store = projection_store or InventoryProjectionStore()
+        self._feature_flag_provider = feature_flag_provider
 
         register_inventory_event_types(self._event_type_registry)
         self._register_handlers()
@@ -181,6 +184,10 @@ class InventoryService:
         return bool(persist_result)
 
     def _execute_command(self, command: Command) -> InventoryExecutionResult:
+        ff = FeatureFlagEvaluator.evaluate(command, self._business_context, self._feature_flag_provider)
+        if not ff.allowed:
+            raise ValueError(f"Feature disabled: {ff.message}")
+
         event_type = resolve_inventory_event_type(command.command_type)
         if event_type is None:
             raise ValueError(

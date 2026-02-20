@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
 from core.commands.base import Command
+from core.feature_flags.evaluator import FeatureFlagEvaluator
 from engines.restaurant.commands import RESTAURANT_COMMAND_TYPES
 from engines.restaurant.events import (
     resolve_restaurant_event_type, register_restaurant_event_types,
@@ -117,13 +118,15 @@ class RestaurantService:
                  event_factory: EventFactoryProtocol,
                  persist_event: PersistEventProtocol,
                  event_type_registry,
-                 projection_store: RestaurantProjectionStore | None = None):
+                 projection_store: RestaurantProjectionStore | None = None,
+                 feature_flag_provider=None):
         self._business_context = business_context
         self._command_bus = command_bus
         self._event_factory = event_factory
         self._persist_event = persist_event
         self._event_type_registry = event_type_registry
         self._projection_store = projection_store or RestaurantProjectionStore()
+        self._feature_flag_provider = feature_flag_provider
         register_restaurant_event_types(self._event_type_registry)
         handler = _RestaurantCommandHandler(self)
         for ct in sorted(RESTAURANT_COMMAND_TYPES):
@@ -137,6 +140,10 @@ class RestaurantService:
         return bool(r)
 
     def _execute_command(self, command: Command) -> RestaurantExecutionResult:
+        ff = FeatureFlagEvaluator.evaluate(command, self._business_context, self._feature_flag_provider)
+        if not ff.allowed:
+            raise ValueError(f"Feature disabled: {ff.message}")
+
         event_type = resolve_restaurant_event_type(command.command_type)
         if event_type is None:
             raise ValueError(f"Unsupported: {command.command_type}")

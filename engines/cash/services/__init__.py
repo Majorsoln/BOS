@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
 from core.commands.base import Command
+from core.feature_flags.evaluator import FeatureFlagEvaluator
 from engines.cash.commands import CASH_COMMAND_TYPES
 from engines.cash.events import (
     resolve_cash_event_type,
@@ -167,6 +168,7 @@ class CashService:
         persist_event: PersistEventProtocol,
         event_type_registry,
         projection_store: CashProjectionStore | None = None,
+        feature_flag_provider=None,
     ):
         self._business_context = business_context
         self._command_bus = command_bus
@@ -174,6 +176,7 @@ class CashService:
         self._persist_event = persist_event
         self._event_type_registry = event_type_registry
         self._projection_store = projection_store or CashProjectionStore()
+        self._feature_flag_provider = feature_flag_provider
 
         register_cash_event_types(self._event_type_registry)
         self._register_handlers()
@@ -191,6 +194,10 @@ class CashService:
         return bool(persist_result)
 
     def _execute_command(self, command: Command) -> CashExecutionResult:
+        ff = FeatureFlagEvaluator.evaluate(command, self._business_context, self._feature_flag_provider)
+        if not ff.allowed:
+            raise ValueError(f"Feature disabled: {ff.message}")
+
         event_type = resolve_cash_event_type(command.command_type)
         if event_type is None:
             raise ValueError(

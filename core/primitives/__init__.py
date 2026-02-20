@@ -18,4 +18,8 @@ Primitives:
     inventory   — Stock movement abstraction (in/out/transfer/adjust)
     party       — Customer, vendor, staff party abstraction
     obligation  — Payment/delivery obligation lifecycle tracking
+    actor       — Identity building block (Human/System/Device/AI)
+    approval    — Approval lifecycle (request → decision → outcome)
+    workflow    — Generic state machine (CREATED→...→DONE)
+    document    — Lightweight document reference (hash-verified pointer)
 """

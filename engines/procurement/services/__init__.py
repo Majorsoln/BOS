@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
 from core.commands.base import Command
+from core.feature_flags.evaluator import FeatureFlagEvaluator
 from engines.procurement.commands import PROCUREMENT_COMMAND_TYPES
 from engines.procurement.events import (
     resolve_procurement_event_type,
@@ -161,6 +162,7 @@ class ProcurementService:
         persist_event: PersistEventProtocol,
         event_type_registry,
         projection_store: ProcurementProjectionStore | None = None,
+        feature_flag_provider=None,
     ):
         self._business_context = business_context
         self._command_bus = command_bus
@@ -168,6 +170,7 @@ class ProcurementService:
         self._persist_event = persist_event
         self._event_type_registry = event_type_registry
         self._projection_store = projection_store or ProcurementProjectionStore()
+        self._feature_flag_provider = feature_flag_provider
 
         register_procurement_event_types(self._event_type_registry)
         self._register_handlers()
@@ -185,6 +188,10 @@ class ProcurementService:
         return bool(persist_result)
 
     def _execute_command(self, command: Command) -> ProcurementExecutionResult:
+        ff = FeatureFlagEvaluator.evaluate(command, self._business_context, self._feature_flag_provider)
+        if not ff.allowed:
+            raise ValueError(f"Feature disabled: {ff.message}")
+
         event_type = resolve_procurement_event_type(command.command_type)
         if event_type is None:
             raise ValueError(

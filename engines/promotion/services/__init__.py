@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
 from core.commands.base import Command
+from core.feature_flags.evaluator import FeatureFlagEvaluator
 from engines.promotion.commands import PROMOTION_COMMAND_TYPES
 from engines.promotion.events import (
     resolve_promotion_event_type, register_promotion_event_types,
@@ -101,13 +102,15 @@ class PromotionService:
                  event_factory: EventFactoryProtocol,
                  persist_event: PersistEventProtocol,
                  event_type_registry,
-                 projection_store: PromotionProjectionStore | None = None):
+                 projection_store: PromotionProjectionStore | None = None,
+                 feature_flag_provider=None):
         self._business_context = business_context
         self._command_bus = command_bus
         self._event_factory = event_factory
         self._persist_event = persist_event
         self._event_type_registry = event_type_registry
         self._projection_store = projection_store or PromotionProjectionStore()
+        self._feature_flag_provider = feature_flag_provider
         register_promotion_event_types(self._event_type_registry)
         handler = _PromotionCommandHandler(self)
         for ct in sorted(PROMOTION_COMMAND_TYPES):
@@ -121,6 +124,10 @@ class PromotionService:
         return bool(r)
 
     def _execute_command(self, command: Command) -> PromotionExecutionResult:
+        ff = FeatureFlagEvaluator.evaluate(command, self._business_context, self._feature_flag_provider)
+        if not ff.allowed:
+            raise ValueError(f"Feature disabled: {ff.message}")
+
         event_type = resolve_promotion_event_type(command.command_type)
         if event_type is None:
             raise ValueError(f"Unsupported: {command.command_type}")

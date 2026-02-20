@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
 from core.commands.base import Command
+from core.feature_flags.evaluator import FeatureFlagEvaluator
 from engines.retail.commands import RETAIL_COMMAND_TYPES
 from engines.retail.events import (
     resolve_retail_event_type,
@@ -192,6 +193,7 @@ class RetailService:
         persist_event: PersistEventProtocol,
         event_type_registry,
         projection_store: RetailProjectionStore | None = None,
+        feature_flag_provider=None,
     ):
         self._business_context = business_context
         self._command_bus = command_bus
@@ -199,6 +201,7 @@ class RetailService:
         self._persist_event = persist_event
         self._event_type_registry = event_type_registry
         self._projection_store = projection_store or RetailProjectionStore()
+        self._feature_flag_provider = feature_flag_provider
 
         register_retail_event_types(self._event_type_registry)
         self._register_handlers()
@@ -216,6 +219,10 @@ class RetailService:
         return bool(persist_result)
 
     def _execute_command(self, command: Command) -> RetailExecutionResult:
+        ff = FeatureFlagEvaluator.evaluate(command, self._business_context, self._feature_flag_provider)
+        if not ff.allowed:
+            raise ValueError(f"Feature disabled: {ff.message}")
+
         event_type = resolve_retail_event_type(command.command_type)
         if event_type is None:
             raise ValueError(
