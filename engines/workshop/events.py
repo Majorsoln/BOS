@@ -13,6 +13,9 @@ WORKSHOP_JOB_ASSIGNED_V1 = "workshop.job.assigned.v1"
 WORKSHOP_JOB_STARTED_V1 = "workshop.job.started.v1"
 WORKSHOP_JOB_COMPLETED_V1 = "workshop.job.completed.v1"
 WORKSHOP_JOB_INVOICED_V1 = "workshop.job.invoiced.v1"
+WORKSHOP_CUTLIST_GENERATED_V1 = "workshop.cutlist.generated.v1"
+WORKSHOP_MATERIAL_CONSUMED_V1 = "workshop.material.consumed.v1"
+WORKSHOP_OFFCUT_RECORDED_V1 = "workshop.offcut.recorded.v1"
 
 WORKSHOP_EVENT_TYPES = (
     WORKSHOP_JOB_CREATED_V1,
@@ -20,6 +23,9 @@ WORKSHOP_EVENT_TYPES = (
     WORKSHOP_JOB_STARTED_V1,
     WORKSHOP_JOB_COMPLETED_V1,
     WORKSHOP_JOB_INVOICED_V1,
+    WORKSHOP_CUTLIST_GENERATED_V1,
+    WORKSHOP_MATERIAL_CONSUMED_V1,
+    WORKSHOP_OFFCUT_RECORDED_V1,
 )
 
 COMMAND_TO_EVENT_TYPE = {
@@ -28,6 +34,9 @@ COMMAND_TO_EVENT_TYPE = {
     "workshop.job.start.request": WORKSHOP_JOB_STARTED_V1,
     "workshop.job.complete.request": WORKSHOP_JOB_COMPLETED_V1,
     "workshop.job.invoice.request": WORKSHOP_JOB_INVOICED_V1,
+    "workshop.cutlist.generate.request": WORKSHOP_CUTLIST_GENERATED_V1,
+    "workshop.material.consume.request": WORKSHOP_MATERIAL_CONSUMED_V1,
+    "workshop.offcut.record.request": WORKSHOP_OFFCUT_RECORDED_V1,
 }
 
 
@@ -101,5 +110,47 @@ def build_job_invoiced_payload(command: Command) -> dict:
         "amount": command.payload["amount"],
         "currency": command.payload["currency"],
         "invoiced_at": command.issued_at,
+    })
+    return p
+
+
+def build_cutlist_generated_payload(command: Command) -> dict:
+    p = _base_payload(command)
+    p.update({
+        "cutlist_id": command.payload["cutlist_id"],
+        "job_id": command.payload["job_id"],
+        "style_id": command.payload["style_id"],
+        "dimensions": command.payload["dimensions"],
+        "unit_quantity": command.payload.get("unit_quantity", 1),
+        "pieces": command.payload["pieces"],
+        "material_requirements": command.payload["material_requirements"],
+        "generated_at": command.issued_at,
+    })
+    return p
+
+
+def build_material_consumed_payload(command: Command) -> dict:
+    p = _base_payload(command)
+    p.update({
+        "consumption_id": command.payload["consumption_id"],
+        "job_id": command.payload["job_id"],
+        "cutlist_id": command.payload.get("cutlist_id"),
+        "material_id": command.payload["material_id"],
+        "quantity_used": command.payload["quantity_used"],
+        "unit": command.payload["unit"],
+        "consumed_at": command.issued_at,
+    })
+    return p
+
+
+def build_offcut_recorded_payload(command: Command) -> dict:
+    p = _base_payload(command)
+    p.update({
+        "offcut_id": command.payload["offcut_id"],
+        "job_id": command.payload["job_id"],
+        "material_id": command.payload["material_id"],
+        "length_mm": command.payload["length_mm"],
+        "location_id": command.payload.get("location_id"),
+        "recorded_at": command.issued_at,
     })
     return p

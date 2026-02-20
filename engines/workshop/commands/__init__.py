@@ -18,6 +18,9 @@ WORKSHOP_JOB_ASSIGN_REQUEST = "workshop.job.assign.request"
 WORKSHOP_JOB_START_REQUEST = "workshop.job.start.request"
 WORKSHOP_JOB_COMPLETE_REQUEST = "workshop.job.complete.request"
 WORKSHOP_JOB_INVOICE_REQUEST = "workshop.job.invoice.request"
+WORKSHOP_CUTLIST_GENERATE_REQUEST = "workshop.cutlist.generate.request"
+WORKSHOP_MATERIAL_CONSUME_REQUEST = "workshop.material.consume.request"
+WORKSHOP_OFFCUT_RECORD_REQUEST = "workshop.offcut.record.request"
 
 WORKSHOP_COMMAND_TYPES = frozenset({
     WORKSHOP_JOB_CREATE_REQUEST,
@@ -25,7 +28,12 @@ WORKSHOP_COMMAND_TYPES = frozenset({
     WORKSHOP_JOB_START_REQUEST,
     WORKSHOP_JOB_COMPLETE_REQUEST,
     WORKSHOP_JOB_INVOICE_REQUEST,
+    WORKSHOP_CUTLIST_GENERATE_REQUEST,
+    WORKSHOP_MATERIAL_CONSUME_REQUEST,
+    WORKSHOP_OFFCUT_RECORD_REQUEST,
 })
+
+VALID_MATERIAL_UNITS = frozenset({"MM", "M", "SQM", "SHT", "PC", "KG"})
 
 
 def _cmd(ct, payload, *, business_id, actor_type, actor_id,
@@ -148,4 +156,104 @@ class JobInvoiceRequest:
         return _cmd(WORKSHOP_JOB_INVOICE_REQUEST, {
             "job_id": self.job_id, "invoice_id": self.invoice_id,
             "amount": self.amount, "currency": self.currency,
+        }, branch_id=self.branch_id, **kw)
+
+
+@dataclass(frozen=True)
+class GenerateCutListRequest:
+    """Generate a cut list from a style definition for a job."""
+    cutlist_id: str
+    job_id: str
+    style_id: str
+    dimensions: dict  # {"W": int, "H": int, ...}
+    pieces: list      # computed piece list (from formula_engine.compute_pieces)
+    material_requirements: dict  # from formula_engine.generate_cut_list
+    unit_quantity: int = 1
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.cutlist_id:
+            raise ValueError("cutlist_id must be non-empty.")
+        if not self.job_id:
+            raise ValueError("job_id must be non-empty.")
+        if not self.style_id:
+            raise ValueError("style_id must be non-empty.")
+        if not isinstance(self.dimensions, dict) or not self.dimensions:
+            raise ValueError("dimensions must be a non-empty dict.")
+        if not isinstance(self.unit_quantity, int) or self.unit_quantity <= 0:
+            raise ValueError("unit_quantity must be a positive integer.")
+
+    def to_command(self, **kw) -> Command:
+        return _cmd(WORKSHOP_CUTLIST_GENERATE_REQUEST, {
+            "cutlist_id": self.cutlist_id,
+            "job_id": self.job_id,
+            "style_id": self.style_id,
+            "dimensions": self.dimensions,
+            "unit_quantity": self.unit_quantity,
+            "pieces": self.pieces,
+            "material_requirements": self.material_requirements,
+        }, branch_id=self.branch_id, **kw)
+
+
+@dataclass(frozen=True)
+class MaterialConsumeRequest:
+    """Record consumption of material stock against a job."""
+    consumption_id: str
+    job_id: str
+    material_id: str
+    quantity_used: int
+    unit: str
+    cutlist_id: Optional[str] = None
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.consumption_id:
+            raise ValueError("consumption_id must be non-empty.")
+        if not self.job_id:
+            raise ValueError("job_id must be non-empty.")
+        if not self.material_id:
+            raise ValueError("material_id must be non-empty.")
+        if not isinstance(self.quantity_used, int) or self.quantity_used <= 0:
+            raise ValueError("quantity_used must be a positive integer.")
+        if self.unit not in VALID_MATERIAL_UNITS:
+            raise ValueError(f"unit must be one of {sorted(VALID_MATERIAL_UNITS)}.")
+
+    def to_command(self, **kw) -> Command:
+        return _cmd(WORKSHOP_MATERIAL_CONSUME_REQUEST, {
+            "consumption_id": self.consumption_id,
+            "job_id": self.job_id,
+            "material_id": self.material_id,
+            "quantity_used": self.quantity_used,
+            "unit": self.unit,
+            "cutlist_id": self.cutlist_id,
+        }, branch_id=self.branch_id, **kw)
+
+
+@dataclass(frozen=True)
+class OffcutRecordRequest:
+    """Record a usable offcut piece returned to stock after cutting."""
+    offcut_id: str
+    job_id: str
+    material_id: str
+    length_mm: int
+    location_id: Optional[str] = None
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.offcut_id:
+            raise ValueError("offcut_id must be non-empty.")
+        if not self.job_id:
+            raise ValueError("job_id must be non-empty.")
+        if not self.material_id:
+            raise ValueError("material_id must be non-empty.")
+        if not isinstance(self.length_mm, int) or self.length_mm <= 0:
+            raise ValueError("length_mm must be a positive integer.")
+
+    def to_command(self, **kw) -> Command:
+        return _cmd(WORKSHOP_OFFCUT_RECORD_REQUEST, {
+            "offcut_id": self.offcut_id,
+            "job_id": self.job_id,
+            "material_id": self.material_id,
+            "length_mm": self.length_mm,
+            "location_id": self.location_id,
         }, branch_id=self.branch_id, **kw)

@@ -102,6 +102,9 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "workshop.job.complete.request": FLAG_ENABLE_WORKSHOP_ENGINE,
     "workshop.job.invoice.request": FLAG_ENABLE_WORKSHOP_ENGINE,
     "workshop.production.execute.request": FLAG_ENABLE_WORKSHOP_ENGINE,
+    "workshop.cutlist.generate.request": FLAG_ENABLE_WORKSHOP_ENGINE,
+    "workshop.material.consume.request": FLAG_ENABLE_WORKSHOP_ENGINE,
+    "workshop.offcut.record.request": FLAG_ENABLE_WORKSHOP_ENGINE,
 
     # ── Promotion Engine ──────────────────────────────────────
     "promotion.campaign.create.request": FLAG_ENABLE_PROMOTION_ENGINE,

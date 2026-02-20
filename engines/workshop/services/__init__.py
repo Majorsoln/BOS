@@ -15,6 +15,8 @@ from engines.workshop.events import (
     build_job_created_payload, build_job_assigned_payload,
     build_job_started_payload, build_job_completed_payload,
     build_job_invoiced_payload,
+    build_cutlist_generated_payload, build_material_consumed_payload,
+    build_offcut_recorded_payload,
 )
 
 
@@ -29,6 +31,8 @@ class WorkshopProjectionStore:
     def __init__(self):
         self._events: List[dict] = []
         self._jobs: Dict[str, dict] = {}
+        self._cutlists: Dict[str, dict] = {}
+        self._offcuts: Dict[str, dict] = {}
         self._total_revenue: int = 0
 
     def apply(self, event_type: str, payload: dict) -> None:
@@ -58,9 +62,43 @@ class WorkshopProjectionStore:
             if jid in self._jobs:
                 self._jobs[jid]["status"] = "INVOICED"
                 self._total_revenue += payload["amount"]
+        elif event_type.startswith("workshop.cutlist.generated"):
+            clid = payload["cutlist_id"]
+            self._cutlists[clid] = {
+                "job_id": payload["job_id"],
+                "style_id": payload["style_id"],
+                "dimensions": payload["dimensions"],
+                "unit_quantity": payload.get("unit_quantity", 1),
+                "material_requirements": payload["material_requirements"],
+            }
+            jid = payload["job_id"]
+            if jid in self._jobs:
+                self._jobs[jid].setdefault("cutlists", []).append(clid)
+        elif event_type.startswith("workshop.material.consumed"):
+            jid = payload["job_id"]
+            if jid in self._jobs:
+                self._jobs[jid].setdefault("consumed_materials", []).append({
+                    "consumption_id": payload["consumption_id"],
+                    "material_id": payload["material_id"],
+                    "quantity_used": payload["quantity_used"],
+                    "unit": payload["unit"],
+                })
+        elif event_type.startswith("workshop.offcut.recorded"):
+            self._offcuts[payload["offcut_id"]] = {
+                "job_id": payload["job_id"],
+                "material_id": payload["material_id"],
+                "length_mm": payload["length_mm"],
+                "location_id": payload.get("location_id"),
+            }
 
     def get_job(self, job_id: str) -> Optional[dict]:
         return self._jobs.get(job_id)
+
+    def get_cutlist(self, cutlist_id: str) -> Optional[dict]:
+        return self._cutlists.get(cutlist_id)
+
+    def get_offcut(self, offcut_id: str) -> Optional[dict]:
+        return self._offcuts.get(offcut_id)
 
     @property
     def total_revenue(self) -> int:
@@ -77,6 +115,9 @@ PAYLOAD_BUILDERS = {
     "workshop.job.start.request": build_job_started_payload,
     "workshop.job.complete.request": build_job_completed_payload,
     "workshop.job.invoice.request": build_job_invoiced_payload,
+    "workshop.cutlist.generate.request": build_cutlist_generated_payload,
+    "workshop.material.consume.request": build_material_consumed_payload,
+    "workshop.offcut.record.request": build_offcut_recorded_payload,
 }
 
 
