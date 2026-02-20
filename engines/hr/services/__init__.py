@@ -14,7 +14,7 @@ from engines.hr.events import (
     resolve_hr_event_type, register_hr_event_types,
     build_employee_onboarded_payload, build_employee_terminated_payload,
     build_shift_started_payload, build_shift_ended_payload,
-    build_leave_requested_payload,
+    build_leave_requested_payload, build_payroll_run_payload,
 )
 
 class EventFactoryProtocol(Protocol):
@@ -28,7 +28,10 @@ class HRProjectionStore:
     def __init__(self):
         self._events: List[dict] = []
         self._employees: Dict[str, dict] = {}
+        self._payrolls: Dict[str, dict] = {}   # payroll_id → payroll data
         self._total_hours: int = 0
+        self._total_gross_pay: int = 0
+        self._total_net_pay: int = 0
 
     def apply(self, event_type: str, payload: dict) -> None:
         self._events.append({"event_type": event_type, "payload": payload})
@@ -48,13 +51,41 @@ class HRProjectionStore:
             if eid in self._employees:
                 leaves = self._employees[eid].setdefault("leaves", [])
                 leaves.append(payload["leave_id"])
+        elif event_type.startswith("hr.payroll.run"):
+            pid = payload["payroll_id"]
+            eid = payload["employee_id"]
+            self._payrolls[pid] = {
+                "employee_id": eid,
+                "period_start": payload["period_start"],
+                "period_end": payload["period_end"],
+                "gross_pay": payload["gross_pay"],
+                "net_pay": payload["net_pay"],
+                "currency": payload["currency"],
+                "deductions": payload.get("deductions", {}),
+            }
+            self._total_gross_pay += payload["gross_pay"]
+            self._total_net_pay += payload["net_pay"]
+            if eid in self._employees:
+                payrolls = self._employees[eid].setdefault("payrolls", [])
+                payrolls.append(pid)
 
     def get_employee(self, employee_id: str) -> Optional[dict]:
         return self._employees.get(employee_id)
 
+    def get_payroll(self, payroll_id: str) -> Optional[dict]:
+        return self._payrolls.get(payroll_id)
+
     @property
     def total_hours(self) -> int:
         return self._total_hours
+
+    @property
+    def total_gross_pay(self) -> int:
+        return self._total_gross_pay
+
+    @property
+    def total_net_pay(self) -> int:
+        return self._total_net_pay
 
     @property
     def event_count(self) -> int:
@@ -67,6 +98,7 @@ PAYLOAD_BUILDERS = {
     "hr.shift.start.request": build_shift_started_payload,
     "hr.shift.end.request": build_shift_ended_payload,
     "hr.leave.request.request": build_leave_requested_payload,
+    "hr.payroll.run.request": build_payroll_run_payload,
 }
 
 

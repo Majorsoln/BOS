@@ -120,6 +120,7 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "hr.shift.start.request": FLAG_ENABLE_HR_ENGINE,
     "hr.shift.end.request": FLAG_ENABLE_HR_ENGINE,
     "hr.leave.request.request": FLAG_ENABLE_HR_ENGINE,
+    "hr.payroll.run.request": FLAG_ENABLE_HR_ENGINE,
 
     # ── Reporting / BI Engine ─────────────────────────────────
     "reporting.snapshot.record.request": FLAG_ENABLE_REPORTING_ENGINE,

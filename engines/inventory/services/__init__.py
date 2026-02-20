@@ -22,6 +22,7 @@ from engines.inventory.events import (
     build_item_registered_payload,
     build_item_updated_payload,
 )
+from engines.inventory.lot_engine import LotStore, ValuationMethod
 
 
 # ══════════════════════════════════════════════════════════════
@@ -47,36 +48,100 @@ class PersistEventProtocol(Protocol):
 # ══════════════════════════════════════════════════════════════
 
 class InventoryProjectionStore:
-    """In-memory projection store for inventory state."""
+    """
+    In-memory projection store for inventory state.
 
-    def __init__(self):
+    Tracks both simple quantity-level stock and lot-level FIFO/LIFO valuation.
+    Lot tracking is activated when stock.received events include a unit_cost.
+    """
+
+    def __init__(self, default_valuation: ValuationMethod = ValuationMethod.FIFO):
         self._events: List[dict] = []
-        self._stock: Dict[tuple, int] = {}
+        self._stock: Dict[tuple, int] = {}          # (item_id, location_id) → qty
         self._items: Dict[str, dict] = {}
+        self._lot_store: LotStore = LotStore(default_method=default_valuation)
+
+    def set_item_valuation(self, item_id: str, method: ValuationMethod) -> None:
+        """Override the valuation method for a specific item (FIFO / LIFO / WAC)."""
+        self._lot_store.set_item_method(item_id, method)
 
     def apply(self, event_type: str, payload: dict) -> None:
         self._events.append({"event_type": event_type, "payload": payload})
 
         if event_type.startswith("inventory.stock.received"):
-            key = (payload["item_id"], payload["location_id"])
-            self._stock[key] = self._stock.get(key, 0) + payload["quantity"]
+            item_id = payload["item_id"]
+            loc_id = payload["location_id"]
+            qty = payload["quantity"]
+            key = (item_id, loc_id)
+            self._stock[key] = self._stock.get(key, 0) + qty
+
+            # Lot tracking — only when unit_cost is present
+            unit_cost_data = payload.get("unit_cost")
+            if unit_cost_data is not None:
+                unit_cost_int = (
+                    unit_cost_data.get("amount", 0)
+                    if isinstance(unit_cost_data, dict)
+                    else int(unit_cost_data)
+                )
+                received_at = str(payload.get("received_at", ""))
+                ref_id = payload.get("reference_id")
+                self._lot_store.receive(
+                    item_id=item_id,
+                    location_id=loc_id,
+                    quantity=qty,
+                    unit_cost=unit_cost_int,
+                    received_at=received_at,
+                    reference_id=ref_id,
+                )
 
         elif event_type.startswith("inventory.stock.issued"):
-            key = (payload["item_id"], payload["location_id"])
-            self._stock[key] = self._stock.get(key, 0) - payload["quantity"]
+            item_id = payload["item_id"]
+            loc_id = payload["location_id"]
+            qty = payload["quantity"]
+            key = (item_id, loc_id)
+            self._stock[key] = self._stock.get(key, 0) - qty
+            # Consume from lot store (uses item's configured method, default FIFO)
+            self._lot_store.consume(item_id=item_id, location_id=loc_id, quantity=qty)
 
         elif event_type.startswith("inventory.stock.transferred"):
-            from_key = (payload["item_id"], payload["from_location_id"])
-            to_key = (payload["item_id"], payload["to_location_id"])
-            self._stock[from_key] = self._stock.get(from_key, 0) - payload["quantity"]
-            self._stock[to_key] = self._stock.get(to_key, 0) + payload["quantity"]
+            item_id = payload["item_id"]
+            from_key = (item_id, payload["from_location_id"])
+            to_key = (item_id, payload["to_location_id"])
+            qty = payload["quantity"]
+            self._stock[from_key] = self._stock.get(from_key, 0) - qty
+            self._stock[to_key] = self._stock.get(to_key, 0) + qty
+            # Move cost from source lots to destination (FIFO consume + re-receive at WAC)
+            result = self._lot_store.consume(
+                item_id=item_id, location_id=payload["from_location_id"], quantity=qty
+            )
+            if result.quantity_consumed > 0:
+                avg_cost = result.cost_per_unit
+                self._lot_store.receive(
+                    item_id=item_id,
+                    location_id=payload["to_location_id"],
+                    quantity=result.quantity_consumed,
+                    unit_cost=avg_cost,
+                    received_at=str(payload.get("transferred_at", "")),
+                    reference_id=payload.get("reference_id"),
+                )
 
         elif event_type.startswith("inventory.stock.adjusted"):
-            key = (payload["item_id"], payload["location_id"])
+            item_id = payload["item_id"]
+            loc_id = payload["location_id"]
+            qty = payload["quantity"]
+            key = (item_id, loc_id)
             if payload["adjustment_type"] == "ADJUST_PLUS":
-                self._stock[key] = self._stock.get(key, 0) + payload["quantity"]
+                self._stock[key] = self._stock.get(key, 0) + qty
+                # Adjustments in at zero cost (cannot determine true cost of found stock)
+                self._lot_store.receive(
+                    item_id=item_id, location_id=loc_id,
+                    quantity=qty, unit_cost=0,
+                    received_at=str(payload.get("adjusted_at", "")),
+                    reference_id=payload.get("reference_id"),
+                )
             else:
-                self._stock[key] = self._stock.get(key, 0) - payload["quantity"]
+                self._stock[key] = self._stock.get(key, 0) - qty
+                self._lot_store.consume(item_id=item_id, location_id=loc_id, quantity=qty)
 
         elif event_type.startswith("inventory.item.registered"):
             self._items[payload["item_id"]] = payload
@@ -85,11 +150,39 @@ class InventoryProjectionStore:
             if payload["item_id"] in self._items:
                 self._items[payload["item_id"]].update(payload.get("changes", {}))
 
+    # ── Simple stock queries ───────────────────────────────────
+
     def get_stock(self, item_id: str, location_id: str) -> int:
         return self._stock.get((item_id, location_id), 0)
 
     def get_item(self, item_id: str) -> Optional[dict]:
         return self._items.get(item_id)
+
+    # ── Lot-level valuation queries ───────────────────────────
+
+    def get_stock_value(self, item_id: str, location_id: str) -> int:
+        """Total value of stock on hand at this location (minor currency units)."""
+        return self._lot_store.get_stock_value(item_id, location_id)
+
+    def get_weighted_average_cost(self, item_id: str, location_id: str) -> int:
+        """Weighted average cost per unit for this item/location."""
+        return self._lot_store.get_weighted_average_cost(item_id, location_id)
+
+    def get_lots(self, item_id: str, location_id: str):
+        """All lots (including exhausted) for this item/location."""
+        return self._lot_store.get_lots(item_id, location_id)
+
+    def get_active_lots(self, item_id: str, location_id: str):
+        """Only lots with remaining stock."""
+        return self._lot_store.get_active_lots(item_id, location_id)
+
+    def total_inventory_value(self) -> int:
+        """Total value of all stock on hand across all items and locations."""
+        return self._lot_store.total_inventory_value()
+
+    @property
+    def lot_store(self) -> LotStore:
+        return self._lot_store
 
     @property
     def event_count(self) -> int:

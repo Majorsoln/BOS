@@ -13,6 +13,7 @@ HR_EMPLOYEE_TERMINATED_V1 = "hr.employee.terminated.v1"
 HR_SHIFT_STARTED_V1 = "hr.shift.started.v1"
 HR_SHIFT_ENDED_V1 = "hr.shift.ended.v1"
 HR_LEAVE_REQUESTED_V1 = "hr.leave.requested.v1"
+HR_PAYROLL_RUN_V1 = "hr.payroll.run.v1"
 
 HR_EVENT_TYPES = (
     HR_EMPLOYEE_ONBOARDED_V1,
@@ -20,6 +21,7 @@ HR_EVENT_TYPES = (
     HR_SHIFT_STARTED_V1,
     HR_SHIFT_ENDED_V1,
     HR_LEAVE_REQUESTED_V1,
+    HR_PAYROLL_RUN_V1,
 )
 
 COMMAND_TO_EVENT_TYPE = {
@@ -28,6 +30,7 @@ COMMAND_TO_EVENT_TYPE = {
     "hr.shift.start.request": HR_SHIFT_STARTED_V1,
     "hr.shift.end.request": HR_SHIFT_ENDED_V1,
     "hr.leave.request.request": HR_LEAVE_REQUESTED_V1,
+    "hr.payroll.run.request": HR_PAYROLL_RUN_V1,
 }
 
 
@@ -102,5 +105,22 @@ def build_leave_requested_payload(command: Command) -> dict:
         "start_date": command.payload["start_date"],
         "end_date": command.payload["end_date"],
         "requested_at": command.issued_at,
+    })
+    return p
+
+
+def build_payroll_run_payload(command: Command) -> dict:
+    p = _base_payload(command)
+    p.update({
+        "payroll_id": command.payload["payroll_id"],
+        "employee_id": command.payload["employee_id"],
+        "period_start": command.payload["period_start"],
+        "period_end": command.payload["period_end"],
+        "gross_pay": command.payload["gross_pay"],
+        "deductions": command.payload.get("deductions", {}),
+        "net_pay": command.payload["net_pay"],
+        "currency": command.payload["currency"],
+        "notes": command.payload.get("notes", ""),
+        "run_at": command.issued_at,
     })
     return p

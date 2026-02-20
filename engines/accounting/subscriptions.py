@@ -27,11 +27,15 @@ DEFAULT_AP_ACCOUNT = "AP_TRADE"
 DEFAULT_CASH_ACCOUNT = "CASH_ON_HAND"
 DEFAULT_AR_ACCOUNT = "AR_TRADE"
 DEFAULT_REVENUE_ACCOUNT = "REVENUE_SALES"
+DEFAULT_WAGES_EXPENSE_ACCOUNT = "WAGES_EXPENSE"
+DEFAULT_WAGES_PAYABLE_ACCOUNT = "WAGES_PAYABLE"
+DEFAULT_TAX_PAYABLE_ACCOUNT = "TAX_PAYABLE"
 
 
 ACCOUNTING_SUBSCRIPTIONS: Dict[str, str] = {
     "inventory.stock.received.v1": "handle_stock_received",
     "cash.payment.recorded.v1": "handle_payment_recorded",
+    "hr.payroll.run.v1": "handle_payroll_run",
 }
 
 
@@ -187,6 +191,87 @@ class AccountingSubscriptionHandler:
                 amount=int(amount),
                 currency=currency,
                 reference_id=f"PAYMENT:{payment_id}",
+                branch_id=branch_id,
+            )
+            command = request.to_command(
+                business_id=business_id,
+                actor_type="System",
+                actor_id="system:accounting.subscription",
+                command_id=uuid.uuid4(),
+                correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
+                issued_at=datetime.now(tz=timezone.utc),
+            )
+            self._accounting_service._execute_command(command)
+        except (KeyError, ValueError, TypeError):
+            return
+
+    def handle_payroll_run(self, event_data: dict) -> None:
+        """
+        When HR records a payroll run, post a wages journal entry.
+
+        Management entry (non-statutory):
+          DEBIT  Wages Expense    (gross_pay)
+          CREDIT Wages Payable    (net_pay)
+          CREDIT Tax Payable      (total_deductions)  — if deductions > 0
+
+        Event source: hr.payroll.run.v1
+        Payload fields used: business_id, employee_id, payroll_id,
+                             gross_pay, net_pay, deductions, currency
+        """
+        if self._accounting_service is None:
+            return
+
+        payload = event_data.get("payload", {})
+        business_id_raw = payload.get("business_id")
+        branch_id_raw = payload.get("branch_id")
+        employee_id = str(payload.get("employee_id", ""))
+        payroll_id = str(payload.get("payroll_id", ""))
+        gross_pay = int(payload.get("gross_pay", 0))
+        net_pay = int(payload.get("net_pay", 0))
+        currency = str(payload.get("currency", ""))
+        period_start = str(payload.get("period_start", ""))
+        period_end = str(payload.get("period_end", ""))
+
+        if not business_id_raw or not gross_pay or not currency:
+            return
+
+        try:
+            business_id = uuid.UUID(str(business_id_raw))
+            branch_id = uuid.UUID(str(branch_id_raw)) if branch_id_raw else None
+        except (ValueError, AttributeError):
+            return
+
+        total_deductions = gross_pay - net_pay
+
+        lines = [
+            {
+                "account_code": DEFAULT_WAGES_EXPENSE_ACCOUNT,
+                "side": "DEBIT",
+                "amount": gross_pay,
+                "description": f"Wages: {employee_id} ({period_start} to {period_end})",
+            },
+            {
+                "account_code": DEFAULT_WAGES_PAYABLE_ACCOUNT,
+                "side": "CREDIT",
+                "amount": net_pay,
+                "description": f"Net pay: {employee_id}",
+            },
+        ]
+        if total_deductions > 0:
+            lines.append({
+                "account_code": DEFAULT_TAX_PAYABLE_ACCOUNT,
+                "side": "CREDIT",
+                "amount": total_deductions,
+                "description": f"Payroll deductions: {employee_id}",
+            })
+
+        try:
+            request = JournalPostRequest(
+                entry_id=f"auto:payroll:{payroll_id}",
+                lines=tuple(lines),
+                memo=f"Auto-journal: payroll {payroll_id} for {employee_id} ({period_start}-{period_end})",
+                currency=currency,
+                reference_id=payroll_id or None,
                 branch_id=branch_id,
             )
             command = request.to_command(
