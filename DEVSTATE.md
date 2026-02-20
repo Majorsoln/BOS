@@ -307,4 +307,18 @@ git push -u origin claude/explain-codebase-mlsfr9vu6lpytugq-0E7ZN
 6. `policy_name` required in every `RejectionReason()` call
 
 ---
+
+## MASTER REFERENCE
+
+Full BOS specification synthesized from all 18 PDFs:
+→ **`BOS_MASTER_REFERENCE.md`** (root of repo)
+
+Read this at the start of any session to understand:
+- BOS identity and doctrine
+- All engine specifications (including Workshop formula engine in full detail)
+- AI guardrails
+- Scope policy matrix
+- Phase map and gaps
+
+---
 *"BOS is not an ERP. It is a deterministic, legally defensible business kernel."*
