@@ -93,6 +93,7 @@ class TestBillingService:
             SubscriptionResumeRequest,
             SubscriptionPlanChangeRequest,
             SubscriptionMarkDelinquentRequest,
+            SubscriptionClearDelinquencyRequest,
             UsageMeterRequest,
         )
 
@@ -175,6 +176,19 @@ class TestBillingService:
                 subscription_id=sub_id,
                 renewal_reference="ren-delinquent",
             ).to_command(**kw()))
+
+        clear_result = svc._execute_command(SubscriptionClearDelinquencyRequest(
+            subscription_id=sub_id,
+            clearance_reason="arrears settled",
+        ).to_command(**kw()))
+        assert clear_result.event_type == "billing.subscription.delinquency_cleared.v1"
+        assert svc.projection_store.get_subscription(sub_id)["status"] == "ACTIVE"
+
+        renew_after_clear_result = svc._execute_command(SubscriptionRenewRequest(
+            subscription_id=sub_id,
+            renewal_reference="ren-after-clear",
+        ).to_command(**kw()))
+        assert renew_after_clear_result.event_type == "billing.subscription.renewed.v1"
 
         cancel_result = svc._execute_command(SubscriptionCancelRequest(
             subscription_id=sub_id,
@@ -576,3 +590,57 @@ class TestBillingService:
                 period_start="2026-02-01",
                 period_end="2026-02-01",
             ).to_command(**kw()))
+
+    def test_clear_delinquency_requires_delinquent_status(self):
+        from engines.billing.commands import (
+            SubscriptionClearDelinquencyRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-clear-not-delinquent"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="not DELINQUENT"):
+            svc._execute_command(SubscriptionClearDelinquencyRequest(
+                subscription_id=sub_id,
+                clearance_reason="manual clear",
+            ).to_command(**kw()))
+
+    def test_clear_delinquency_allows_usage_again(self):
+        from engines.billing.commands import (
+            SubscriptionClearDelinquencyRequest,
+            SubscriptionMarkDelinquentRequest,
+            SubscriptionStartRequest,
+            UsageMeterRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-clear-usage"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionMarkDelinquentRequest(
+            subscription_id=sub_id,
+            delinquency_reason="arrears",
+        ).to_command(**kw()))
+
+        svc._execute_command(SubscriptionClearDelinquencyRequest(
+            subscription_id=sub_id,
+            clearance_reason="paid",
+        ).to_command(**kw()))
+
+        result = svc._execute_command(UsageMeterRequest(
+            subscription_id=sub_id,
+            metric_key="API_CALLS",
+            metric_value=3,
+            period_start="2026-02-01",
+            period_end="2026-02-01",
+        ).to_command(**kw()))
+        assert result.event_type == "billing.usage.metered.v1"
