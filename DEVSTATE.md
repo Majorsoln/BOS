@@ -1,6 +1,6 @@
 # BOS — Developer State File
 > Maintained by: Codex (Claude AI Engineer)
-> Last updated: Phase 10 Performance & Scale built — caching, projection registry, snapshots, read models, metrics — 1013+ tests passing
+> Last updated: Phase 11 Enterprise Admin built — tenant lifecycle, settings, dashboard — 1046+ tests passing
 > Read this file at the start of every session before touching any code.
 
 ---
@@ -30,7 +30,7 @@ Phase 7  ✅ AI & Decision Intel  (promotion ✅, HR ✅ payroll+ledger, AI advi
 Phase 8  ✅ Security & Isolation (tenant isolation, rate limiting, anomaly detection, guard pipeline)
 Phase 9  ✅ Integration Layer    (inbound adapters, outbound publishers, audit log, webhook verification, permissions)
 Phase 10 ✅ Performance & Scale  (caching, projection registry, snapshots, cross-engine read models, metrics, freshness guard)
-Phase 11 ❌ Enterprise Admin     (not started)
+Phase 11 ✅ Enterprise Admin     (tenant lifecycle, system settings, dashboard aggregation, health status)
 Phase 12 ❌ SaaS Productization  (not started)
 Phase 13 ❌ Documentation        (not started)
 ```
@@ -150,8 +150,16 @@ COMPLETED ✅:
   - Freshness Guard: StalenessPolicy + FreshnessCheck (SLA enforcement)
   - 62 performance tests passing
 
+COMPLETED ✅:
+  Phase 11 — Enterprise Admin
+  - Tenant Manager: create/activate/suspend/close lifecycle with valid transition enforcement
+  - Branch Management: add/close branches with operational state checks
+  - TenantProjection: in-memory projection rebuilt from 6 tenant event types
+  - System Settings: tax rules (configurable per business), system properties (key-value)
+  - Dashboard: SystemOverview (tenant counts by state), TenantSummary, TenantDetail, HealthStatus
+  - 33 admin tests passing
+
 NEXT:
-  Phase 11 — Enterprise Admin (admin dashboard, config management)
   Phase 12 — SaaS Productization (multi-tenant billing, onboarding)
   Phase 13 — Documentation (API docs, developer guide)
 ```
