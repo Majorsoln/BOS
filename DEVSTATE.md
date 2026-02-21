@@ -1,6 +1,6 @@
 # BOS — Developer State File
 > Maintained by: Codex (Claude AI Engineer)
-> Last updated: Phase 9 Integration Layer built — inbound/outbound adapters, audit log, webhook verification — 951+ tests passing
+> Last updated: Phase 10 Performance & Scale built — caching, projection registry, snapshots, read models, metrics — 1013+ tests passing
 > Read this file at the start of every session before touching any code.
 
 ---
@@ -29,7 +29,7 @@ Phase 6  ✅ Vertical Modules     (retail ✅, restaurant ✅ kitchen+split, wor
 Phase 7  ✅ AI & Decision Intel  (promotion ✅, HR ✅ payroll+ledger, AI advisory system ✅ guardrails+journal+advisors+simulation)
 Phase 8  ✅ Security & Isolation (tenant isolation, rate limiting, anomaly detection, guard pipeline)
 Phase 9  ✅ Integration Layer    (inbound adapters, outbound publishers, audit log, webhook verification, permissions)
-Phase 10 ❌ Performance & Scale  (not started)
+Phase 10 ✅ Performance & Scale  (caching, projection registry, snapshots, cross-engine read models, metrics, freshness guard)
 Phase 11 ❌ Enterprise Admin     (not started)
 Phase 12 ❌ SaaS Productization  (not started)
 Phase 13 ❌ Documentation        (not started)
@@ -140,8 +140,17 @@ COMPLETED ✅:
   - Permissions: IntegrationPermissionChecker (business-scoped grants)
   - 48 integration tests passing
 
+COMPLETED ✅:
+  Phase 10 — Performance & Scale
+  - Caching: TTLCache (LRU + TTL + event-driven tag invalidation + business-scoped flush)
+  - Projection Registry: central catalog, health tracking, event→projection index
+  - Snapshot Storage: append-only, time-travel queries, tenant-isolated
+  - Cross-Engine Read Models: retail, finance, inventory, restaurant, workshop
+  - Metrics: MetricsCollector (events/sec, rebuild duration, avg/peak apply time)
+  - Freshness Guard: StalenessPolicy + FreshnessCheck (SLA enforcement)
+  - 62 performance tests passing
+
 NEXT:
-  Phase 10 — Performance & Scale (caching, read models, projections)
   Phase 11 — Enterprise Admin (admin dashboard, config management)
   Phase 12 — SaaS Productization (multi-tenant billing, onboarding)
   Phase 13 — Documentation (API docs, developer guide)
