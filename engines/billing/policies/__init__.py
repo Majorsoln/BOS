@@ -82,3 +82,34 @@ def subscription_must_be_active_policy(command: Command, subscription_lookup) ->
             policy_name="subscription_must_be_active_policy",
         )
     return None
+
+
+def payment_reference_must_be_unique_policy(command: Command, payment_reference_exists) -> RejectionReason | None:
+    payment_reference = command.payload.get("payment_reference", "")
+    if not payment_reference:
+        return None
+    if payment_reference_exists(payment_reference):
+        return RejectionReason(
+            code="DUPLICATE_PAYMENT_REFERENCE",
+            message=f"payment_reference '{payment_reference}' already recorded.",
+            policy_name="payment_reference_must_be_unique_policy",
+        )
+    return None
+
+
+def subscription_must_not_be_cancelled_policy(command: Command, subscription_lookup) -> RejectionReason | None:
+    subscription_id = command.payload.get("subscription_id", "")
+    if not subscription_id:
+        return None
+
+    subscription = subscription_lookup(subscription_id)
+    if subscription is None:
+        return None
+
+    if subscription.get("status") == "CANCELLED":
+        return RejectionReason(
+            code="SUBSCRIPTION_CANCELLED",
+            message=f"Subscription '{subscription_id}' is CANCELLED and cannot transition.",
+            policy_name="subscription_must_not_be_cancelled_policy",
+        )
+    return None

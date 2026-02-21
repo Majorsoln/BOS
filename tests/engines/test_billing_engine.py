@@ -290,3 +290,59 @@ class TestBillingService:
         payload = result.event_data["payload"]
         assert payload["business_id"] == BIZ
         assert "branch_id" in payload
+
+    def test_duplicate_payment_reference_rejected(self):
+        from engines.billing.commands import (
+            PaymentRecordRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-pay-dup"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+
+        first = PaymentRecordRequest(
+            subscription_id=sub_id,
+            payment_reference="pay-dup",
+            amount_minor=1000,
+            currency="USD",
+        ).to_command(**kw())
+        svc._execute_command(first)
+
+        second = PaymentRecordRequest(
+            subscription_id=sub_id,
+            payment_reference="pay-dup",
+            amount_minor=2000,
+            currency="USD",
+        ).to_command(**kw())
+        with pytest.raises(ValueError, match="already recorded"):
+            svc._execute_command(second)
+
+    def test_renew_rejected_for_cancelled_subscription(self):
+        from engines.billing.commands import (
+            SubscriptionCancelRequest,
+            SubscriptionRenewRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-cancelled"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="GROWTH",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionCancelRequest(
+            subscription_id=sub_id,
+            cancellation_reason="closed account",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="CANCELLED"):
+            svc._execute_command(SubscriptionRenewRequest(
+                subscription_id=sub_id,
+                renewal_reference="ren-after-cancel",
+            ).to_command(**kw()))

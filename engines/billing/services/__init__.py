@@ -27,6 +27,8 @@ from engines.billing.policies import (
     subscription_must_not_exist_policy,
     subscription_must_be_active_policy,
     usage_metric_value_must_be_non_negative_policy,
+    payment_reference_must_be_unique_policy,
+    subscription_must_not_be_cancelled_policy,
 )
 
 
@@ -44,6 +46,7 @@ class BillingProjectionStore:
         self._current_plan: Optional[dict] = None
         self._subscriptions: Dict[str, dict] = {}
         self._usage_totals: Dict[str, int] = {}
+        self._payment_references: set[str] = set()
 
     def apply(self, event_type: str, payload: dict) -> None:
         self._events.append({"event_type": event_type, "payload": payload})
@@ -64,6 +67,7 @@ class BillingProjectionStore:
             subscription = self._subscriptions.get(payload["subscription_id"])
             if subscription is not None:
                 subscription["paid_minor"] += payload["amount_minor"]
+            self._payment_references.add(payload["payment_reference"])
         elif event_type.startswith("billing.subscription.suspended"):
             subscription = self._subscriptions.get(payload["subscription_id"])
             if subscription is not None:
@@ -94,6 +98,9 @@ class BillingProjectionStore:
     def get_usage_total(self, metric_key: str) -> int:
         return self._usage_totals.get(metric_key, 0)
 
+    def has_payment_reference(self, payment_reference: str) -> bool:
+        return payment_reference in self._payment_references
+
     def snapshot(self) -> dict:
         subscriptions = {key: dict(value) for key, value in self._subscriptions.items()}
         usage_totals = dict(self._usage_totals)
@@ -101,6 +108,7 @@ class BillingProjectionStore:
             "current_plan": None if self._current_plan is None else dict(self._current_plan),
             "subscriptions": subscriptions,
             "usage_totals": usage_totals,
+            "payment_references": tuple(sorted(self._payment_references)),
         }
 
 
@@ -171,6 +179,13 @@ class BillingService:
         if usage_rejection is not None:
             raise ValueError(usage_rejection.message)
 
+        duplicate_payment_rejection = payment_reference_must_be_unique_policy(
+            command,
+            payment_reference_exists=self._projection_store.has_payment_reference,
+        )
+        if duplicate_payment_rejection is not None:
+            raise ValueError(duplicate_payment_rejection.message)
+
         if command.command_type == "billing.subscription.start.request":
             unique_rejection = subscription_must_not_exist_policy(
                 command,
@@ -191,6 +206,18 @@ class BillingService:
             )
             if exists_rejection is not None:
                 raise ValueError(exists_rejection.message)
+
+        if command.command_type in {
+            "billing.subscription.suspend.request",
+            "billing.subscription.renew.request",
+            "billing.subscription.cancel.request",
+        }:
+            cancelled_rejection = subscription_must_not_be_cancelled_policy(
+                command,
+                subscription_lookup=self._projection_store.get_subscription,
+            )
+            if cancelled_rejection is not None:
+                raise ValueError(cancelled_rejection.message)
 
         if command.command_type in {
             "billing.payment.record.request",
