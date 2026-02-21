@@ -1,6 +1,6 @@
 # BOS — Developer State File
 > Maintained by: Codex (Claude AI Engineer)
-> Last updated: GAP-01, 02, 03, 04, 05, 06, 09 complete — 629 tests passing
+> Last updated: ALL 13 GAPs complete, Phase 7 AI advisory system built — 847 tests passing
 > Read this file at the start of every session before touching any code.
 
 ---
@@ -23,11 +23,11 @@ Phase 0  ✅ Core Kernel         (event store, hash-chain, command bus, engine r
 Phase 1  ✅ Governance           (policy engine, compliance, admin layer)
 Phase 2  ✅ HTTP API             (contracts, handlers, auth middleware, Django adapter)
 Phase 3  ✅ Document Engine      (builder, HTML+PDF renderer, numbering, verification, hash)
-Phase 4  ✅ Business Primitives  (ledger, item, inventory, party, obligation, actor, approval, workflow, document — GAP-04 done)
-Phase 5  ✅ Enterprise Engines   (accounting, cash, inventory, procurement — GAP-03 subscriptions wired, GAP-05 reporting done, GAP-06 requisition+payment done)
-Phase 6  ✅ Vertical Modules     (retail ✅, restaurant ✅ kitchen+split, workshop ✅ formula+cutlist — GAP-02 & GAP-09 done)
-Phase 7  ⏳ AI & Decision Intel  (promotion ✅ done, HR ✅ done — but AI advisory system = empty stubs)
-Phase 8  ❌ Security & Isolation (not started)
+Phase 4  ✅ Business Primitives  (ledger, item, inventory, party, obligation, actor, approval, workflow, document)
+Phase 5  ✅ Enterprise Engines   (accounting, cash, inventory, procurement — subscriptions wired, reporting engine built)
+Phase 6  ✅ Vertical Modules     (retail ✅, restaurant ✅ kitchen+split, workshop ✅ parametric geometry+cutlist)
+Phase 7  ✅ AI & Decision Intel  (promotion ✅, HR ✅ payroll+ledger, AI advisory system ✅ guardrails+journal+advisors+simulation)
+Phase 8  ❌ Security & Isolation (not started — core/security stubs ready)
 Phase 9  ❌ Integration Layer    (not started)
 Phase 10 ❌ Performance & Scale  (not started)
 Phase 11 ❌ Enterprise Admin     (not started)
@@ -41,150 +41,78 @@ Phase 13 ❌ Documentation        (not started)
 
 All 10 engines have full structure: `events.py`, `commands/`, `services/`, `policies/`, `subscriptions.py`
 
-| Engine | Phase | Event Types | Tests | Feature Flag | Subscription Wired |
-|--------|-------|-------------|-------|--------------|-------------------|
-| accounting | 5 | 5 | ✅ | ✅ GAP-01 | ✅ GAP-03 |
-| inventory | 5 | 6 | ✅ | ✅ GAP-01 | ✅ GAP-03 |
-| cash | 5 | 5 | ✅ | ✅ GAP-01 | ✅ GAP-03 |
-| procurement | 6 | 8 | ✅ | ✅ GAP-01 | N/A |
-| retail | 6 | 7 | ✅ | ✅ GAP-01 | N/A (emitter only) |
-| restaurant | 7 | 8 | ✅ | ✅ GAP-01 | N/A |
-| workshop | 7 | 8 | ✅ | ✅ GAP-01 | N/A |
-| promotion | 7 | 5 | ✅ | ✅ GAP-01 | N/A |
-| hr | 7 | 5 | ✅ | ✅ GAP-01 | N/A |
-| **reporting** | **5.5** | **3** | **✅ GAP-05** | **✅** | **✅ subscribes to 8 events** |
-| **TOTAL** | | **60** | **629** | **10/10** | **4/4 + reporting** |
+| Engine | Phase | Event Types | Tests | Feature Flag | Subscription Wired | Scope Guard |
+|--------|-------|-------------|-------|--------------|-------------------|-------------|
+| accounting | 5 | 5 | ✅ | ✅ | ✅ | ✅ |
+| inventory | 5 | 6 | ✅ | ✅ | ✅ | ✅ |
+| cash | 5 | 5 | ✅ | ✅ | ✅ | ✅ |
+| procurement | 6 | 8 | ✅ | ✅ | N/A | ✅ |
+| retail | 6 | 7 | ✅ | ✅ | N/A | ✅ |
+| restaurant | 7 | 8 | ✅ | ✅ | N/A | ✅ |
+| workshop | 7 | 8 | ✅ | ✅ | N/A | ✅ |
+| promotion | 7 | 5 | ✅ | ✅ | N/A | ✅ |
+| hr | 7 | 5 | ✅ | ✅ | N/A | ✅ |
+| reporting | 5.5 | 3 | ✅ | ✅ | ✅ subscribes to 8 events | ✅ |
+| **TOTAL** | | **60** | **847** | **10/10** | **4/4 + reporting** | **10/10** |
 
 Test commands (always run before commit):
 ```bash
-python -m pytest tests/engines/ -v          # 113 engine tests
-python -m pytest tests/core/test_commands.py tests/core/test_policy.py tests/core/test_engine_registry.py -v
-python -m pytest tests/ -v --ignore=tests/core/test_event_store_postgres_contract.py  # skip DB tests
+python -m pytest tests/engines/ -v                    # engine tests
+python -m pytest tests/core/ tests/ai/ -v             # core + AI tests
+python -m pytest tests/ -v --ignore=tests/core/test_event_store_pg.py --ignore=tests/core/test_event_store_postgres_contract.py --ignore=tests/core/test_http_api_auth_db_integration.py --ignore=tests/core/test_http_api_identity_admin.py --ignore=tests/core/test_identity_store_bootstrap.py --ignore=tests/core/test_permissions_db_provider.py  # skip DB tests
 ```
 
 ---
 
-## KNOWN GAPS — PRIORITIZED BACKLOG
+## CORE INFRASTRUCTURE (GAP-11 — All Implemented)
 
-### GAP-01 ⛔ CRITICAL — Feature Flags Not Wrapping Engines
-**Doctrine:** AGENTS.md Rule 14 — "All new major engines must be wrapped behind feature flags. Default to OFF unless activated."
-**Status:** `core/feature_flags/` is fully implemented. Zero engines check it.
-**Fix:** Each engine's `services/__init__.py` must check `feature_flags.is_enabled("<engine>_engine", business_id)` at command dispatch time.
-**Files to touch:** `engines/*/services/__init__.py` (all 9), `core/engines/contracts.py` (add flag_key to EngineContract)
-**Priority:** MUST FIX before Phase 8.
-
----
-
-### GAP-02 ⛔ CRITICAL — Workshop Engine Missing Parametric Geometry
-**Doctrine:** AGENTS.md Rule 12 — "Parametric geometry only. No randomness. Same input → same cutting list."
-**Roadmap:** "Style-driven costing, Cutting optimization engine (line + area), Offcut reuse logic, Material consumption events"
-**Status:** Workshop only tracks job lifecycle. No geometry, no cut list, no offcut.
-**Missing commands:** `GenerateCutListRequest`, `MaterialConsumeRequest`, `OffcutRecordRequest`
-**Missing events:** `workshop.cutlist.generated.v1`, `workshop.material.consumed.v1`, `workshop.offcut.recorded.v1`
-**Fix:** Extend workshop engine with parametric geometry layer.
-**Priority:** MUST FIX — core doctrine violation.
+| Module | Status | Key Components |
+|--------|--------|---------------|
+| `core/time/` | ✅ | Clock protocol, FixedClock, SystemClock, TimeWindow, is_expired |
+| `core/audit/` | ✅ | AuditEntry, ConsentRecord, grant/revoke consent (append-only) |
+| `core/business/` | ✅ | Business, Branch, BusinessState, lifecycle validation policies |
+| `core/config/` | ✅ | TaxRule, ComplianceRule, InMemoryConfigStore (no hardcoded codes) |
+| `core/resilience/` | ✅ | ResilienceMode (NORMAL/DEGRADED/READ_ONLY), SystemHealth |
+| `core/security/` | ✅ | Permission constants, AccessDecision, RateLimiter (Phase 8 stubs) |
 
 ---
 
-### GAP-03 ⚠️ HIGH — Cross-Engine Subscriptions All `pass`
-**Doctrine:** AGENTS.md Rule 4 — "Engines communicate ONLY via events."
-**Status:** Subscription handlers exist in code but all contain `pass`. Nothing actually reacts to events.
-**Broken flows:**
-```
-procurement.order.received  → inventory.handle_procurement_received  (pass)
-retail.sale.completed       → cash.handle_retail_sale               (pass)
-inventory.stock.received.v1 → accounting.handle_stock_received      (pass)
-cash.payment.recorded.v1    → accounting.handle_payment_recorded    (pass)
-```
-**Fix:** Wire the event dispatcher to call SubscriptionHandlers, implement each handler body.
-**Priority:** HIGH — engines are islands, no inter-engine intelligence.
+## AI ADVISORY SYSTEM (Phase 7 — Fully Implemented)
+
+| Module | Status | Key Components |
+|--------|--------|---------------|
+| `ai/guardrails.py` | ✅ | AIActionType, GuardrailResult, check_ai_guardrail, FORBIDDEN_OPERATIONS |
+| `ai/journal/` | ✅ | DecisionEntry, DecisionMode, DecisionOutcome, DecisionJournal (append-only) |
+| `ai/advisors/` | ✅ | Advisor base, InventoryAdvisor, CashAdvisor, ProcurementAdvisor |
+| `ai/decision_simulation/` | ✅ | SimulationScenario, SimulationResult, Simulator, price/reorder simulations |
+
+AI Guardrail Rules Enforced:
+- AI is advisory only — never commits state autonomously
+- Tenant-scoped — cross-tenant access denied
+- 9 forbidden operations (approve_purchase, sign_contract, borrow_funds, etc.)
+- Command preparation requires human approval
+- Autonomous execution requires explicit policy grant
+- Full audit trail via Decision Journal
 
 ---
 
-### GAP-04 ⚠️ HIGH — Phase 4 Primitives Incomplete
-**Roadmap:** Actor, Document, Approval, Workflow primitives.
-**Status:** `core/primitives/` has: ledger, item, inventory, party, obligation.
-**Missing:**
-- `core/primitives/actor.py` — Actor primitive (reusable identity building block for engines)
-- `core/primitives/approval.py` — Approval lifecycle (used by procurement, HR, workshop)
-- `core/primitives/workflow.py` — Generic state machine primitive (CREATED→...→DONE)
-- `core/primitives/document.py` — Lightweight document reference primitive
-**Fix:** Add missing primitives. Refactor engines to use `workflow.py` state machine pattern (DRY).
-**Priority:** HIGH — will reduce duplication across all lifecycle engines.
+## ALL GAPS — RESOLVED
 
----
-
-### GAP-05 ⚠️ HIGH — No Reporting/BI Engine
-**Roadmap 5.5:** "Event-driven projections, Snapshot reporting, KPI calculators"
-**Status:** `engines/` has no reporting engine. `projections/bi/__init__.py` is empty.
-**Missing:** `engines/reporting/` or `engines/bi/` with event-driven KPI projection.
-**Priority:** HIGH — mentioned in Phase 5 which is supposedly done.
-
----
-
-### GAP-06 ⚠️ MEDIUM — Procurement Missing Requisition + Payment
-**Roadmap 5.3:** `Requisition → PO → GRN → Invoice → Payment`
-**Status:** We have: `Create → Approve → Receive → InvoiceMatch`. Missing start (Requisition) and end (Payment).
-**Missing commands:** `RequisitionCreateRequest`, `RequisitionApproveRequest`, `PaymentReleaseRequest`
-**Missing events:** `procurement.requisition.created.v1`, `procurement.payment.released.v1`
-**Priority:** MEDIUM.
-
----
-
-### GAP-07 ⚠️ MEDIUM — Inventory Missing FIFO/LIFO Strategy
-**Roadmap 5.2:** "FIFO/LIFO strategy plugin"
-**Status:** `InventoryProjectionStore` tracks `{(item_id, location_id): qty}` only. No lot tracking, no valuation.
-**Fix:** Add lot-based stock tracking with FIFO/LIFO cost computation.
-**Priority:** MEDIUM.
-
----
-
-### GAP-08 ⚠️ MEDIUM — HR Missing Payroll + Ledger Integration
-**Roadmap 5.6:** "Payroll ledger integration, Permission binding"
-**Status:** HR has shifts and leave. No payroll computation, no accounting journal link, no role→permission binding.
-**Fix:** Add `PayrollRunRequest`, `PayrollJournalPostRequest`, link shift data to ledger primitive.
-**Priority:** MEDIUM.
-
----
-
-### GAP-09 ⚠️ MEDIUM — Restaurant Missing Kitchen Workflow + Split Billing
-**Roadmap 6.2:** "Kitchen workflow engine, Split billing, QR per table, Self-service ordering"
-**Status:** Restaurant has table open/order/bill. No kitchen tickets, no bill splitting.
-**Missing events:** `restaurant.kitchen.ticket.sent.v1`, `restaurant.bill.split.v1`
-**Priority:** MEDIUM.
-
----
-
-### GAP-10 ⚠️ LOW — scope-policy.md Scope Guards Not Enforced in Engines
-**Doctrine:** `scope-policy.md` — many operations require `branch_id` (e.g. cash drawer ops, inventory moves, POS sales).
-**Status:** Engine commands accept `branch_id=None`. No hard rejection for "branch required" ops.
-**Fix:** Add scope guard policies per engine matching the scope-policy matrix.
-**Reference:** `scope-policy.md` sections 7-12.
-**Priority:** LOW (structure exists via policy layer, but not enforced at engine level).
-
----
-
-### GAP-11 ℹ️ LOW — Core Stubs Empty
-Modules in `core/` defined in `structure.md` that are completely empty:
-- `core/audit/` — Evidence, consent, access logs (Phase 0 said "audit trail" complete, but module is empty)
-- `core/time/` — Explicit clock (important for determinism rules)
-- `core/business/` — Business lifecycle management
-- `core/resilience/` — NORMAL/DEGRADED/READ_ONLY modes
-- `core/config/` — Country rules, tax rules, config flags
-
----
-
-### GAP-12 ℹ️ LOW — Test Gaps
-- `tests/invariants/` — Empty. AGENTS.md Rule 8 requires invariant tests (boundary, determinism, replay, tenant isolation).
-- `tests/core/test_admin_data_layer.py` — 0 lines. Stub never filled.
-- `tests/security/` — Empty (acceptable until Phase 8).
-- `tests/projections/` — Empty (acceptable until Phase 10).
-
----
-
-### GAP-13 ℹ️ INFO — Naming Mismatch: structure.md vs Repo
-`structure.md` says `core/rules/` — repo has `core/policy/`. Not a bug, just docs drift.
-`structure.md` says `docs/doctrine/` subdir — actual `docs/` is flat.
+| Gap | Severity | Description | Status |
+|-----|----------|-------------|--------|
+| GAP-01 | ⛔ CRITICAL | Feature flags wrapping all 10 engines | ✅ Complete |
+| GAP-02 | ⛔ CRITICAL | Workshop parametric geometry + cut list | ✅ Complete |
+| GAP-03 | ⚠️ HIGH | Cross-engine subscriptions wired | ✅ Complete |
+| GAP-04 | ⚠️ HIGH | Missing primitives (actor, approval, workflow, document) | ✅ Complete |
+| GAP-05 | ⚠️ HIGH | Reporting/BI engine with KPI projections | ✅ Complete |
+| GAP-06 | ⚠️ MEDIUM | Procurement: Requisition + Payment steps | ✅ Complete |
+| GAP-07 | ⚠️ MEDIUM | Inventory FIFO/LIFO lot tracking | ✅ Complete |
+| GAP-08 | ⚠️ MEDIUM | HR payroll + accounting ledger integration | ✅ Complete |
+| GAP-09 | ⚠️ MEDIUM | Restaurant kitchen workflow + split billing | ✅ Complete |
+| GAP-10 | ⚠️ LOW | Scope guards enforcement in all 10 engines | ✅ Complete |
+| GAP-11 | ℹ️ LOW | Core stubs (time, audit, business, config, resilience, security) | ✅ Complete |
+| GAP-12 | ℹ️ LOW | Invariant tests (11 architectural invariants) | ✅ Complete |
+| GAP-13 | ℹ️ INFO | Naming drift — structure.md updated to match repo | ✅ Complete |
 
 ---
 
@@ -192,25 +120,23 @@ Modules in `core/` defined in `structure.md` that are completely empty:
 
 ```
 COMPLETED ✅:
-  GAP-01 — Feature flags in all 9 engines
-  GAP-02 — Workshop parametric geometry + cutting engine (formula_engine.py)
-  GAP-03 — Wire cross-engine subscriptions (inventory, cash, accounting)
-  GAP-04 — Add missing primitives (actor, approval, workflow, document)
-  GAP-05 — Build Reporting/BI engine (engines/reporting/ — 43 tests)
-  GAP-06 — Procurement: Requisition + Payment steps
-  GAP-09 — Restaurant: kitchen workflow + split billing
+  GAP-01 through GAP-13 — All resolved
+  Phase 7 — AI advisory system fully built
 
-NEXT (medium priority):
-  GAP-07 — Inventory FIFO/LIFO lot tracking
-  GAP-08 — HR payroll + ledger integration
-  GAP-10 — Scope guards enforcement in engines
-  GAP-11 — Core stubs (audit, time, business, resilience, config)
-  GAP-12 — Invariant tests (boundary, determinism, replay, tenant isolation)
+NEXT (Phase 8 — Security & Isolation):
+  - Implement core/security access control (currently permissive stubs)
+  - Role-based permission enforcement per engine
+  - Rate limiting enforcement
+  - Anomaly detection implementation
+  - Tenant isolation hardening
+  - Security tests
 
-THEN PHASES:
-  Phase 8 — Security & Isolation
-  Phase 9 — Integration Layer
-  Phase 10 — Performance (projections, read models)
+THEN:
+  Phase 9  — Integration Layer (external systems gateway)
+  Phase 10 — Performance & Scale (caching, read models, projections)
+  Phase 11 — Enterprise Admin (admin dashboard, config management)
+  Phase 12 — SaaS Productization (multi-tenant billing, onboarding)
+  Phase 13 — Documentation (API docs, developer guide)
 ```
 
 ---
@@ -287,8 +213,7 @@ git status
 git log --oneline -5
 
 # After changes:
-python -m pytest tests/engines/ -v
-python -m pytest tests/core/test_commands.py tests/core/test_policy.py tests/core/test_engine_registry.py -v
+python -m pytest tests/ -v --ignore=tests/core/test_event_store_postgres_contract.py  # skip DB tests
 
 # Commit format:
 git commit -m "codex phase X — Short description"
@@ -307,6 +232,10 @@ git push -u origin claude/explain-codebase-mlsfr9vu6lpytugq-0E7ZN
 4. Multi-tenant safety (every event has `business_id`)
 5. Additive only (no removing events, commands, or contracts)
 6. `policy_name` required in every `RejectionReason()` call
+7. AI is advisory only — never commits state autonomously
+8. All core models are frozen (immutable dataclasses)
+9. Audit entries are append-only (no deletion)
+10. Scope guards enforced as first statement in every engine's `_execute_command()`
 
 ---
 
@@ -318,7 +247,7 @@ Full BOS specification synthesized from all 18 PDFs:
 Read this at the start of any session to understand:
 - BOS identity and doctrine
 - All engine specifications (including Workshop formula engine in full detail)
-- AI guardrails
+- AI guardrails and Decision Journal schema
 - Scope policy matrix
 - Phase map and gaps
 
