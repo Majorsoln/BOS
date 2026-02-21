@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from core.commands.base import Command
-from core.context.scope import SCOPE_BUSINESS_ALLOWED
+from core.context.scope import SCOPE_BUSINESS_ALLOWED, SCOPE_BRANCH_REQUIRED
 from core.identity.requirements import ACTOR_REQUIRED
 
 WORKSHOP_JOB_CREATE_REQUEST = "workshop.job.create.request"
@@ -37,14 +37,15 @@ VALID_MATERIAL_UNITS = frozenset({"MM", "M", "SQM", "SHT", "PC", "KG"})
 
 
 def _cmd(ct, payload, *, business_id, actor_type, actor_id,
-         command_id, correlation_id, issued_at, branch_id=None):
+         command_id, correlation_id, issued_at, branch_id=None,
+         scope=SCOPE_BUSINESS_ALLOWED):
     return Command(
         command_id=command_id, command_type=ct,
         business_id=business_id, branch_id=branch_id,
         actor_type=actor_type, actor_id=actor_id,
         payload=payload, issued_at=issued_at,
         correlation_id=correlation_id, source_engine="workshop",
-        scope_requirement=SCOPE_BUSINESS_ALLOWED,
+        scope_requirement=scope,
         actor_requirement=ACTOR_REQUIRED,
     )
 
@@ -106,7 +107,7 @@ class JobStartRequest:
     def to_command(self, **kw) -> Command:
         return _cmd(WORKSHOP_JOB_START_REQUEST, {
             "job_id": self.job_id,
-        }, branch_id=self.branch_id, **kw)
+        }, branch_id=self.branch_id, scope=SCOPE_BRANCH_REQUIRED, **kw)
 
 
 @dataclass(frozen=True)
@@ -131,7 +132,7 @@ class JobCompleteRequest:
             "job_id": self.job_id, "final_cost": self.final_cost,
             "currency": self.currency, "parts_used": list(self.parts_used),
             "labor_hours": self.labor_hours,
-        }, branch_id=self.branch_id, **kw)
+        }, branch_id=self.branch_id, scope=SCOPE_BRANCH_REQUIRED, **kw)
 
 
 @dataclass(frozen=True)
@@ -226,7 +227,7 @@ class MaterialConsumeRequest:
             "quantity_used": self.quantity_used,
             "unit": self.unit,
             "cutlist_id": self.cutlist_id,
-        }, branch_id=self.branch_id, **kw)
+        }, branch_id=self.branch_id, scope=SCOPE_BRANCH_REQUIRED, **kw)
 
 
 @dataclass(frozen=True)
@@ -256,4 +257,4 @@ class OffcutRecordRequest:
             "material_id": self.material_id,
             "length_mm": self.length_mm,
             "location_id": self.location_id,
-        }, branch_id=self.branch_id, **kw)
+        }, branch_id=self.branch_id, scope=SCOPE_BRANCH_REQUIRED, **kw)

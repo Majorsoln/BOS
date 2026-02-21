@@ -21,6 +21,7 @@ import pytest
 
 BIZ_A = uuid.uuid4()
 BIZ_B = uuid.uuid4()
+BRANCH = uuid.uuid4()
 NOW = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
 
 
@@ -234,6 +235,7 @@ class TestInventoryService:
         req = StockReceiveRequest(
             item_id="item-1", sku="W-001", quantity=100,
             location_id="loc-1", location_name="Main",
+            branch_id=BRANCH,
         )
         cmd = req.to_command(**make_command_args())
         result = service._execute_command(cmd)
@@ -250,6 +252,7 @@ class TestInventoryService:
         req = StockReceiveRequest(
             item_id="item-1", sku="W-001", quantity=100,
             location_id="loc-1", location_name="Main",
+            branch_id=BRANCH,
         )
         service._execute_command(req.to_command(**make_command_args()))
 
@@ -257,6 +260,7 @@ class TestInventoryService:
         req2 = StockIssueRequest(
             item_id="item-1", sku="W-001", quantity=30,
             location_id="loc-1", location_name="Main",
+            branch_id=BRANCH,
         )
         service._execute_command(req2.to_command(**make_command_args()))
 
@@ -273,6 +277,7 @@ class TestInventoryService:
             StockReceiveRequest(
                 item_id="i1", sku="S", quantity=50,
                 location_id="loc-1", location_name="A",
+                branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
 
@@ -282,6 +287,7 @@ class TestInventoryService:
                 item_id="i1", sku="S", quantity=20,
                 from_location_id="loc-1", from_location_name="A",
                 to_location_id="loc-2", to_location_name="B",
+                branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
 
@@ -735,6 +741,7 @@ class TestCashService:
             SessionOpenRequest(
                 session_id="s1", drawer_id="d1",
                 opening_balance=50000, currency="KES",
+                branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
 
@@ -759,6 +766,7 @@ class TestCashService:
                 session_id="s1", drawer_id="d1",
                 closing_balance=65000, currency="KES",
                 expected_balance=65000,
+                branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
 
@@ -775,6 +783,7 @@ class TestCashService:
             SessionOpenRequest(
                 session_id="s1", drawer_id="d1",
                 opening_balance=0, currency="KES",
+                branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
 
@@ -802,6 +811,7 @@ class TestCashService:
             SessionOpenRequest(
                 session_id="s1", drawer_id="d1",
                 opening_balance=10000, currency="KES",
+                branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
 
@@ -810,6 +820,7 @@ class TestCashService:
             DepositRecordRequest(
                 deposit_id="dep-1", session_id="s1",
                 drawer_id="d1", amount=5000, currency="KES",
+                branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
         assert service.projection_store.get_drawer_balance("d1") == 15000
@@ -819,6 +830,7 @@ class TestCashService:
             WithdrawalRecordRequest(
                 withdrawal_id="w-1", session_id="s1",
                 drawer_id="d1", amount=3000, currency="KES",
+                branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
         assert service.projection_store.get_drawer_balance("d1") == 12000
@@ -911,12 +923,14 @@ class TestCrossEngineDeterminism:
                 StockReceiveRequest(
                     item_id="i1", sku="S", quantity=100,
                     location_id="l1", location_name="Main",
+                    branch_id=BRANCH,
                 ).to_command(**make_command_args())
             )
             svc._execute_command(
                 StockIssueRequest(
                     item_id="i1", sku="S", quantity=25,
                     location_id="l1", location_name="Main",
+                    branch_id=BRANCH,
                 ).to_command(**make_command_args())
             )
             return svc.projection_store.get_stock("i1", "l1")

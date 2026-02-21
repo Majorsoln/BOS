@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
 from core.commands.base import Command
+from core.context.scope_guard import enforce_scope_guard
 from core.feature_flags.evaluator import FeatureFlagEvaluator
 from engines.reporting.commands import REPORTING_COMMAND_TYPES
 from engines.reporting.events import (
@@ -234,6 +235,7 @@ class ReportingService:
         return bool(persist_result)
 
     def _execute_command(self, command: Command) -> ReportingExecutionResult:
+        enforce_scope_guard(command)
         ff = FeatureFlagEvaluator.evaluate(
             command, self._business_context, self._feature_flag_provider
         )

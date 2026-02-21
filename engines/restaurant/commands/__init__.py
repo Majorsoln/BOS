@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from core.commands.base import Command
-from core.context.scope import SCOPE_BUSINESS_ALLOWED
+from core.context.scope import SCOPE_BRANCH_REQUIRED
 from core.identity.requirements import ACTOR_REQUIRED
 
 RESTAURANT_TABLE_OPEN_REQUEST = "restaurant.table.open.request"
@@ -47,7 +47,7 @@ def _cmd(command_type, payload, *, business_id, actor_type, actor_id,
         actor_type=actor_type, actor_id=actor_id,
         payload=payload, issued_at=issued_at,
         correlation_id=correlation_id, source_engine="restaurant",
-        scope_requirement=SCOPE_BUSINESS_ALLOWED,
+        scope_requirement=SCOPE_BRANCH_REQUIRED,
         actor_requirement=ACTOR_REQUIRED,
     )
 

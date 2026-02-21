@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Optional
 
 from core.commands.base import Command
-from core.context.scope import SCOPE_BUSINESS_ALLOWED
+from core.context.scope import SCOPE_BUSINESS_ALLOWED, SCOPE_BRANCH_REQUIRED
 from core.identity.requirements import ACTOR_REQUIRED
 
 
@@ -107,7 +107,7 @@ class StockReceiveRequest:
             issued_at=issued_at,
             correlation_id=correlation_id,
             source_engine="inventory",
-            scope_requirement=SCOPE_BUSINESS_ALLOWED,
+            scope_requirement=SCOPE_BRANCH_REQUIRED,
             actor_requirement=ACTOR_REQUIRED,
         )
 
@@ -165,7 +165,7 @@ class StockIssueRequest:
             issued_at=issued_at,
             correlation_id=correlation_id,
             source_engine="inventory",
-            scope_requirement=SCOPE_BUSINESS_ALLOWED,
+            scope_requirement=SCOPE_BRANCH_REQUIRED,
             actor_requirement=ACTOR_REQUIRED,
         )
 
@@ -227,7 +227,7 @@ class StockTransferRequest:
             issued_at=issued_at,
             correlation_id=correlation_id,
             source_engine="inventory",
-            scope_requirement=SCOPE_BUSINESS_ALLOWED,
+            scope_requirement=SCOPE_BRANCH_REQUIRED,
             actor_requirement=ACTOR_REQUIRED,
         )
 
@@ -289,7 +289,7 @@ class StockAdjustRequest:
             issued_at=issued_at,
             correlation_id=correlation_id,
             source_engine="inventory",
-            scope_requirement=SCOPE_BUSINESS_ALLOWED,
+            scope_requirement=SCOPE_BRANCH_REQUIRED,
             actor_requirement=ACTOR_REQUIRED,
         )
 

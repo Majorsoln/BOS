@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 import pytest
 
 BIZ_A = uuid.uuid4()
+BRANCH = uuid.uuid4()
 NOW = datetime(2026, 2, 19, 14, 0, 0, tzinfo=timezone.utc)
 
 

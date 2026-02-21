@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
 from core.commands.base import Command
+from core.context.scope_guard import enforce_scope_guard
 from core.feature_flags.evaluator import FeatureFlagEvaluator
 from engines.accounting.commands import ACCOUNTING_COMMAND_TYPES
 from engines.accounting.events import (
@@ -191,6 +192,7 @@ class AccountingService:
         return bool(persist_result)
 
     def _execute_command(self, command: Command) -> AccountingExecutionResult:
+        enforce_scope_guard(command)
         ff = FeatureFlagEvaluator.evaluate(command, self._business_context, self._feature_flag_provider)
         if not ff.allowed:
             raise ValueError(f"Feature disabled: {ff.message}")
