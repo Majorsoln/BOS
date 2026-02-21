@@ -186,3 +186,69 @@ def subscription_must_be_delinquent_policy(command: Command, subscription_lookup
             policy_name="subscription_must_be_delinquent_policy",
         )
     return None
+
+
+def payment_reference_must_exist_policy(command: Command, payment_reference_exists) -> RejectionReason | None:
+    payment_reference = command.payload.get("payment_reference", "")
+    if not payment_reference:
+        return None
+    if not payment_reference_exists(payment_reference):
+        return RejectionReason(
+            code="PAYMENT_REFERENCE_NOT_FOUND",
+            message=f"payment_reference '{payment_reference}' not found.",
+            policy_name="payment_reference_must_exist_policy",
+        )
+    return None
+
+
+def payment_reference_must_not_be_reversed_policy(command: Command, payment_reference_reversed) -> RejectionReason | None:
+    payment_reference = command.payload.get("payment_reference", "")
+    if not payment_reference:
+        return None
+    if payment_reference_reversed(payment_reference):
+        return RejectionReason(
+            code="PAYMENT_ALREADY_REVERSED",
+            message=f"payment_reference '{payment_reference}' already reversed.",
+            policy_name="payment_reference_must_not_be_reversed_policy",
+        )
+    return None
+
+
+def payment_reference_must_belong_to_subscription_policy(command: Command, resolve_payment_reference) -> RejectionReason | None:
+    subscription_id = command.payload.get("subscription_id", "")
+    payment_reference = command.payload.get("payment_reference", "")
+    if not subscription_id or not payment_reference:
+        return None
+
+    payment_record = resolve_payment_reference(payment_reference)
+    if payment_record is None:
+        return None
+
+    if payment_record.get("subscription_id") != subscription_id:
+        return RejectionReason(
+            code="PAYMENT_REFERENCE_SUBSCRIPTION_MISMATCH",
+            message=(
+                f"payment_reference '{payment_reference}' does not belong to "
+                f"subscription '{subscription_id}'."
+            ),
+            policy_name="payment_reference_must_belong_to_subscription_policy",
+        )
+    return None
+
+
+def subscription_must_not_be_written_off_policy(command: Command, subscription_lookup) -> RejectionReason | None:
+    subscription_id = command.payload.get("subscription_id", "")
+    if not subscription_id:
+        return None
+
+    subscription = subscription_lookup(subscription_id)
+    if subscription is None:
+        return None
+
+    if subscription.get("status") == "WRITTEN_OFF":
+        return RejectionReason(
+            code="SUBSCRIPTION_WRITTEN_OFF",
+            message=f"Subscription '{subscription_id}' is WRITTEN_OFF and cannot transition.",
+            policy_name="subscription_must_not_be_written_off_policy",
+        )
+    return None

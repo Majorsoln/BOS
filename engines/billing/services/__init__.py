@@ -11,6 +11,7 @@ from core.feature_flags.evaluator import FeatureFlagEvaluator
 from engines.billing.commands import BILLING_COMMAND_TYPES
 from engines.billing.events import (
     build_payment_recorded_payload,
+    build_payment_reversed_payload,
     build_plan_assigned_payload,
     build_subscription_started_payload,
     build_subscription_suspended_payload,
@@ -20,6 +21,7 @@ from engines.billing.events import (
     build_subscription_plan_changed_payload,
     build_subscription_delinquent_marked_payload,
     build_subscription_delinquency_cleared_payload,
+    build_subscription_written_off_payload,
     build_usage_metered_payload,
     register_billing_event_types,
     resolve_billing_event_type,
@@ -32,11 +34,15 @@ from engines.billing.policies import (
     subscription_must_be_active_policy,
     usage_metric_value_must_be_non_negative_policy,
     payment_reference_must_be_unique_policy,
+    payment_reference_must_exist_policy,
+    payment_reference_must_not_be_reversed_policy,
+    payment_reference_must_belong_to_subscription_policy,
     subscription_must_not_be_cancelled_policy,
     subscription_must_be_suspended_policy,
     plan_change_target_must_differ_policy,
     subscription_must_not_be_delinquent_policy,
     subscription_must_be_delinquent_policy,
+    subscription_must_not_be_written_off_policy,
 )
 
 
@@ -56,6 +62,8 @@ class BillingProjectionStore:
         self._usage_totals: Dict[str, int] = {}
         self._subscription_usage_totals: Dict[str, Dict[str, int]] = {}
         self._payment_references: set[str] = set()
+        self._payment_records: Dict[str, dict] = {}
+        self._reversed_payment_references: set[str] = set()
 
     def apply(self, event_type: str, payload: dict) -> None:
         self._events.append({"event_type": event_type, "payload": payload})
@@ -76,7 +84,20 @@ class BillingProjectionStore:
             subscription = self._subscriptions.get(payload["subscription_id"])
             if subscription is not None:
                 subscription["paid_minor"] += payload["amount_minor"]
-            self._payment_references.add(payload["payment_reference"])
+            payment_reference = payload["payment_reference"]
+            self._payment_references.add(payment_reference)
+            self._payment_records[payment_reference] = {
+                "subscription_id": payload["subscription_id"],
+                "amount_minor": payload["amount_minor"],
+            }
+        elif event_type.startswith("billing.payment.reversed"):
+            payment_reference = payload["payment_reference"]
+            payment_record = self._payment_records.get(payment_reference)
+            if payment_record is not None:
+                subscription = self._subscriptions.get(payment_record["subscription_id"])
+                if subscription is not None:
+                    subscription["paid_minor"] -= payment_record["amount_minor"]
+            self._reversed_payment_references.add(payment_reference)
         elif event_type.startswith("billing.subscription.suspended"):
             subscription = self._subscriptions.get(payload["subscription_id"])
             if subscription is not None:
@@ -112,6 +133,11 @@ class BillingProjectionStore:
             if subscription is not None:
                 subscription["status"] = "ACTIVE"
                 subscription["delinquency_cleared_reason"] = payload["clearance_reason"]
+        elif event_type.startswith("billing.subscription.written_off"):
+            subscription = self._subscriptions.get(payload["subscription_id"])
+            if subscription is not None:
+                subscription["status"] = "WRITTEN_OFF"
+                subscription["write_off_reason"] = payload["write_off_reason"]
         elif event_type.startswith("billing.usage.metered"):
             metric_key = payload["metric_key"]
             metric_value = payload["metric_value"]
@@ -140,6 +166,15 @@ class BillingProjectionStore:
     def has_payment_reference(self, payment_reference: str) -> bool:
         return payment_reference in self._payment_references
 
+    def resolve_payment_reference(self, payment_reference: str) -> Optional[dict]:
+        payment_record = self._payment_records.get(payment_reference)
+        if payment_record is None:
+            return None
+        return dict(payment_record)
+
+    def is_payment_reference_reversed(self, payment_reference: str) -> bool:
+        return payment_reference in self._reversed_payment_references
+
     def snapshot(self) -> dict:
         subscriptions = {key: dict(value) for key, value in self._subscriptions.items()}
         usage_totals = dict(self._usage_totals)
@@ -153,6 +188,7 @@ class BillingProjectionStore:
             "usage_totals": usage_totals,
             "subscription_usage_totals": subscription_usage_totals,
             "payment_references": tuple(sorted(self._payment_references)),
+            "reversed_payment_references": tuple(sorted(self._reversed_payment_references)),
         }
 
 
@@ -160,6 +196,7 @@ PAYLOAD_BUILDERS = {
     "billing.plan.assign.request": build_plan_assigned_payload,
     "billing.subscription.start.request": build_subscription_started_payload,
     "billing.payment.record.request": build_payment_recorded_payload,
+    "billing.payment.reverse.request": build_payment_reversed_payload,
     "billing.subscription.suspend.request": build_subscription_suspended_payload,
     "billing.subscription.renew.request": build_subscription_renewed_payload,
     "billing.subscription.cancel.request": build_subscription_cancelled_payload,
@@ -167,6 +204,7 @@ PAYLOAD_BUILDERS = {
     "billing.subscription.plan_change.request": build_subscription_plan_changed_payload,
     "billing.subscription.mark_delinquent.request": build_subscription_delinquent_marked_payload,
     "billing.subscription.clear_delinquency.request": build_subscription_delinquency_cleared_payload,
+    "billing.subscription.write_off.request": build_subscription_written_off_payload,
     "billing.usage.meter.request": build_usage_metered_payload,
 }
 
@@ -227,12 +265,35 @@ class BillingService:
         if usage_rejection is not None:
             raise ValueError(usage_rejection.message)
 
-        duplicate_payment_rejection = payment_reference_must_be_unique_policy(
-            command,
-            payment_reference_exists=self._projection_store.has_payment_reference,
-        )
-        if duplicate_payment_rejection is not None:
-            raise ValueError(duplicate_payment_rejection.message)
+        if command.command_type == "billing.payment.record.request":
+            duplicate_payment_rejection = payment_reference_must_be_unique_policy(
+                command,
+                payment_reference_exists=self._projection_store.has_payment_reference,
+            )
+            if duplicate_payment_rejection is not None:
+                raise ValueError(duplicate_payment_rejection.message)
+
+        if command.command_type == "billing.payment.reverse.request":
+            payment_exists_rejection = payment_reference_must_exist_policy(
+                command,
+                payment_reference_exists=self._projection_store.has_payment_reference,
+            )
+            if payment_exists_rejection is not None:
+                raise ValueError(payment_exists_rejection.message)
+
+            not_reversed_rejection = payment_reference_must_not_be_reversed_policy(
+                command,
+                payment_reference_reversed=self._projection_store.is_payment_reference_reversed,
+            )
+            if not_reversed_rejection is not None:
+                raise ValueError(not_reversed_rejection.message)
+
+            subscription_match_rejection = payment_reference_must_belong_to_subscription_policy(
+                command,
+                resolve_payment_reference=self._projection_store.resolve_payment_reference,
+            )
+            if subscription_match_rejection is not None:
+                raise ValueError(subscription_match_rejection.message)
 
         if command.command_type == "billing.subscription.start.request":
             unique_rejection = subscription_must_not_exist_policy(
@@ -244,6 +305,7 @@ class BillingService:
 
         if command.command_type in {
             "billing.payment.record.request",
+            "billing.payment.reverse.request",
             "billing.subscription.suspend.request",
             "billing.subscription.renew.request",
             "billing.subscription.cancel.request",
@@ -251,6 +313,7 @@ class BillingService:
             "billing.subscription.plan_change.request",
             "billing.subscription.mark_delinquent.request",
             "billing.subscription.clear_delinquency.request",
+            "billing.subscription.write_off.request",
             "billing.usage.meter.request",
         }:
             exists_rejection = subscription_must_exist_policy(
@@ -268,6 +331,7 @@ class BillingService:
             "billing.subscription.plan_change.request",
             "billing.subscription.mark_delinquent.request",
             "billing.subscription.clear_delinquency.request",
+            "billing.subscription.write_off.request",
             "billing.usage.meter.request",
         }:
             cancelled_rejection = subscription_must_not_be_cancelled_policy(
@@ -278,10 +342,31 @@ class BillingService:
                 raise ValueError(cancelled_rejection.message)
 
         if command.command_type in {
+            "billing.subscription.suspend.request",
+            "billing.subscription.renew.request",
+            "billing.subscription.cancel.request",
+            "billing.subscription.resume.request",
+            "billing.subscription.plan_change.request",
+            "billing.subscription.mark_delinquent.request",
+            "billing.subscription.clear_delinquency.request",
+            "billing.subscription.write_off.request",
+            "billing.payment.record.request",
+            "billing.payment.reverse.request",
+            "billing.usage.meter.request",
+        }:
+            written_off_rejection = subscription_must_not_be_written_off_policy(
+                command,
+                subscription_lookup=self._projection_store.get_subscription,
+            )
+            if written_off_rejection is not None:
+                raise ValueError(written_off_rejection.message)
+
+        if command.command_type in {
             "billing.subscription.resume.request",
             "billing.subscription.renew.request",
             "billing.subscription.plan_change.request",
             "billing.payment.record.request",
+            "billing.payment.reverse.request",
             "billing.usage.meter.request",
             "billing.subscription.mark_delinquent.request",
         }:
@@ -292,7 +377,10 @@ class BillingService:
             if delinquent_rejection is not None:
                 raise ValueError(delinquent_rejection.message)
 
-        if command.command_type == "billing.subscription.clear_delinquency.request":
+        if command.command_type in {
+            "billing.subscription.clear_delinquency.request",
+            "billing.subscription.write_off.request",
+        }:
             must_be_delinquent_rejection = subscription_must_be_delinquent_policy(
                 command,
                 subscription_lookup=self._projection_store.get_subscription,
@@ -318,6 +406,7 @@ class BillingService:
 
         if command.command_type in {
             "billing.payment.record.request",
+            "billing.payment.reverse.request",
             "billing.usage.meter.request",
             "billing.subscription.plan_change.request",
             "billing.subscription.mark_delinquent.request",

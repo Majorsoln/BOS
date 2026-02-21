@@ -13,6 +13,7 @@ from core.identity.requirements import ACTOR_REQUIRED
 BILLING_PLAN_ASSIGN_REQUEST = "billing.plan.assign.request"
 BILLING_SUBSCRIPTION_START_REQUEST = "billing.subscription.start.request"
 BILLING_PAYMENT_RECORD_REQUEST = "billing.payment.record.request"
+BILLING_PAYMENT_REVERSE_REQUEST = "billing.payment.reverse.request"
 BILLING_SUBSCRIPTION_SUSPEND_REQUEST = "billing.subscription.suspend.request"
 BILLING_SUBSCRIPTION_RENEW_REQUEST = "billing.subscription.renew.request"
 BILLING_SUBSCRIPTION_CANCEL_REQUEST = "billing.subscription.cancel.request"
@@ -20,12 +21,14 @@ BILLING_SUBSCRIPTION_RESUME_REQUEST = "billing.subscription.resume.request"
 BILLING_SUBSCRIPTION_PLAN_CHANGE_REQUEST = "billing.subscription.plan_change.request"
 BILLING_SUBSCRIPTION_MARK_DELINQUENT_REQUEST = "billing.subscription.mark_delinquent.request"
 BILLING_SUBSCRIPTION_CLEAR_DELINQUENCY_REQUEST = "billing.subscription.clear_delinquency.request"
+BILLING_SUBSCRIPTION_WRITE_OFF_REQUEST = "billing.subscription.write_off.request"
 BILLING_USAGE_METER_REQUEST = "billing.usage.meter.request"
 
 BILLING_COMMAND_TYPES = frozenset({
     BILLING_PLAN_ASSIGN_REQUEST,
     BILLING_SUBSCRIPTION_START_REQUEST,
     BILLING_PAYMENT_RECORD_REQUEST,
+    BILLING_PAYMENT_REVERSE_REQUEST,
     BILLING_SUBSCRIPTION_SUSPEND_REQUEST,
     BILLING_SUBSCRIPTION_RENEW_REQUEST,
     BILLING_SUBSCRIPTION_CANCEL_REQUEST,
@@ -33,6 +36,7 @@ BILLING_COMMAND_TYPES = frozenset({
     BILLING_SUBSCRIPTION_PLAN_CHANGE_REQUEST,
     BILLING_SUBSCRIPTION_MARK_DELINQUENT_REQUEST,
     BILLING_SUBSCRIPTION_CLEAR_DELINQUENCY_REQUEST,
+    BILLING_SUBSCRIPTION_WRITE_OFF_REQUEST,
     BILLING_USAGE_METER_REQUEST,
 })
 
@@ -153,6 +157,41 @@ class PaymentRecordRequest:
                 "payment_reference": self.payment_reference,
                 "amount_minor": self.amount_minor,
                 "currency": self.currency,
+            },
+            business_id=business_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            command_id=command_id or uuid.uuid4(),
+            correlation_id=correlation_id or uuid.uuid4(),
+            issued_at=issued_at,
+            branch_id=branch_id,
+        )
+
+
+@dataclass(frozen=True)
+class PaymentReverseRequest:
+    subscription_id: str
+    payment_reference: str
+    reversal_reason: str
+
+    def __post_init__(self):
+        if not self.subscription_id.strip():
+            raise ValueError("subscription_id must be non-empty.")
+        if not self.payment_reference.strip():
+            raise ValueError("payment_reference must be non-empty.")
+        if not self.reversal_reason.strip():
+            raise ValueError("reversal_reason must be non-empty.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id=None,
+                   correlation_id=None,
+                   issued_at: datetime, branch_id=None) -> Command:
+        return _cmd(
+            BILLING_PAYMENT_REVERSE_REQUEST,
+            {
+                "subscription_id": self.subscription_id,
+                "payment_reference": self.payment_reference,
+                "reversal_reason": self.reversal_reason,
             },
             business_id=business_id,
             actor_type=actor_type,
@@ -371,6 +410,37 @@ class SubscriptionClearDelinquencyRequest:
             {
                 "subscription_id": self.subscription_id,
                 "clearance_reason": self.clearance_reason,
+            },
+            business_id=business_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            command_id=command_id or uuid.uuid4(),
+            correlation_id=correlation_id or uuid.uuid4(),
+            issued_at=issued_at,
+            branch_id=branch_id,
+        )
+
+
+@dataclass(frozen=True)
+class SubscriptionWriteOffRequest:
+    subscription_id: str
+    write_off_reason: str
+
+    def __post_init__(self):
+        if not self.subscription_id.strip():
+            raise ValueError("subscription_id must be non-empty.")
+        if not self.write_off_reason.strip():
+            raise ValueError("write_off_reason must be non-empty.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id=None,
+                   correlation_id=None,
+                   issued_at: datetime, branch_id=None) -> Command:
+        return _cmd(
+            BILLING_SUBSCRIPTION_WRITE_OFF_REQUEST,
+            {
+                "subscription_id": self.subscription_id,
+                "write_off_reason": self.write_off_reason,
             },
             business_id=business_id,
             actor_type=actor_type,

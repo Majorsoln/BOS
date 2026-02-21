@@ -127,6 +127,7 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "billing.plan.assign.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.subscription.start.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.payment.record.request": FLAG_ENABLE_BILLING_ENGINE,
+    "billing.payment.reverse.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.subscription.suspend.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.subscription.renew.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.subscription.cancel.request": FLAG_ENABLE_BILLING_ENGINE,
@@ -134,6 +135,7 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "billing.subscription.plan_change.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.subscription.mark_delinquent.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.subscription.clear_delinquency.request": FLAG_ENABLE_BILLING_ENGINE,
+    "billing.subscription.write_off.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.usage.meter.request": FLAG_ENABLE_BILLING_ENGINE,
 
     # ── Reporting / BI Engine ─────────────────────────────────

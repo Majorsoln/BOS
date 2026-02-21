@@ -85,6 +85,7 @@ class TestBillingService:
     def test_full_flow_assign_start_pay_suspend(self):
         from engines.billing.commands import (
             PaymentRecordRequest,
+            PaymentReverseRequest,
             PlanAssignRequest,
             SubscriptionStartRequest,
             SubscriptionSuspendRequest,
@@ -94,6 +95,7 @@ class TestBillingService:
             SubscriptionPlanChangeRequest,
             SubscriptionMarkDelinquentRequest,
             SubscriptionClearDelinquencyRequest,
+            SubscriptionWriteOffRequest,
             UsageMeterRequest,
         )
 
@@ -122,6 +124,14 @@ class TestBillingService:
         ).to_command(**kw()))
         assert pay_result.event_type == "billing.payment.recorded.v1"
         assert svc.projection_store.get_subscription(sub_id)["paid_minor"] == 450000
+
+        reverse_result = svc._execute_command(PaymentReverseRequest(
+            subscription_id=sub_id,
+            payment_reference="pay-001",
+            reversal_reason="duplicate capture",
+        ).to_command(**kw()))
+        assert reverse_result.event_type == "billing.payment.reversed.v1"
+        assert svc.projection_store.get_subscription(sub_id)["paid_minor"] == 0
 
         suspend_result = svc._execute_command(SubscriptionSuspendRequest(
             subscription_id=sub_id,
@@ -189,6 +199,23 @@ class TestBillingService:
             renewal_reference="ren-after-clear",
         ).to_command(**kw()))
         assert renew_after_clear_result.event_type == "billing.subscription.renewed.v1"
+
+        write_off_sub_id = "sub-write-off"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=write_off_sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionMarkDelinquentRequest(
+            subscription_id=write_off_sub_id,
+            delinquency_reason="chronic arrears",
+        ).to_command(**kw()))
+        write_off_result = svc._execute_command(SubscriptionWriteOffRequest(
+            subscription_id=write_off_sub_id,
+            write_off_reason="debt unrecoverable",
+        ).to_command(**kw()))
+        assert write_off_result.event_type == "billing.subscription.written_off.v1"
+        assert svc.projection_store.get_subscription(write_off_sub_id)["status"] == "WRITTEN_OFF"
 
         cancel_result = svc._execute_command(SubscriptionCancelRequest(
             subscription_id=sub_id,
@@ -263,6 +290,7 @@ class TestBillingService:
     def test_payment_requires_active_subscription(self):
         from engines.billing.commands import (
             PaymentRecordRequest,
+            PaymentReverseRequest,
             SubscriptionCancelRequest,
             SubscriptionStartRequest,
         )
@@ -292,6 +320,7 @@ class TestBillingService:
             PlanAssignRequest,
             SubscriptionStartRequest,
             PaymentRecordRequest,
+            PaymentReverseRequest,
             UsageMeterRequest,
         )
         from engines.billing.services import BillingProjectionStore
@@ -349,6 +378,7 @@ class TestBillingService:
     def test_duplicate_payment_reference_rejected(self):
         from engines.billing.commands import (
             PaymentRecordRequest,
+            PaymentReverseRequest,
             SubscriptionStartRequest,
         )
 
@@ -644,3 +674,141 @@ class TestBillingService:
             period_end="2026-02-01",
         ).to_command(**kw()))
         assert result.event_type == "billing.usage.metered.v1"
+
+    def test_payment_reverse_requires_existing_reference(self):
+        from engines.billing.commands import (
+            PaymentReverseRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-rev-missing"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="not found"):
+            svc._execute_command(PaymentReverseRequest(
+                subscription_id=sub_id,
+                payment_reference="pay-missing",
+                reversal_reason="not found",
+            ).to_command(**kw()))
+
+    def test_payment_reverse_rejects_already_reversed_reference(self):
+        from engines.billing.commands import (
+            PaymentRecordRequest,
+            PaymentReverseRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-rev-dup"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(PaymentRecordRequest(
+            subscription_id=sub_id,
+            payment_reference="pay-rev-1",
+            amount_minor=100,
+            currency="USD",
+        ).to_command(**kw()))
+        svc._execute_command(PaymentReverseRequest(
+            subscription_id=sub_id,
+            payment_reference="pay-rev-1",
+            reversal_reason="correction",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="already reversed"):
+            svc._execute_command(PaymentReverseRequest(
+                subscription_id=sub_id,
+                payment_reference="pay-rev-1",
+                reversal_reason="second reversal",
+            ).to_command(**kw()))
+
+    def test_payment_reverse_requires_reference_subscription_match(self):
+        from engines.billing.commands import (
+            PaymentRecordRequest,
+            PaymentReverseRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_a = "sub-rev-a"
+        sub_b = "sub-rev-b"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_a,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_b,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(PaymentRecordRequest(
+            subscription_id=sub_a,
+            payment_reference="pay-sub-a",
+            amount_minor=100,
+            currency="USD",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="does not belong"):
+            svc._execute_command(PaymentReverseRequest(
+                subscription_id=sub_b,
+                payment_reference="pay-sub-a",
+                reversal_reason="wrong sub",
+            ).to_command(**kw()))
+
+    def test_write_off_requires_delinquent_status(self):
+        from engines.billing.commands import (
+            SubscriptionStartRequest,
+            SubscriptionWriteOffRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-writeoff-not-delinquent"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="not DELINQUENT"):
+            svc._execute_command(SubscriptionWriteOffRequest(
+                subscription_id=sub_id,
+                write_off_reason="bad debt",
+            ).to_command(**kw()))
+
+    def test_clear_delinquency_rejected_for_written_off_subscription(self):
+        from engines.billing.commands import (
+            SubscriptionClearDelinquencyRequest,
+            SubscriptionMarkDelinquentRequest,
+            SubscriptionStartRequest,
+            SubscriptionWriteOffRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-writeoff-block-clear"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionMarkDelinquentRequest(
+            subscription_id=sub_id,
+            delinquency_reason="arrears",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionWriteOffRequest(
+            subscription_id=sub_id,
+            write_off_reason="collection exhausted",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="WRITTEN_OFF"):
+            svc._execute_command(SubscriptionClearDelinquencyRequest(
+                subscription_id=sub_id,
+                clearance_reason="late payment",
+            ).to_command(**kw()))

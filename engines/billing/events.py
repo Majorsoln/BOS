@@ -7,6 +7,7 @@ from core.commands.base import Command
 BILLING_PLAN_ASSIGNED_V1 = "billing.plan.assigned.v1"
 BILLING_SUBSCRIPTION_STARTED_V1 = "billing.subscription.started.v1"
 BILLING_PAYMENT_RECORDED_V1 = "billing.payment.recorded.v1"
+BILLING_PAYMENT_REVERSED_V1 = "billing.payment.reversed.v1"
 BILLING_SUBSCRIPTION_SUSPENDED_V1 = "billing.subscription.suspended.v1"
 BILLING_SUBSCRIPTION_RENEWED_V1 = "billing.subscription.renewed.v1"
 BILLING_SUBSCRIPTION_CANCELLED_V1 = "billing.subscription.cancelled.v1"
@@ -14,12 +15,14 @@ BILLING_SUBSCRIPTION_RESUMED_V1 = "billing.subscription.resumed.v1"
 BILLING_SUBSCRIPTION_PLAN_CHANGED_V1 = "billing.subscription.plan_changed.v1"
 BILLING_SUBSCRIPTION_DELINQUENT_MARKED_V1 = "billing.subscription.delinquent_marked.v1"
 BILLING_SUBSCRIPTION_DELINQUENCY_CLEARED_V1 = "billing.subscription.delinquency_cleared.v1"
+BILLING_SUBSCRIPTION_WRITTEN_OFF_V1 = "billing.subscription.written_off.v1"
 BILLING_USAGE_METERED_V1 = "billing.usage.metered.v1"
 
 BILLING_EVENT_TYPES = (
     BILLING_PLAN_ASSIGNED_V1,
     BILLING_SUBSCRIPTION_STARTED_V1,
     BILLING_PAYMENT_RECORDED_V1,
+    BILLING_PAYMENT_REVERSED_V1,
     BILLING_SUBSCRIPTION_SUSPENDED_V1,
     BILLING_SUBSCRIPTION_RENEWED_V1,
     BILLING_SUBSCRIPTION_CANCELLED_V1,
@@ -27,6 +30,7 @@ BILLING_EVENT_TYPES = (
     BILLING_SUBSCRIPTION_PLAN_CHANGED_V1,
     BILLING_SUBSCRIPTION_DELINQUENT_MARKED_V1,
     BILLING_SUBSCRIPTION_DELINQUENCY_CLEARED_V1,
+    BILLING_SUBSCRIPTION_WRITTEN_OFF_V1,
     BILLING_USAGE_METERED_V1,
 )
 
@@ -34,6 +38,7 @@ COMMAND_TO_EVENT_TYPE = {
     "billing.plan.assign.request": BILLING_PLAN_ASSIGNED_V1,
     "billing.subscription.start.request": BILLING_SUBSCRIPTION_STARTED_V1,
     "billing.payment.record.request": BILLING_PAYMENT_RECORDED_V1,
+    "billing.payment.reverse.request": BILLING_PAYMENT_REVERSED_V1,
     "billing.subscription.suspend.request": BILLING_SUBSCRIPTION_SUSPENDED_V1,
     "billing.subscription.renew.request": BILLING_SUBSCRIPTION_RENEWED_V1,
     "billing.subscription.cancel.request": BILLING_SUBSCRIPTION_CANCELLED_V1,
@@ -41,6 +46,7 @@ COMMAND_TO_EVENT_TYPE = {
     "billing.subscription.plan_change.request": BILLING_SUBSCRIPTION_PLAN_CHANGED_V1,
     "billing.subscription.mark_delinquent.request": BILLING_SUBSCRIPTION_DELINQUENT_MARKED_V1,
     "billing.subscription.clear_delinquency.request": BILLING_SUBSCRIPTION_DELINQUENCY_CLEARED_V1,
+    "billing.subscription.write_off.request": BILLING_SUBSCRIPTION_WRITTEN_OFF_V1,
     "billing.usage.meter.request": BILLING_USAGE_METERED_V1,
 }
 
@@ -95,6 +101,17 @@ def build_payment_recorded_payload(command: Command) -> dict:
         "amount_minor": command.payload["amount_minor"],
         "currency": command.payload["currency"],
         "recorded_at": command.issued_at,
+    })
+    return payload
+
+
+def build_payment_reversed_payload(command: Command) -> dict:
+    payload = _base_payload(command)
+    payload.update({
+        "subscription_id": command.payload["subscription_id"],
+        "payment_reference": command.payload["payment_reference"],
+        "reversal_reason": command.payload["reversal_reason"],
+        "reversed_at": command.issued_at,
     })
     return payload
 
@@ -179,5 +196,15 @@ def build_subscription_delinquency_cleared_payload(command: Command) -> dict:
         "subscription_id": command.payload["subscription_id"],
         "clearance_reason": command.payload["clearance_reason"],
         "delinquency_cleared_at": command.issued_at,
+    })
+    return payload
+
+
+def build_subscription_written_off_payload(command: Command) -> dict:
+    payload = _base_payload(command)
+    payload.update({
+        "subscription_id": command.payload["subscription_id"],
+        "write_off_reason": command.payload["write_off_reason"],
+        "written_off_at": command.issued_at,
     })
     return payload
