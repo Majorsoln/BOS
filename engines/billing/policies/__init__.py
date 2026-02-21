@@ -150,3 +150,21 @@ def plan_change_target_must_differ_policy(command: Command, subscription_lookup)
             policy_name="plan_change_target_must_differ_policy",
         )
     return None
+
+
+def subscription_must_not_be_delinquent_policy(command: Command, subscription_lookup) -> RejectionReason | None:
+    subscription_id = command.payload.get("subscription_id", "")
+    if not subscription_id:
+        return None
+
+    subscription = subscription_lookup(subscription_id)
+    if subscription is None:
+        return None
+
+    if subscription.get("status") == "DELINQUENT":
+        return RejectionReason(
+            code="SUBSCRIPTION_DELINQUENT",
+            message=f"Subscription '{subscription_id}' is DELINQUENT and cannot transition.",
+            policy_name="subscription_must_not_be_delinquent_policy",
+        )
+    return None
