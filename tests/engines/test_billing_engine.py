@@ -160,6 +160,7 @@ class TestBillingService:
         ).to_command(**kw()))
         assert usage_result.event_type == "billing.usage.metered.v1"
         assert svc.projection_store.get_usage_total("API_CALLS") == 120
+        assert svc.projection_store.get_subscription_usage_total(sub_id, "API_CALLS") == 120
 
         cancel_result = svc._execute_command(SubscriptionCancelRequest(
             subscription_id=sub_id,
@@ -484,3 +485,40 @@ class TestBillingService:
 
         with pytest.raises(ValueError, match="not found"):
             svc._execute_command(cmd)
+
+    def test_usage_totals_are_partitioned_by_subscription(self):
+        from engines.billing.commands import SubscriptionStartRequest, UsageMeterRequest
+
+        svc = self._svc()
+        sub_a = "sub-usage-a"
+        sub_b = "sub-usage-b"
+
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_a,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_b,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+
+        svc._execute_command(UsageMeterRequest(
+            subscription_id=sub_a,
+            metric_key="API_CALLS",
+            metric_value=5,
+            period_start="2026-02-01",
+            period_end="2026-02-01",
+        ).to_command(**kw()))
+        svc._execute_command(UsageMeterRequest(
+            subscription_id=sub_b,
+            metric_key="API_CALLS",
+            metric_value=9,
+            period_start="2026-02-01",
+            period_end="2026-02-01",
+        ).to_command(**kw()))
+
+        assert svc.projection_store.get_subscription_usage_total(sub_a, "API_CALLS") == 5
+        assert svc.projection_store.get_subscription_usage_total(sub_b, "API_CALLS") == 9
+        assert svc.projection_store.get_usage_total("API_CALLS") == 14

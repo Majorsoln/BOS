@@ -50,6 +50,7 @@ class BillingProjectionStore:
         self._current_plan: Optional[dict] = None
         self._subscriptions: Dict[str, dict] = {}
         self._usage_totals: Dict[str, int] = {}
+        self._subscription_usage_totals: Dict[str, Dict[str, int]] = {}
         self._payment_references: set[str] = set()
 
     def apply(self, event_type: str, payload: dict) -> None:
@@ -99,8 +100,14 @@ class BillingProjectionStore:
                 subscription["plan_change_reason"] = payload["change_reason"]
         elif event_type.startswith("billing.usage.metered"):
             metric_key = payload["metric_key"]
+            metric_value = payload["metric_value"]
+            subscription_id = payload["subscription_id"]
+
             current_total = self._usage_totals.get(metric_key, 0)
-            self._usage_totals[metric_key] = current_total + payload["metric_value"]
+            self._usage_totals[metric_key] = current_total + metric_value
+
+            subscription_totals = self._subscription_usage_totals.setdefault(subscription_id, {})
+            subscription_totals[metric_key] = subscription_totals.get(metric_key, 0) + metric_value
 
     def get_subscription(self, subscription_id: str) -> Optional[dict]:
         return self._subscriptions.get(subscription_id)
@@ -112,16 +119,25 @@ class BillingProjectionStore:
     def get_usage_total(self, metric_key: str) -> int:
         return self._usage_totals.get(metric_key, 0)
 
+    def get_subscription_usage_total(self, subscription_id: str, metric_key: str) -> int:
+        subscription_totals = self._subscription_usage_totals.get(subscription_id, {})
+        return subscription_totals.get(metric_key, 0)
+
     def has_payment_reference(self, payment_reference: str) -> bool:
         return payment_reference in self._payment_references
 
     def snapshot(self) -> dict:
         subscriptions = {key: dict(value) for key, value in self._subscriptions.items()}
         usage_totals = dict(self._usage_totals)
+        subscription_usage_totals = {
+            subscription_id: dict(metric_totals)
+            for subscription_id, metric_totals in self._subscription_usage_totals.items()
+        }
         return {
             "current_plan": None if self._current_plan is None else dict(self._current_plan),
             "subscriptions": subscriptions,
             "usage_totals": usage_totals,
+            "subscription_usage_totals": subscription_usage_totals,
             "payment_references": tuple(sorted(self._payment_references)),
         }
 
