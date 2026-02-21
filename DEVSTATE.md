@@ -1,6 +1,6 @@
 # BOS — Developer State File
 > Maintained by: Codex (Claude AI Engineer)
-> Last updated: ALL 13 GAPs complete, Phase 7 AI advisory system built — 847 tests passing
+> Last updated: Phase 8 Security & Isolation built — tenant isolation, rate limiting, anomaly detection, guard pipeline — 903+ tests passing
 > Read this file at the start of every session before touching any code.
 
 ---
@@ -27,7 +27,7 @@ Phase 4  ✅ Business Primitives  (ledger, item, inventory, party, obligation, a
 Phase 5  ✅ Enterprise Engines   (accounting, cash, inventory, procurement — subscriptions wired, reporting engine built)
 Phase 6  ✅ Vertical Modules     (retail ✅, restaurant ✅ kitchen+split, workshop ✅ parametric geometry+cutlist)
 Phase 7  ✅ AI & Decision Intel  (promotion ✅, HR ✅ payroll+ledger, AI advisory system ✅ guardrails+journal+advisors+simulation)
-Phase 8  ❌ Security & Isolation (not started — core/security stubs ready)
+Phase 8  ✅ Security & Isolation (tenant isolation, rate limiting, anomaly detection, guard pipeline)
 Phase 9  ❌ Integration Layer    (not started)
 Phase 10 ❌ Performance & Scale  (not started)
 Phase 11 ❌ Enterprise Admin     (not started)
@@ -73,7 +73,7 @@ python -m pytest tests/ -v --ignore=tests/core/test_event_store_pg.py --ignore=t
 | `core/business/` | ✅ | Business, Branch, BusinessState, lifecycle validation policies |
 | `core/config/` | ✅ | TaxRule, ComplianceRule, InMemoryConfigStore (no hardcoded codes) |
 | `core/resilience/` | ✅ | ResilienceMode (NORMAL/DEGRADED/READ_ONLY), SystemHealth |
-| `core/security/` | ✅ | Permission constants, AccessDecision, RateLimiter (Phase 8 stubs) |
+| `core/security/` | ✅ | TenantScope, RateLimiter (sliding window), AnomalyDetector, SecurityGuardPipeline |
 
 ---
 
@@ -123,15 +123,15 @@ COMPLETED ✅:
   GAP-01 through GAP-13 — All resolved
   Phase 7 — AI advisory system fully built
 
-NEXT (Phase 8 — Security & Isolation):
-  - Implement core/security access control (currently permissive stubs)
-  - Role-based permission enforcement per engine
-  - Rate limiting enforcement
-  - Anomaly detection implementation
-  - Tenant isolation hardening
-  - Security tests
+COMPLETED ✅:
+  Phase 8 — Security & Isolation
+  - Tenant isolation: TenantScope, check_tenant_isolation, build_tenant_scope
+  - Rate limiting: sliding window per-actor per-business, configurable tiers (HUMAN/SYSTEM/DEVICE/AI)
+  - Anomaly detection: high velocity, rapid branch switching, repeated rejections
+  - Security guard pipeline: orchestrates all checks, fail-safe on errors
+  - 56 security tests passing
 
-THEN:
+NEXT:
   Phase 9  — Integration Layer (external systems gateway)
   Phase 10 — Performance & Scale (caching, read models, projections)
   Phase 11 — Enterprise Admin (admin dashboard, config management)

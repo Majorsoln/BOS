@@ -1,15 +1,17 @@
 """
-Tests for core.security — Access control and rate limiting (Phase 8 stubs).
+Tests for core.security — Access control and rate limiting.
 """
 
 import uuid
+from datetime import datetime, timezone
 
 from core.security.access import Permission, AccessDecision, check_access
-from core.security.ratelimit import RateLimiter, RateLimitResult
+from core.security.ratelimit import RateLimiter, RateLimitConfig, RateLimitResult
 
 
 BIZ_ID = uuid.uuid4()
 BRANCH_ID = uuid.uuid4()
+T0 = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
 
 
 # ── Permission Tests ─────────────────────────────────────────
@@ -74,15 +76,14 @@ class TestCheckAccess:
 # ── Rate Limiter Tests ───────────────────────────────────────
 
 class TestRateLimiter:
-    def test_stub_always_allows(self):
-        """Phase 8 stub: always allows."""
-        limiter = RateLimiter(max_per_minute=60)
-        result = limiter.check(actor_id="user-1", business_id=BIZ_ID)
+    def test_first_request_allowed(self):
+        limiter = RateLimiter()
+        result = limiter.check(actor_id="user-1", business_id=BIZ_ID, now=T0)
         assert result.allowed
-        assert result.remaining == 60
-        assert result.limit == 60
+        assert result.remaining >= 0
 
     def test_custom_limit(self):
-        limiter = RateLimiter(max_per_minute=100)
-        result = limiter.check(actor_id="user-1", business_id=BIZ_ID)
+        config = {"HUMAN": RateLimitConfig(limit_per_minute=100, burst_limit=0)}
+        limiter = RateLimiter(configs=config)
+        result = limiter.check(actor_id="user-1", business_id=BIZ_ID, now=T0)
         assert result.limit == 100
