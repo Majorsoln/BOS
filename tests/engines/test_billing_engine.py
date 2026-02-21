@@ -89,6 +89,7 @@ class TestBillingService:
             SubscriptionStartRequest,
             SubscriptionSuspendRequest,
             SubscriptionRenewRequest,
+            UsageMeterRequest,
         )
 
         svc = self._svc()
@@ -132,6 +133,16 @@ class TestBillingService:
         assert svc.projection_store.get_subscription(sub_id)["status"] == "ACTIVE"
 
 
+        usage_result = svc._execute_command(UsageMeterRequest(
+            metric_key="API_CALLS",
+            metric_value=120,
+            period_start="2026-02-01",
+            period_end="2026-02-01",
+        ).to_command(**kw()))
+        assert usage_result.event_type == "billing.usage.metered.v1"
+        assert svc.projection_store.get_usage_total("API_CALLS") == 120
+
+
     def test_payment_requires_existing_subscription(self):
         from engines.billing.commands import PaymentRecordRequest
 
@@ -170,4 +181,19 @@ class TestBillingService:
         ).to_command(**kw())
 
         with pytest.raises(ValueError, match="not found"):
+            svc._execute_command(cmd)
+
+    def test_invalid_usage_metric_rejected(self):
+        from engines.billing.commands import UsageMeterRequest
+
+        svc = self._svc()
+        cmd = UsageMeterRequest(
+            metric_key="API_CALLS",
+            metric_value=0,
+            period_start="2026-02-01",
+            period_end="2026-02-01",
+        ).to_command(**kw())
+        cmd.payload["metric_value"] = -1
+
+        with pytest.raises(ValueError, match=">= 0"):
             svc._execute_command(cmd)

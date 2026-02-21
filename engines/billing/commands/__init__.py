@@ -15,6 +15,7 @@ BILLING_SUBSCRIPTION_START_REQUEST = "billing.subscription.start.request"
 BILLING_PAYMENT_RECORD_REQUEST = "billing.payment.record.request"
 BILLING_SUBSCRIPTION_SUSPEND_REQUEST = "billing.subscription.suspend.request"
 BILLING_SUBSCRIPTION_RENEW_REQUEST = "billing.subscription.renew.request"
+BILLING_USAGE_METER_REQUEST = "billing.usage.meter.request"
 
 BILLING_COMMAND_TYPES = frozenset({
     BILLING_PLAN_ASSIGN_REQUEST,
@@ -22,10 +23,12 @@ BILLING_COMMAND_TYPES = frozenset({
     BILLING_PAYMENT_RECORD_REQUEST,
     BILLING_SUBSCRIPTION_SUSPEND_REQUEST,
     BILLING_SUBSCRIPTION_RENEW_REQUEST,
+    BILLING_USAGE_METER_REQUEST,
 })
 
 VALID_BILLING_PLANS = frozenset({"FREE", "STARTER", "GROWTH", "ENTERPRISE"})
 VALID_BILLING_CYCLES = frozenset({"MONTHLY", "YEARLY"})
+VALID_USAGE_METRIC_KEYS = frozenset({"API_CALLS", "EVENTS_APPENDED", "STORAGE_BYTES"})
 
 
 def _cmd(command_type: str, payload: dict, *, business_id, actor_type, actor_id,
@@ -199,6 +202,43 @@ class SubscriptionRenewRequest:
             {
                 "subscription_id": self.subscription_id,
                 "renewal_reference": self.renewal_reference,
+            },
+            business_id=business_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            command_id=command_id or uuid.uuid4(),
+            correlation_id=correlation_id or uuid.uuid4(),
+            issued_at=issued_at,
+            branch_id=branch_id,
+        )
+
+
+@dataclass(frozen=True)
+class UsageMeterRequest:
+    metric_key: str
+    metric_value: int
+    period_start: str
+    period_end: str
+
+    def __post_init__(self):
+        if self.metric_key not in VALID_USAGE_METRIC_KEYS:
+            raise ValueError(f"metric_key '{self.metric_key}' is not valid.")
+        if not isinstance(self.metric_value, int) or self.metric_value < 0:
+            raise ValueError("metric_value must be integer >= 0.")
+        if not self.period_start.strip() or not self.period_end.strip():
+            raise ValueError("period_start and period_end must be non-empty.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id=None,
+                   correlation_id=None,
+                   issued_at: datetime, branch_id=None) -> Command:
+        return _cmd(
+            BILLING_USAGE_METER_REQUEST,
+            {
+                "metric_key": self.metric_key,
+                "metric_value": self.metric_value,
+                "period_start": self.period_start,
+                "period_end": self.period_end,
             },
             business_id=business_id,
             actor_type=actor_type,

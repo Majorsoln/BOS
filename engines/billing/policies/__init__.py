@@ -51,3 +51,16 @@ def subscription_must_not_exist_policy(command: Command, subscription_lookup) ->
             policy_name="subscription_must_not_exist_policy",
         )
     return None
+
+
+def usage_metric_value_must_be_non_negative_policy(command: Command) -> RejectionReason | None:
+    metric_value = command.payload.get("metric_value")
+    if metric_value is None:
+        return None
+    if not isinstance(metric_value, int) or metric_value < 0:
+        return RejectionReason(
+            code="INVALID_USAGE_METRIC",
+            message="metric_value must be integer >= 0.",
+            policy_name="usage_metric_value_must_be_non_negative_policy",
+        )
+    return None

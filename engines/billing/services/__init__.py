@@ -15,6 +15,7 @@ from engines.billing.events import (
     build_subscription_started_payload,
     build_subscription_suspended_payload,
     build_subscription_renewed_payload,
+    build_usage_metered_payload,
     register_billing_event_types,
     resolve_billing_event_type,
 )
@@ -23,6 +24,7 @@ from engines.billing.policies import (
     payment_amount_must_be_positive_policy,
     subscription_must_exist_policy,
     subscription_must_not_exist_policy,
+    usage_metric_value_must_be_non_negative_policy,
 )
 
 
@@ -39,6 +41,7 @@ class BillingProjectionStore:
         self._events: List[dict] = []
         self._current_plan: Optional[dict] = None
         self._subscriptions: Dict[str, dict] = {}
+        self._usage_totals: Dict[str, int] = {}
 
     def apply(self, event_type: str, payload: dict) -> None:
         self._events.append({"event_type": event_type, "payload": payload})
@@ -69,6 +72,10 @@ class BillingProjectionStore:
             if subscription is not None:
                 subscription["status"] = "ACTIVE"
                 subscription["last_renewal_reference"] = payload["renewal_reference"]
+        elif event_type.startswith("billing.usage.metered"):
+            metric_key = payload["metric_key"]
+            current_total = self._usage_totals.get(metric_key, 0)
+            self._usage_totals[metric_key] = current_total + payload["metric_value"]
 
     def get_subscription(self, subscription_id: str) -> Optional[dict]:
         return self._subscriptions.get(subscription_id)
@@ -77,6 +84,9 @@ class BillingProjectionStore:
     def current_plan(self) -> Optional[dict]:
         return self._current_plan
 
+    def get_usage_total(self, metric_key: str) -> int:
+        return self._usage_totals.get(metric_key, 0)
+
 
 PAYLOAD_BUILDERS = {
     "billing.plan.assign.request": build_plan_assigned_payload,
@@ -84,6 +94,7 @@ PAYLOAD_BUILDERS = {
     "billing.payment.record.request": build_payment_recorded_payload,
     "billing.subscription.suspend.request": build_subscription_suspended_payload,
     "billing.subscription.renew.request": build_subscription_renewed_payload,
+    "billing.usage.meter.request": build_usage_metered_payload,
 }
 
 
@@ -138,6 +149,10 @@ class BillingService:
         amount_rejection = payment_amount_must_be_positive_policy(command)
         if amount_rejection is not None:
             raise ValueError(amount_rejection.message)
+
+        usage_rejection = usage_metric_value_must_be_non_negative_policy(command)
+        if usage_rejection is not None:
+            raise ValueError(usage_rejection.message)
 
         if command.command_type == "billing.subscription.start.request":
             unique_rejection = subscription_must_not_exist_policy(
