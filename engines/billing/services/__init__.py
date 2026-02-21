@@ -16,6 +16,7 @@ from engines.billing.events import (
     build_subscription_suspended_payload,
     build_subscription_renewed_payload,
     build_subscription_cancelled_payload,
+    build_subscription_resumed_payload,
     build_usage_metered_payload,
     register_billing_event_types,
     resolve_billing_event_type,
@@ -29,6 +30,7 @@ from engines.billing.policies import (
     usage_metric_value_must_be_non_negative_policy,
     payment_reference_must_be_unique_policy,
     subscription_must_not_be_cancelled_policy,
+    subscription_must_be_suspended_policy,
 )
 
 
@@ -83,6 +85,11 @@ class BillingProjectionStore:
             if subscription is not None:
                 subscription["status"] = "CANCELLED"
                 subscription["cancellation_reason"] = payload["cancellation_reason"]
+        elif event_type.startswith("billing.subscription.resumed"):
+            subscription = self._subscriptions.get(payload["subscription_id"])
+            if subscription is not None:
+                subscription["status"] = "ACTIVE"
+                subscription["resume_reason"] = payload["resume_reason"]
         elif event_type.startswith("billing.usage.metered"):
             metric_key = payload["metric_key"]
             current_total = self._usage_totals.get(metric_key, 0)
@@ -119,6 +126,7 @@ PAYLOAD_BUILDERS = {
     "billing.subscription.suspend.request": build_subscription_suspended_payload,
     "billing.subscription.renew.request": build_subscription_renewed_payload,
     "billing.subscription.cancel.request": build_subscription_cancelled_payload,
+    "billing.subscription.resume.request": build_subscription_resumed_payload,
     "billing.usage.meter.request": build_usage_metered_payload,
 }
 
@@ -199,6 +207,7 @@ class BillingService:
             "billing.subscription.suspend.request",
             "billing.subscription.renew.request",
             "billing.subscription.cancel.request",
+            "billing.subscription.resume.request",
         }:
             exists_rejection = subscription_must_exist_policy(
                 command,
@@ -211,6 +220,7 @@ class BillingService:
             "billing.subscription.suspend.request",
             "billing.subscription.renew.request",
             "billing.subscription.cancel.request",
+            "billing.subscription.resume.request",
         }:
             cancelled_rejection = subscription_must_not_be_cancelled_policy(
                 command,
@@ -218,6 +228,14 @@ class BillingService:
             )
             if cancelled_rejection is not None:
                 raise ValueError(cancelled_rejection.message)
+
+        if command.command_type == "billing.subscription.resume.request":
+            suspended_rejection = subscription_must_be_suspended_policy(
+                command,
+                subscription_lookup=self._projection_store.get_subscription,
+            )
+            if suspended_rejection is not None:
+                raise ValueError(suspended_rejection.message)
 
         if command.command_type in {
             "billing.payment.record.request",

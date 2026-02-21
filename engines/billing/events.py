@@ -10,6 +10,7 @@ BILLING_PAYMENT_RECORDED_V1 = "billing.payment.recorded.v1"
 BILLING_SUBSCRIPTION_SUSPENDED_V1 = "billing.subscription.suspended.v1"
 BILLING_SUBSCRIPTION_RENEWED_V1 = "billing.subscription.renewed.v1"
 BILLING_SUBSCRIPTION_CANCELLED_V1 = "billing.subscription.cancelled.v1"
+BILLING_SUBSCRIPTION_RESUMED_V1 = "billing.subscription.resumed.v1"
 BILLING_USAGE_METERED_V1 = "billing.usage.metered.v1"
 
 BILLING_EVENT_TYPES = (
@@ -19,6 +20,7 @@ BILLING_EVENT_TYPES = (
     BILLING_SUBSCRIPTION_SUSPENDED_V1,
     BILLING_SUBSCRIPTION_RENEWED_V1,
     BILLING_SUBSCRIPTION_CANCELLED_V1,
+    BILLING_SUBSCRIPTION_RESUMED_V1,
     BILLING_USAGE_METERED_V1,
 )
 
@@ -29,6 +31,7 @@ COMMAND_TO_EVENT_TYPE = {
     "billing.subscription.suspend.request": BILLING_SUBSCRIPTION_SUSPENDED_V1,
     "billing.subscription.renew.request": BILLING_SUBSCRIPTION_RENEWED_V1,
     "billing.subscription.cancel.request": BILLING_SUBSCRIPTION_CANCELLED_V1,
+    "billing.subscription.resume.request": BILLING_SUBSCRIPTION_RESUMED_V1,
     "billing.usage.meter.request": BILLING_USAGE_METERED_V1,
 }
 
@@ -125,5 +128,15 @@ def build_usage_metered_payload(command: Command) -> dict:
         "period_start": command.payload["period_start"],
         "period_end": command.payload["period_end"],
         "metered_at": command.issued_at,
+    })
+    return payload
+
+
+def build_subscription_resumed_payload(command: Command) -> dict:
+    payload = _base_payload(command)
+    payload.update({
+        "subscription_id": command.payload["subscription_id"],
+        "resume_reason": command.payload["resume_reason"],
+        "resumed_at": command.issued_at,
     })
     return payload

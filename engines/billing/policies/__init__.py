@@ -113,3 +113,21 @@ def subscription_must_not_be_cancelled_policy(command: Command, subscription_loo
             policy_name="subscription_must_not_be_cancelled_policy",
         )
     return None
+
+
+def subscription_must_be_suspended_policy(command: Command, subscription_lookup) -> RejectionReason | None:
+    subscription_id = command.payload.get("subscription_id", "")
+    if not subscription_id:
+        return None
+
+    subscription = subscription_lookup(subscription_id)
+    if subscription is None:
+        return None
+
+    if subscription.get("status") != "SUSPENDED":
+        return RejectionReason(
+            code="SUBSCRIPTION_NOT_SUSPENDED",
+            message=f"Subscription '{subscription_id}' is not SUSPENDED.",
+            policy_name="subscription_must_be_suspended_policy",
+        )
+    return None

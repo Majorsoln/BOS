@@ -16,6 +16,7 @@ BILLING_PAYMENT_RECORD_REQUEST = "billing.payment.record.request"
 BILLING_SUBSCRIPTION_SUSPEND_REQUEST = "billing.subscription.suspend.request"
 BILLING_SUBSCRIPTION_RENEW_REQUEST = "billing.subscription.renew.request"
 BILLING_SUBSCRIPTION_CANCEL_REQUEST = "billing.subscription.cancel.request"
+BILLING_SUBSCRIPTION_RESUME_REQUEST = "billing.subscription.resume.request"
 BILLING_USAGE_METER_REQUEST = "billing.usage.meter.request"
 
 BILLING_COMMAND_TYPES = frozenset({
@@ -25,6 +26,7 @@ BILLING_COMMAND_TYPES = frozenset({
     BILLING_SUBSCRIPTION_SUSPEND_REQUEST,
     BILLING_SUBSCRIPTION_RENEW_REQUEST,
     BILLING_SUBSCRIPTION_CANCEL_REQUEST,
+    BILLING_SUBSCRIPTION_RESUME_REQUEST,
     BILLING_USAGE_METER_REQUEST,
 })
 
@@ -235,6 +237,37 @@ class SubscriptionCancelRequest:
             {
                 "subscription_id": self.subscription_id,
                 "cancellation_reason": self.cancellation_reason,
+            },
+            business_id=business_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            command_id=command_id or uuid.uuid4(),
+            correlation_id=correlation_id or uuid.uuid4(),
+            issued_at=issued_at,
+            branch_id=branch_id,
+        )
+
+
+@dataclass(frozen=True)
+class SubscriptionResumeRequest:
+    subscription_id: str
+    resume_reason: str
+
+    def __post_init__(self):
+        if not self.subscription_id.strip():
+            raise ValueError("subscription_id must be non-empty.")
+        if not self.resume_reason.strip():
+            raise ValueError("resume_reason must be non-empty.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id=None,
+                   correlation_id=None,
+                   issued_at: datetime, branch_id=None) -> Command:
+        return _cmd(
+            BILLING_SUBSCRIPTION_RESUME_REQUEST,
+            {
+                "subscription_id": self.subscription_id,
+                "resume_reason": self.resume_reason,
             },
             business_id=business_id,
             actor_type=actor_type,

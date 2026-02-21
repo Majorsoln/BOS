@@ -90,6 +90,7 @@ class TestBillingService:
             SubscriptionSuspendRequest,
             SubscriptionRenewRequest,
             SubscriptionCancelRequest,
+            SubscriptionResumeRequest,
             UsageMeterRequest,
         )
 
@@ -125,6 +126,13 @@ class TestBillingService:
         ).to_command(**kw()))
         assert suspend_result.event_type == "billing.subscription.suspended.v1"
         assert svc.projection_store.get_subscription(sub_id)["status"] == "SUSPENDED"
+
+        resume_result = svc._execute_command(SubscriptionResumeRequest(
+            subscription_id=sub_id,
+            resume_reason="manual review complete",
+        ).to_command(**kw()))
+        assert resume_result.event_type == "billing.subscription.resumed.v1"
+        assert svc.projection_store.get_subscription(sub_id)["status"] == "ACTIVE"
 
         renew_result = svc._execute_command(SubscriptionRenewRequest(
             subscription_id=sub_id,
@@ -345,4 +353,54 @@ class TestBillingService:
             svc._execute_command(SubscriptionRenewRequest(
                 subscription_id=sub_id,
                 renewal_reference="ren-after-cancel",
+            ).to_command(**kw()))
+
+    def test_resume_requires_suspended_subscription(self):
+        from engines.billing.commands import (
+            SubscriptionResumeRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-not-suspended"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="not SUSPENDED"):
+            svc._execute_command(SubscriptionResumeRequest(
+                subscription_id=sub_id,
+                resume_reason="attempted resume",
+            ).to_command(**kw()))
+
+    def test_resume_rejected_for_cancelled_subscription(self):
+        from engines.billing.commands import (
+            SubscriptionCancelRequest,
+            SubscriptionResumeRequest,
+            SubscriptionStartRequest,
+            SubscriptionSuspendRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-cancelled-resume"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionSuspendRequest(
+            subscription_id=sub_id,
+            reason="late payment",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionCancelRequest(
+            subscription_id=sub_id,
+            cancellation_reason="terminated",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="CANCELLED"):
+            svc._execute_command(SubscriptionResumeRequest(
+                subscription_id=sub_id,
+                resume_reason="resume blocked",
             ).to_command(**kw()))
