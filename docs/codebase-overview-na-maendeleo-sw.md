@@ -92,13 +92,13 @@ Faida kuu:
 
 Kulingana na `DEVSTATE.md`:
 - Phase 0 hadi 11: **zimekamilika**,
-- Phase 12 (SaaS Productization): **imeanza kwa implementation ya Billing Engine msingi (plan/subscription/payment/suspension)**,
+- Phase 12 (SaaS Productization): **imeanza kwa implementation ya Billing Engine msingi (plan/subscription/payment/suspension/renewal)**,
 - Phase 13 (Documentation): **haijaanza**.
 
 Maana yake: msingi wa kernel, engines, security, integration, na enterprise admin tayari upo; kilichobaki ni kufunga bidhaa kuwa SaaS kamili na kukamilisha docs za matumizi/developer.
 
 ### Kimeanza kutekelezwa sasa (sio maelezo tu)
-- Engine mpya ya `billing` imeongezwa kwenye repo ikiwa na `commands`, `events`, `policies`, `services`, na `subscriptions`.
+- Engine mpya ya `billing` imeongezwa kwenye repo ikiwa na `commands`, `events`, `policies`, `services`, na `subscriptions`, pamoja na renewal flow.
 - Feature flag mapping imeongezwa kwa command zote za billing.
 - Tests za engine (`tests/engines/test_billing_engine.py`) zina-cover command validation, full event flow, na boundary ya subscription existence.
 

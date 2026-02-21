@@ -14,6 +14,7 @@ from engines.billing.events import (
     build_plan_assigned_payload,
     build_subscription_started_payload,
     build_subscription_suspended_payload,
+    build_subscription_renewed_payload,
     register_billing_event_types,
     resolve_billing_event_type,
 )
@@ -21,6 +22,7 @@ from engines.billing.policies import (
     billing_plan_must_be_valid_policy,
     payment_amount_must_be_positive_policy,
     subscription_must_exist_policy,
+    subscription_must_not_exist_policy,
 )
 
 
@@ -62,6 +64,11 @@ class BillingProjectionStore:
             if subscription is not None:
                 subscription["status"] = "SUSPENDED"
                 subscription["suspension_reason"] = payload["reason"]
+        elif event_type.startswith("billing.subscription.renewed"):
+            subscription = self._subscriptions.get(payload["subscription_id"])
+            if subscription is not None:
+                subscription["status"] = "ACTIVE"
+                subscription["last_renewal_reference"] = payload["renewal_reference"]
 
     def get_subscription(self, subscription_id: str) -> Optional[dict]:
         return self._subscriptions.get(subscription_id)
@@ -76,6 +83,7 @@ PAYLOAD_BUILDERS = {
     "billing.subscription.start.request": build_subscription_started_payload,
     "billing.payment.record.request": build_payment_recorded_payload,
     "billing.subscription.suspend.request": build_subscription_suspended_payload,
+    "billing.subscription.renew.request": build_subscription_renewed_payload,
 }
 
 
@@ -131,9 +139,18 @@ class BillingService:
         if amount_rejection is not None:
             raise ValueError(amount_rejection.message)
 
+        if command.command_type == "billing.subscription.start.request":
+            unique_rejection = subscription_must_not_exist_policy(
+                command,
+                subscription_lookup=self._projection_store.get_subscription,
+            )
+            if unique_rejection is not None:
+                raise ValueError(unique_rejection.message)
+
         if command.command_type in {
             "billing.payment.record.request",
             "billing.subscription.suspend.request",
+            "billing.subscription.renew.request",
         }:
             exists_rejection = subscription_must_exist_policy(
                 command,

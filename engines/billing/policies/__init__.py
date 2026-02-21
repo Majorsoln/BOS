@@ -40,3 +40,14 @@ def subscription_must_exist_policy(command: Command, subscription_lookup) -> Rej
             policy_name="subscription_must_exist_policy",
         )
     return None
+
+
+def subscription_must_not_exist_policy(command: Command, subscription_lookup) -> RejectionReason | None:
+    subscription_id = command.payload.get("subscription_id", "")
+    if subscription_id and subscription_lookup(subscription_id) is not None:
+        return RejectionReason(
+            code="SUBSCRIPTION_ALREADY_EXISTS",
+            message=f"Subscription '{subscription_id}' already exists.",
+            policy_name="subscription_must_not_exist_policy",
+        )
+    return None

@@ -88,6 +88,7 @@ class TestBillingService:
             PlanAssignRequest,
             SubscriptionStartRequest,
             SubscriptionSuspendRequest,
+            SubscriptionRenewRequest,
         )
 
         svc = self._svc()
@@ -123,6 +124,14 @@ class TestBillingService:
         assert suspend_result.event_type == "billing.subscription.suspended.v1"
         assert svc.projection_store.get_subscription(sub_id)["status"] == "SUSPENDED"
 
+        renew_result = svc._execute_command(SubscriptionRenewRequest(
+            subscription_id=sub_id,
+            renewal_reference="ren-001",
+        ).to_command(**kw()))
+        assert renew_result.event_type == "billing.subscription.renewed.v1"
+        assert svc.projection_store.get_subscription(sub_id)["status"] == "ACTIVE"
+
+
     def test_payment_requires_existing_subscription(self):
         from engines.billing.commands import PaymentRecordRequest
 
@@ -132,6 +141,32 @@ class TestBillingService:
             payment_reference="pay-xyz",
             amount_minor=1000,
             currency="USD",
+        ).to_command(**kw())
+
+        with pytest.raises(ValueError, match="not found"):
+            svc._execute_command(cmd)
+
+    def test_duplicate_subscription_start_rejected(self):
+        from engines.billing.commands import SubscriptionStartRequest
+
+        svc = self._svc()
+        start_cmd = SubscriptionStartRequest(
+            subscription_id="sub-dup",
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw())
+        svc._execute_command(start_cmd)
+
+        with pytest.raises(ValueError, match="already exists"):
+            svc._execute_command(start_cmd)
+
+    def test_renew_requires_existing_subscription(self):
+        from engines.billing.commands import SubscriptionRenewRequest
+
+        svc = self._svc()
+        cmd = SubscriptionRenewRequest(
+            subscription_id="missing-sub",
+            renewal_reference="ren-missing",
         ).to_command(**kw())
 
         with pytest.raises(ValueError, match="not found"):

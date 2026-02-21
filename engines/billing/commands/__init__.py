@@ -14,12 +14,14 @@ BILLING_PLAN_ASSIGN_REQUEST = "billing.plan.assign.request"
 BILLING_SUBSCRIPTION_START_REQUEST = "billing.subscription.start.request"
 BILLING_PAYMENT_RECORD_REQUEST = "billing.payment.record.request"
 BILLING_SUBSCRIPTION_SUSPEND_REQUEST = "billing.subscription.suspend.request"
+BILLING_SUBSCRIPTION_RENEW_REQUEST = "billing.subscription.renew.request"
 
 BILLING_COMMAND_TYPES = frozenset({
     BILLING_PLAN_ASSIGN_REQUEST,
     BILLING_SUBSCRIPTION_START_REQUEST,
     BILLING_PAYMENT_RECORD_REQUEST,
     BILLING_SUBSCRIPTION_SUSPEND_REQUEST,
+    BILLING_SUBSCRIPTION_RENEW_REQUEST,
 })
 
 VALID_BILLING_PLANS = frozenset({"FREE", "STARTER", "GROWTH", "ENTERPRISE"})
@@ -167,6 +169,37 @@ class SubscriptionSuspendRequest:
         return _cmd(
             BILLING_SUBSCRIPTION_SUSPEND_REQUEST,
             {"subscription_id": self.subscription_id, "reason": self.reason},
+            business_id=business_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            command_id=command_id or uuid.uuid4(),
+            correlation_id=correlation_id or uuid.uuid4(),
+            issued_at=issued_at,
+            branch_id=branch_id,
+        )
+
+
+@dataclass(frozen=True)
+class SubscriptionRenewRequest:
+    subscription_id: str
+    renewal_reference: str
+
+    def __post_init__(self):
+        if not self.subscription_id.strip():
+            raise ValueError("subscription_id must be non-empty.")
+        if not self.renewal_reference.strip():
+            raise ValueError("renewal_reference must be non-empty.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id=None,
+                   correlation_id=None,
+                   issued_at: datetime, branch_id=None) -> Command:
+        return _cmd(
+            BILLING_SUBSCRIPTION_RENEW_REQUEST,
+            {
+                "subscription_id": self.subscription_id,
+                "renewal_reference": self.renewal_reference,
+            },
             business_id=business_id,
             actor_type=actor_type,
             actor_id=actor_id,
