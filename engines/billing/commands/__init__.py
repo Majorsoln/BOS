@@ -17,6 +17,7 @@ BILLING_SUBSCRIPTION_SUSPEND_REQUEST = "billing.subscription.suspend.request"
 BILLING_SUBSCRIPTION_RENEW_REQUEST = "billing.subscription.renew.request"
 BILLING_SUBSCRIPTION_CANCEL_REQUEST = "billing.subscription.cancel.request"
 BILLING_SUBSCRIPTION_RESUME_REQUEST = "billing.subscription.resume.request"
+BILLING_SUBSCRIPTION_PLAN_CHANGE_REQUEST = "billing.subscription.plan_change.request"
 BILLING_USAGE_METER_REQUEST = "billing.usage.meter.request"
 
 BILLING_COMMAND_TYPES = frozenset({
@@ -27,6 +28,7 @@ BILLING_COMMAND_TYPES = frozenset({
     BILLING_SUBSCRIPTION_RENEW_REQUEST,
     BILLING_SUBSCRIPTION_CANCEL_REQUEST,
     BILLING_SUBSCRIPTION_RESUME_REQUEST,
+    BILLING_SUBSCRIPTION_PLAN_CHANGE_REQUEST,
     BILLING_USAGE_METER_REQUEST,
 })
 
@@ -268,6 +270,41 @@ class SubscriptionResumeRequest:
             {
                 "subscription_id": self.subscription_id,
                 "resume_reason": self.resume_reason,
+            },
+            business_id=business_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            command_id=command_id or uuid.uuid4(),
+            correlation_id=correlation_id or uuid.uuid4(),
+            issued_at=issued_at,
+            branch_id=branch_id,
+        )
+
+
+@dataclass(frozen=True)
+class SubscriptionPlanChangeRequest:
+    subscription_id: str
+    new_plan_code: str
+    change_reason: str
+
+    def __post_init__(self):
+        if not self.subscription_id.strip():
+            raise ValueError("subscription_id must be non-empty.")
+        if self.new_plan_code not in VALID_BILLING_PLANS:
+            raise ValueError(f"new_plan_code '{self.new_plan_code}' is not valid.")
+        if not self.change_reason.strip():
+            raise ValueError("change_reason must be non-empty.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id=None,
+                   correlation_id=None,
+                   issued_at: datetime, branch_id=None) -> Command:
+        return _cmd(
+            BILLING_SUBSCRIPTION_PLAN_CHANGE_REQUEST,
+            {
+                "subscription_id": self.subscription_id,
+                "new_plan_code": self.new_plan_code,
+                "change_reason": self.change_reason,
             },
             business_id=business_id,
             actor_type=actor_type,

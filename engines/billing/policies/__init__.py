@@ -131,3 +131,22 @@ def subscription_must_be_suspended_policy(command: Command, subscription_lookup)
             policy_name="subscription_must_be_suspended_policy",
         )
     return None
+
+
+def plan_change_target_must_differ_policy(command: Command, subscription_lookup) -> RejectionReason | None:
+    subscription_id = command.payload.get("subscription_id", "")
+    target_plan = command.payload.get("new_plan_code", "")
+    if not subscription_id or not target_plan:
+        return None
+
+    subscription = subscription_lookup(subscription_id)
+    if subscription is None:
+        return None
+
+    if subscription.get("plan_code") == target_plan:
+        return RejectionReason(
+            code="PLAN_UNCHANGED",
+            message=f"Subscription '{subscription_id}' is already on plan '{target_plan}'.",
+            policy_name="plan_change_target_must_differ_policy",
+        )
+    return None

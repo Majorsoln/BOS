@@ -91,6 +91,7 @@ class TestBillingService:
             SubscriptionRenewRequest,
             SubscriptionCancelRequest,
             SubscriptionResumeRequest,
+            SubscriptionPlanChangeRequest,
             UsageMeterRequest,
         )
 
@@ -133,6 +134,14 @@ class TestBillingService:
         ).to_command(**kw()))
         assert resume_result.event_type == "billing.subscription.resumed.v1"
         assert svc.projection_store.get_subscription(sub_id)["status"] == "ACTIVE"
+
+        plan_change_result = svc._execute_command(SubscriptionPlanChangeRequest(
+            subscription_id=sub_id,
+            new_plan_code="ENTERPRISE",
+            change_reason="upgrade requested",
+        ).to_command(**kw()))
+        assert plan_change_result.event_type == "billing.subscription.plan_changed.v1"
+        assert svc.projection_store.get_subscription(sub_id)["plan_code"] == "ENTERPRISE"
 
         renew_result = svc._execute_command(SubscriptionRenewRequest(
             subscription_id=sub_id,
@@ -403,4 +412,51 @@ class TestBillingService:
             svc._execute_command(SubscriptionResumeRequest(
                 subscription_id=sub_id,
                 resume_reason="resume blocked",
+            ).to_command(**kw()))
+
+    def test_plan_change_requires_active_subscription(self):
+        from engines.billing.commands import (
+            SubscriptionPlanChangeRequest,
+            SubscriptionStartRequest,
+            SubscriptionSuspendRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-plan-inactive"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionSuspendRequest(
+            subscription_id=sub_id,
+            reason="risk hold",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="not ACTIVE"):
+            svc._execute_command(SubscriptionPlanChangeRequest(
+                subscription_id=sub_id,
+                new_plan_code="GROWTH",
+                change_reason="upgrade",
+            ).to_command(**kw()))
+
+    def test_plan_change_rejected_when_target_same(self):
+        from engines.billing.commands import (
+            SubscriptionPlanChangeRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-plan-same"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="GROWTH",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="already on plan"):
+            svc._execute_command(SubscriptionPlanChangeRequest(
+                subscription_id=sub_id,
+                new_plan_code="GROWTH",
+                change_reason="noop",
             ).to_command(**kw()))
