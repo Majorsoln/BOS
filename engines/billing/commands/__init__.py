@@ -318,12 +318,15 @@ class SubscriptionPlanChangeRequest:
 
 @dataclass(frozen=True)
 class UsageMeterRequest:
+    subscription_id: str
     metric_key: str
     metric_value: int
     period_start: str
     period_end: str
 
     def __post_init__(self):
+        if not self.subscription_id.strip():
+            raise ValueError("subscription_id must be non-empty.")
         if self.metric_key not in VALID_USAGE_METRIC_KEYS:
             raise ValueError(f"metric_key '{self.metric_key}' is not valid.")
         if not isinstance(self.metric_value, int) or self.metric_value < 0:
@@ -338,6 +341,7 @@ class UsageMeterRequest:
         return _cmd(
             BILLING_USAGE_METER_REQUEST,
             {
+                "subscription_id": self.subscription_id,
                 "metric_key": self.metric_key,
                 "metric_value": self.metric_value,
                 "period_start": self.period_start,

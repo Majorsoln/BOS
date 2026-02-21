@@ -217,6 +217,7 @@ class BillingService:
             "billing.subscription.cancel.request",
             "billing.subscription.resume.request",
             "billing.subscription.plan_change.request",
+            "billing.usage.meter.request",
         }:
             exists_rejection = subscription_must_exist_policy(
                 command,
@@ -231,6 +232,7 @@ class BillingService:
             "billing.subscription.cancel.request",
             "billing.subscription.resume.request",
             "billing.subscription.plan_change.request",
+            "billing.usage.meter.request",
         }:
             cancelled_rejection = subscription_must_not_be_cancelled_policy(
                 command,
@@ -259,6 +261,7 @@ class BillingService:
             "billing.payment.record.request",
             "billing.usage.meter.request",
             "billing.subscription.plan_change.request",
+            "billing.usage.meter.request",
         }:
             active_rejection = subscription_must_be_active_policy(
                 command,

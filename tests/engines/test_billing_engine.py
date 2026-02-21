@@ -152,6 +152,7 @@ class TestBillingService:
 
 
         usage_result = svc._execute_command(UsageMeterRequest(
+            subscription_id=sub_id,
             metric_key="API_CALLS",
             metric_value=120,
             period_start="2026-02-01",
@@ -209,10 +210,17 @@ class TestBillingService:
             svc._execute_command(cmd)
 
     def test_invalid_usage_metric_rejected(self):
-        from engines.billing.commands import UsageMeterRequest
+        from engines.billing.commands import SubscriptionStartRequest, UsageMeterRequest
 
         svc = self._svc()
+        sub_id = "sub-usage-invalid"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
         cmd = UsageMeterRequest(
+            subscription_id=sub_id,
             metric_key="API_CALLS",
             metric_value=0,
             period_start="2026-02-01",
@@ -283,6 +291,7 @@ class TestBillingService:
         events.append(payment.event_data)
 
         usage = svc._execute_command(UsageMeterRequest(
+            subscription_id="sub-replay",
             metric_key="EVENTS_APPENDED",
             metric_value=10,
             period_start="2026-02-01",
@@ -460,3 +469,18 @@ class TestBillingService:
                 new_plan_code="GROWTH",
                 change_reason="noop",
             ).to_command(**kw()))
+
+    def test_usage_requires_existing_subscription(self):
+        from engines.billing.commands import UsageMeterRequest
+
+        svc = self._svc()
+        cmd = UsageMeterRequest(
+            subscription_id="missing-usage-sub",
+            metric_key="API_CALLS",
+            metric_value=1,
+            period_start="2026-02-01",
+            period_end="2026-02-01",
+        ).to_command(**kw())
+
+        with pytest.raises(ValueError, match="not found"):
+            svc._execute_command(cmd)

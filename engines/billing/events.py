@@ -126,6 +126,7 @@ def build_subscription_cancelled_payload(command: Command) -> dict:
 def build_usage_metered_payload(command: Command) -> dict:
     payload = _base_payload(command)
     payload.update({
+        "subscription_id": command.payload["subscription_id"],
         "metric_key": command.payload["metric_key"],
         "metric_value": command.payload["metric_value"],
         "period_start": command.payload["period_start"],
