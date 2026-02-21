@@ -1,6 +1,6 @@
 # BOS — Developer State File
 > Maintained by: Codex (Claude AI Engineer)
-> Last updated: Phase 8 Security & Isolation built — tenant isolation, rate limiting, anomaly detection, guard pipeline — 903+ tests passing
+> Last updated: Phase 9 Integration Layer built — inbound/outbound adapters, audit log, webhook verification — 951+ tests passing
 > Read this file at the start of every session before touching any code.
 
 ---
@@ -28,7 +28,7 @@ Phase 5  ✅ Enterprise Engines   (accounting, cash, inventory, procurement — 
 Phase 6  ✅ Vertical Modules     (retail ✅, restaurant ✅ kitchen+split, workshop ✅ parametric geometry+cutlist)
 Phase 7  ✅ AI & Decision Intel  (promotion ✅, HR ✅ payroll+ledger, AI advisory system ✅ guardrails+journal+advisors+simulation)
 Phase 8  ✅ Security & Isolation (tenant isolation, rate limiting, anomaly detection, guard pipeline)
-Phase 9  ❌ Integration Layer    (not started)
+Phase 9  ✅ Integration Layer    (inbound adapters, outbound publishers, audit log, webhook verification, permissions)
 Phase 10 ❌ Performance & Scale  (not started)
 Phase 11 ❌ Enterprise Admin     (not started)
 Phase 12 ❌ SaaS Productization  (not started)
@@ -131,8 +131,16 @@ COMPLETED ✅:
   - Security guard pipeline: orchestrates all checks, fail-safe on errors
   - 56 security tests passing
 
+COMPLETED ✅:
+  Phase 9 — Integration Layer
+  - Inbound: InboundAdapter ABC, InboundAdapterRegistry, InboundDispatcher (validate → translate → dispatch)
+  - Outbound: OutboundPublisher ABC, OutboundPublisherRegistry, OutboundEventDispatcher (translate → deliver with retry)
+  - Audit: IntegrationAuditLog (append-only, tenant-scoped queries, failure tracking)
+  - Adapters: error hierarchy, HMAC signature verification, ExternalEventReference (idempotency)
+  - Permissions: IntegrationPermissionChecker (business-scoped grants)
+  - 48 integration tests passing
+
 NEXT:
-  Phase 9  — Integration Layer (external systems gateway)
   Phase 10 — Performance & Scale (caching, read models, projections)
   Phase 11 — Enterprise Admin (admin dashboard, config management)
   Phase 12 — SaaS Productization (multi-tenant billing, onboarding)
