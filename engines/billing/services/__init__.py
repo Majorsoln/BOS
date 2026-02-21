@@ -15,6 +15,7 @@ from engines.billing.events import (
     build_subscription_started_payload,
     build_subscription_suspended_payload,
     build_subscription_renewed_payload,
+    build_subscription_cancelled_payload,
     build_usage_metered_payload,
     register_billing_event_types,
     resolve_billing_event_type,
@@ -24,6 +25,7 @@ from engines.billing.policies import (
     payment_amount_must_be_positive_policy,
     subscription_must_exist_policy,
     subscription_must_not_exist_policy,
+    subscription_must_be_active_policy,
     usage_metric_value_must_be_non_negative_policy,
 )
 
@@ -72,6 +74,11 @@ class BillingProjectionStore:
             if subscription is not None:
                 subscription["status"] = "ACTIVE"
                 subscription["last_renewal_reference"] = payload["renewal_reference"]
+        elif event_type.startswith("billing.subscription.cancelled"):
+            subscription = self._subscriptions.get(payload["subscription_id"])
+            if subscription is not None:
+                subscription["status"] = "CANCELLED"
+                subscription["cancellation_reason"] = payload["cancellation_reason"]
         elif event_type.startswith("billing.usage.metered"):
             metric_key = payload["metric_key"]
             current_total = self._usage_totals.get(metric_key, 0)
@@ -87,6 +94,15 @@ class BillingProjectionStore:
     def get_usage_total(self, metric_key: str) -> int:
         return self._usage_totals.get(metric_key, 0)
 
+    def snapshot(self) -> dict:
+        subscriptions = {key: dict(value) for key, value in self._subscriptions.items()}
+        usage_totals = dict(self._usage_totals)
+        return {
+            "current_plan": None if self._current_plan is None else dict(self._current_plan),
+            "subscriptions": subscriptions,
+            "usage_totals": usage_totals,
+        }
+
 
 PAYLOAD_BUILDERS = {
     "billing.plan.assign.request": build_plan_assigned_payload,
@@ -94,6 +110,7 @@ PAYLOAD_BUILDERS = {
     "billing.payment.record.request": build_payment_recorded_payload,
     "billing.subscription.suspend.request": build_subscription_suspended_payload,
     "billing.subscription.renew.request": build_subscription_renewed_payload,
+    "billing.subscription.cancel.request": build_subscription_cancelled_payload,
     "billing.usage.meter.request": build_usage_metered_payload,
 }
 
@@ -166,6 +183,7 @@ class BillingService:
             "billing.payment.record.request",
             "billing.subscription.suspend.request",
             "billing.subscription.renew.request",
+            "billing.subscription.cancel.request",
         }:
             exists_rejection = subscription_must_exist_policy(
                 command,
@@ -173,6 +191,17 @@ class BillingService:
             )
             if exists_rejection is not None:
                 raise ValueError(exists_rejection.message)
+
+        if command.command_type in {
+            "billing.payment.record.request",
+            "billing.usage.meter.request",
+        }:
+            active_rejection = subscription_must_be_active_policy(
+                command,
+                subscription_lookup=self._projection_store.get_subscription,
+            )
+            if active_rejection is not None:
+                raise ValueError(active_rejection.message)
 
     def _execute_command(self, command: Command) -> BillingExecutionResult:
         enforce_scope_guard(command)

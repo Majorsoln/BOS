@@ -89,6 +89,7 @@ class TestBillingService:
             SubscriptionStartRequest,
             SubscriptionSuspendRequest,
             SubscriptionRenewRequest,
+            SubscriptionCancelRequest,
             UsageMeterRequest,
         )
 
@@ -141,6 +142,13 @@ class TestBillingService:
         ).to_command(**kw()))
         assert usage_result.event_type == "billing.usage.metered.v1"
         assert svc.projection_store.get_usage_total("API_CALLS") == 120
+
+        cancel_result = svc._execute_command(SubscriptionCancelRequest(
+            subscription_id=sub_id,
+            cancellation_reason="customer requested cancellation",
+        ).to_command(**kw()))
+        assert cancel_result.event_type == "billing.subscription.cancelled.v1"
+        assert svc.projection_store.get_subscription(sub_id)["status"] == "CANCELLED"
 
 
     def test_payment_requires_existing_subscription(self):
@@ -197,3 +205,88 @@ class TestBillingService:
 
         with pytest.raises(ValueError, match=">= 0"):
             svc._execute_command(cmd)
+
+    def test_payment_requires_active_subscription(self):
+        from engines.billing.commands import (
+            PaymentRecordRequest,
+            SubscriptionCancelRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-inactive"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionCancelRequest(
+            subscription_id=sub_id,
+            cancellation_reason="closed",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="not ACTIVE"):
+            svc._execute_command(PaymentRecordRequest(
+                subscription_id=sub_id,
+                payment_reference="pay-after-cancel",
+                amount_minor=100,
+                currency="USD",
+            ).to_command(**kw()))
+
+    def test_replay_snapshot_is_deterministic(self):
+        from engines.billing.commands import (
+            PlanAssignRequest,
+            SubscriptionStartRequest,
+            PaymentRecordRequest,
+            UsageMeterRequest,
+        )
+        from engines.billing.services import BillingProjectionStore
+
+        svc = self._svc()
+
+        events = []
+        assign = svc._execute_command(PlanAssignRequest(
+            plan_code="GROWTH", cycle="MONTHLY", seats=3,
+        ).to_command(**kw()))
+        events.append(assign.event_data)
+
+        start = svc._execute_command(SubscriptionStartRequest(
+            subscription_id="sub-replay",
+            plan_code="GROWTH",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        events.append(start.event_data)
+
+        payment = svc._execute_command(PaymentRecordRequest(
+            subscription_id="sub-replay",
+            payment_reference="pay-replay",
+            amount_minor=500,
+            currency="USD",
+        ).to_command(**kw()))
+        events.append(payment.event_data)
+
+        usage = svc._execute_command(UsageMeterRequest(
+            metric_key="EVENTS_APPENDED",
+            metric_value=10,
+            period_start="2026-02-01",
+            period_end="2026-02-01",
+        ).to_command(**kw()))
+        events.append(usage.event_data)
+
+        replay_store = BillingProjectionStore()
+        for event in events:
+            replay_store.apply(event["event_type"], event["payload"])
+
+        assert replay_store.snapshot() == svc.projection_store.snapshot()
+
+    def test_event_payload_has_business_scope(self):
+        from engines.billing.commands import PlanAssignRequest
+
+        svc = self._svc()
+        result = svc._execute_command(PlanAssignRequest(
+            plan_code="STARTER", cycle="MONTHLY", seats=2,
+        ).to_command(**kw()))
+
+        payload = result.event_data["payload"]
+        assert payload["business_id"] == BIZ
+        assert "branch_id" in payload

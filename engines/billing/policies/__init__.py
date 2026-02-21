@@ -64,3 +64,21 @@ def usage_metric_value_must_be_non_negative_policy(command: Command) -> Rejectio
             policy_name="usage_metric_value_must_be_non_negative_policy",
         )
     return None
+
+
+def subscription_must_be_active_policy(command: Command, subscription_lookup) -> RejectionReason | None:
+    subscription_id = command.payload.get("subscription_id", "")
+    if not subscription_id:
+        return None
+
+    subscription = subscription_lookup(subscription_id)
+    if subscription is None:
+        return None
+
+    if subscription.get("status") != "ACTIVE":
+        return RejectionReason(
+            code="SUBSCRIPTION_NOT_ACTIVE",
+            message=f"Subscription '{subscription_id}' is not ACTIVE.",
+            policy_name="subscription_must_be_active_policy",
+        )
+    return None
