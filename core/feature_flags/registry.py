@@ -30,6 +30,7 @@ FLAG_ENABLE_WORKSHOP_ENGINE = "ENABLE_WORKSHOP_ENGINE"
 FLAG_ENABLE_PROMOTION_ENGINE = "ENABLE_PROMOTION_ENGINE"
 FLAG_ENABLE_HR_ENGINE = "ENABLE_HR_ENGINE"
 FLAG_ENABLE_REPORTING_ENGINE = "ENABLE_REPORTING_ENGINE"
+FLAG_ENABLE_BILLING_ENGINE = "ENABLE_BILLING_ENGINE"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -121,6 +122,12 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "hr.shift.end.request": FLAG_ENABLE_HR_ENGINE,
     "hr.leave.request.request": FLAG_ENABLE_HR_ENGINE,
     "hr.payroll.run.request": FLAG_ENABLE_HR_ENGINE,
+
+    # ── Billing Engine ───────────────────────────────────────
+    "billing.plan.assign.request": FLAG_ENABLE_BILLING_ENGINE,
+    "billing.subscription.start.request": FLAG_ENABLE_BILLING_ENGINE,
+    "billing.payment.record.request": FLAG_ENABLE_BILLING_ENGINE,
+    "billing.subscription.suspend.request": FLAG_ENABLE_BILLING_ENGINE,
 
     # ── Reporting / BI Engine ─────────────────────────────────
     "reporting.snapshot.record.request": FLAG_ENABLE_REPORTING_ENGINE,
