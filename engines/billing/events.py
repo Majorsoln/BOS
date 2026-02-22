@@ -20,6 +20,7 @@ BILLING_SUBSCRIPTION_REACTIVATED_V1 = "billing.subscription.reactivated.v1"
 BILLING_SUBSCRIPTION_CLOSED_V1 = "billing.subscription.closed.v1"
 BILLING_INVOICE_ISSUED_V1 = "billing.invoice.issued.v1"
 BILLING_INVOICE_VOIDED_V1 = "billing.invoice.voided.v1"
+BILLING_INVOICE_MARKED_PAID_V1 = "billing.invoice.marked_paid.v1"
 BILLING_USAGE_METERED_V1 = "billing.usage.metered.v1"
 
 BILLING_EVENT_TYPES = (
@@ -39,6 +40,7 @@ BILLING_EVENT_TYPES = (
     BILLING_SUBSCRIPTION_CLOSED_V1,
     BILLING_INVOICE_ISSUED_V1,
     BILLING_INVOICE_VOIDED_V1,
+    BILLING_INVOICE_MARKED_PAID_V1,
     BILLING_USAGE_METERED_V1,
 )
 
@@ -59,6 +61,7 @@ COMMAND_TO_EVENT_TYPE = {
     "billing.subscription.close.request": BILLING_SUBSCRIPTION_CLOSED_V1,
     "billing.invoice.issue.request": BILLING_INVOICE_ISSUED_V1,
     "billing.invoice.void.request": BILLING_INVOICE_VOIDED_V1,
+    "billing.invoice.mark_paid.request": BILLING_INVOICE_MARKED_PAID_V1,
     "billing.usage.meter.request": BILLING_USAGE_METERED_V1,
 }
 
@@ -262,5 +265,16 @@ def build_invoice_voided_payload(command: Command) -> dict:
         "invoice_reference": command.payload["invoice_reference"],
         "void_reason": command.payload["void_reason"],
         "voided_at": command.issued_at,
+    })
+    return payload
+
+
+def build_invoice_marked_paid_payload(command: Command) -> dict:
+    payload = _base_payload(command)
+    payload.update({
+        "subscription_id": command.payload["subscription_id"],
+        "invoice_reference": command.payload["invoice_reference"],
+        "payment_reference": command.payload["payment_reference"],
+        "marked_paid_at": command.issued_at,
     })
     return payload

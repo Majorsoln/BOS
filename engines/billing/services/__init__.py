@@ -26,6 +26,7 @@ from engines.billing.events import (
     build_subscription_closed_payload,
     build_invoice_issued_payload,
     build_invoice_voided_payload,
+    build_invoice_marked_paid_payload,
     build_usage_metered_payload,
     register_billing_event_types,
     resolve_billing_event_type,
@@ -53,6 +54,7 @@ from engines.billing.policies import (
     invoice_reference_must_exist_policy,
     invoice_reference_must_not_be_voided_policy,
     invoice_reference_must_belong_to_subscription_policy,
+    invoice_reference_must_not_be_paid_policy,
 )
 
 
@@ -77,6 +79,7 @@ class BillingProjectionStore:
         self._invoice_references: set[str] = set()
         self._invoice_records: Dict[str, dict] = {}
         self._voided_invoice_references: set[str] = set()
+        self._paid_invoice_references: set[str] = set()
 
     def apply(self, event_type: str, payload: dict) -> None:
         self._events.append({"event_type": event_type, "payload": payload})
@@ -179,6 +182,14 @@ class BillingProjectionStore:
                 if subscription is not None:
                     subscription["invoiced_minor"] = subscription.get("invoiced_minor", 0) - invoice_record["amount_minor"]
             self._voided_invoice_references.add(invoice_reference)
+        elif event_type.startswith("billing.invoice.marked_paid"):
+            invoice_reference = payload["invoice_reference"]
+            invoice_record = self._invoice_records.get(invoice_reference)
+            if invoice_record is not None:
+                subscription = self._subscriptions.get(invoice_record["subscription_id"])
+                if subscription is not None:
+                    subscription["paid_invoice_minor"] = subscription.get("paid_invoice_minor", 0) + invoice_record["amount_minor"]
+            self._paid_invoice_references.add(invoice_reference)
         elif event_type.startswith("billing.usage.metered"):
             metric_key = payload["metric_key"]
             metric_value = payload["metric_value"]
@@ -228,6 +239,9 @@ class BillingProjectionStore:
     def is_invoice_reference_voided(self, invoice_reference: str) -> bool:
         return invoice_reference in self._voided_invoice_references
 
+    def is_invoice_reference_paid(self, invoice_reference: str) -> bool:
+        return invoice_reference in self._paid_invoice_references
+
     def snapshot(self) -> dict:
         subscriptions = {key: dict(value) for key, value in self._subscriptions.items()}
         usage_totals = dict(self._usage_totals)
@@ -244,6 +258,7 @@ class BillingProjectionStore:
             "reversed_payment_references": tuple(sorted(self._reversed_payment_references)),
             "invoice_references": tuple(sorted(self._invoice_references)),
             "voided_invoice_references": tuple(sorted(self._voided_invoice_references)),
+            "paid_invoice_references": tuple(sorted(self._paid_invoice_references)),
         }
 
 
@@ -264,6 +279,7 @@ PAYLOAD_BUILDERS = {
     "billing.subscription.close.request": build_subscription_closed_payload,
     "billing.invoice.issue.request": build_invoice_issued_payload,
     "billing.invoice.void.request": build_invoice_voided_payload,
+    "billing.invoice.mark_paid.request": build_invoice_marked_paid_payload,
     "billing.usage.meter.request": build_usage_metered_payload,
 }
 
@@ -332,7 +348,7 @@ class BillingService:
             if duplicate_invoice_rejection is not None:
                 raise ValueError(duplicate_invoice_rejection.message)
 
-        if command.command_type == "billing.invoice.void.request":
+        if command.command_type in {"billing.invoice.void.request", "billing.invoice.mark_paid.request"}:
             invoice_exists_rejection = invoice_reference_must_exist_policy(
                 command,
                 invoice_reference_exists=self._projection_store.has_invoice_reference,
@@ -340,6 +356,14 @@ class BillingService:
             if invoice_exists_rejection is not None:
                 raise ValueError(invoice_exists_rejection.message)
 
+            invoice_subscription_match_rejection = invoice_reference_must_belong_to_subscription_policy(
+                command,
+                resolve_invoice_reference=self._projection_store.resolve_invoice_reference,
+            )
+            if invoice_subscription_match_rejection is not None:
+                raise ValueError(invoice_subscription_match_rejection.message)
+
+        if command.command_type == "billing.invoice.void.request":
             invoice_not_voided_rejection = invoice_reference_must_not_be_voided_policy(
                 command,
                 invoice_reference_voided=self._projection_store.is_invoice_reference_voided,
@@ -347,12 +371,20 @@ class BillingService:
             if invoice_not_voided_rejection is not None:
                 raise ValueError(invoice_not_voided_rejection.message)
 
-            invoice_subscription_match_rejection = invoice_reference_must_belong_to_subscription_policy(
+        if command.command_type == "billing.invoice.mark_paid.request":
+            invoice_not_voided_rejection = invoice_reference_must_not_be_voided_policy(
                 command,
-                resolve_invoice_reference=self._projection_store.resolve_invoice_reference,
+                invoice_reference_voided=self._projection_store.is_invoice_reference_voided,
             )
-            if invoice_subscription_match_rejection is not None:
-                raise ValueError(invoice_subscription_match_rejection.message)
+            if invoice_not_voided_rejection is not None:
+                raise ValueError(invoice_not_voided_rejection.message)
+
+            invoice_not_paid_rejection = invoice_reference_must_not_be_paid_policy(
+                command,
+                invoice_reference_paid=self._projection_store.is_invoice_reference_paid,
+            )
+            if invoice_not_paid_rejection is not None:
+                raise ValueError(invoice_not_paid_rejection.message)
 
         if command.command_type == "billing.payment.record.request":
             duplicate_payment_rejection = payment_reference_must_be_unique_policy(
@@ -407,6 +439,7 @@ class BillingService:
             "billing.subscription.close.request",
             "billing.invoice.issue.request",
             "billing.invoice.void.request",
+            "billing.invoice.mark_paid.request",
             "billing.usage.meter.request",
         }:
             exists_rejection = subscription_must_exist_policy(
@@ -447,6 +480,7 @@ class BillingService:
             "billing.subscription.close.request",
             "billing.invoice.issue.request",
             "billing.invoice.void.request",
+            "billing.invoice.mark_paid.request",
             "billing.payment.record.request",
             "billing.payment.reverse.request",
             "billing.usage.meter.request",
@@ -471,6 +505,7 @@ class BillingService:
             "billing.subscription.close.request",
             "billing.invoice.issue.request",
             "billing.invoice.void.request",
+            "billing.invoice.mark_paid.request",
             "billing.payment.record.request",
             "billing.payment.reverse.request",
             "billing.usage.meter.request",
@@ -492,6 +527,7 @@ class BillingService:
             "billing.subscription.mark_delinquent.request",
             "billing.invoice.issue.request",
             "billing.invoice.void.request",
+            "billing.invoice.mark_paid.request",
         }:
             delinquent_rejection = subscription_must_not_be_delinquent_policy(
                 command,
@@ -546,6 +582,7 @@ class BillingService:
             "billing.subscription.mark_delinquent.request",
             "billing.invoice.issue.request",
             "billing.invoice.void.request",
+            "billing.invoice.mark_paid.request",
         }:
             active_rejection = subscription_must_be_active_policy(
                 command,

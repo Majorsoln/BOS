@@ -349,3 +349,16 @@ def invoice_reference_must_belong_to_subscription_policy(command: Command, resol
             policy_name="invoice_reference_must_belong_to_subscription_policy",
         )
     return None
+
+
+def invoice_reference_must_not_be_paid_policy(command: Command, invoice_reference_paid) -> RejectionReason | None:
+    invoice_reference = command.payload.get("invoice_reference", "")
+    if not invoice_reference:
+        return None
+    if invoice_reference_paid(invoice_reference):
+        return RejectionReason(
+            code="INVOICE_ALREADY_PAID",
+            message=f"invoice_reference '{invoice_reference}' already marked paid.",
+            policy_name="invoice_reference_must_not_be_paid_policy",
+        )
+    return None

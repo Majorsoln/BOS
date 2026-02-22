@@ -26,6 +26,7 @@ BILLING_SUBSCRIPTION_REACTIVATE_REQUEST = "billing.subscription.reactivate.reque
 BILLING_SUBSCRIPTION_CLOSE_REQUEST = "billing.subscription.close.request"
 BILLING_INVOICE_ISSUE_REQUEST = "billing.invoice.issue.request"
 BILLING_INVOICE_VOID_REQUEST = "billing.invoice.void.request"
+BILLING_INVOICE_MARK_PAID_REQUEST = "billing.invoice.mark_paid.request"
 BILLING_USAGE_METER_REQUEST = "billing.usage.meter.request"
 
 BILLING_COMMAND_TYPES = frozenset({
@@ -45,6 +46,7 @@ BILLING_COMMAND_TYPES = frozenset({
     BILLING_SUBSCRIPTION_CLOSE_REQUEST,
     BILLING_INVOICE_ISSUE_REQUEST,
     BILLING_INVOICE_VOID_REQUEST,
+    BILLING_INVOICE_MARK_PAID_REQUEST,
     BILLING_USAGE_METER_REQUEST,
 })
 
@@ -589,6 +591,41 @@ class InvoiceVoidRequest:
                 "subscription_id": self.subscription_id,
                 "invoice_reference": self.invoice_reference,
                 "void_reason": self.void_reason,
+            },
+            business_id=business_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            command_id=command_id or uuid.uuid4(),
+            correlation_id=correlation_id or uuid.uuid4(),
+            issued_at=issued_at,
+            branch_id=branch_id,
+        )
+
+
+@dataclass(frozen=True)
+class InvoiceMarkPaidRequest:
+    subscription_id: str
+    invoice_reference: str
+    payment_reference: str
+
+    def __post_init__(self):
+        if not self.subscription_id.strip():
+            raise ValueError("subscription_id must be non-empty.")
+        if not self.invoice_reference.strip():
+            raise ValueError("invoice_reference must be non-empty.")
+        if not self.payment_reference.strip():
+            raise ValueError("payment_reference must be non-empty.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id=None,
+                   correlation_id=None,
+                   issued_at: datetime, branch_id=None) -> Command:
+        return _cmd(
+            BILLING_INVOICE_MARK_PAID_REQUEST,
+            {
+                "subscription_id": self.subscription_id,
+                "invoice_reference": self.invoice_reference,
+                "payment_reference": self.payment_reference,
             },
             business_id=business_id,
             actor_type=actor_type,

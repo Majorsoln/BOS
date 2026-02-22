@@ -100,6 +100,7 @@ class TestBillingService:
             SubscriptionCloseRequest,
             InvoiceIssueRequest,
             InvoiceVoidRequest,
+            InvoiceMarkPaidRequest,
             UsageMeterRequest,
         )
 
@@ -137,6 +138,22 @@ class TestBillingService:
         ).to_command(**kw()))
         assert void_result.event_type == "billing.invoice.voided.v1"
         assert svc.projection_store.get_subscription(sub_id)["invoiced_minor"] == 0
+
+        second_invoice = svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-002",
+            amount_minor=120000,
+            currency="USD",
+            due_on="2026-03-15",
+        ).to_command(**kw()))
+        assert second_invoice.event_type == "billing.invoice.issued.v1"
+        mark_paid_result = svc._execute_command(InvoiceMarkPaidRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-002",
+            payment_reference="pay-inv-002",
+        ).to_command(**kw()))
+        assert mark_paid_result.event_type == "billing.invoice.marked_paid.v1"
+        assert svc.projection_store.get_subscription(sub_id)["paid_invoice_minor"] == 120000
 
         pay_result = svc._execute_command(PaymentRecordRequest(
             subscription_id=sub_id,
@@ -1090,4 +1107,91 @@ class TestBillingService:
                 subscription_id=sub_b,
                 invoice_reference="inv-sub-a",
                 void_reason="wrong sub",
+            ).to_command(**kw()))
+
+    def test_invoice_mark_paid_requires_existing_reference(self):
+        from engines.billing.commands import InvoiceMarkPaidRequest, SubscriptionStartRequest
+
+        svc = self._svc()
+        sub_id = "sub-paid-missing"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="not found"):
+            svc._execute_command(InvoiceMarkPaidRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-nope-paid",
+                payment_reference="pay-x",
+            ).to_command(**kw()))
+
+    def test_invoice_mark_paid_rejects_voided_invoice(self):
+        from engines.billing.commands import (
+            InvoiceIssueRequest,
+            InvoiceMarkPaidRequest,
+            InvoiceVoidRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-paid-voided"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-paid-voided",
+            amount_minor=90,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceVoidRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-paid-voided",
+            void_reason="replace",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="voided"):
+            svc._execute_command(InvoiceMarkPaidRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-paid-voided",
+                payment_reference="pay-voided",
+            ).to_command(**kw()))
+
+    def test_invoice_mark_paid_rejects_already_paid_invoice(self):
+        from engines.billing.commands import (
+            InvoiceIssueRequest,
+            InvoiceMarkPaidRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-paid-dup"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-paid-dup",
+            amount_minor=110,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceMarkPaidRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-paid-dup",
+            payment_reference="pay-first",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="already marked paid"):
+            svc._execute_command(InvoiceMarkPaidRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-paid-dup",
+                payment_reference="pay-second",
             ).to_command(**kw()))
