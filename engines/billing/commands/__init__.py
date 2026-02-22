@@ -28,6 +28,7 @@ BILLING_INVOICE_ISSUE_REQUEST = "billing.invoice.issue.request"
 BILLING_INVOICE_VOID_REQUEST = "billing.invoice.void.request"
 BILLING_INVOICE_MARK_PAID_REQUEST = "billing.invoice.mark_paid.request"
 BILLING_INVOICE_DUE_DATE_EXTEND_REQUEST = "billing.invoice.due_date.extend.request"
+BILLING_INVOICE_DISPUTE_OPEN_REQUEST = "billing.invoice.dispute.open.request"
 BILLING_USAGE_METER_REQUEST = "billing.usage.meter.request"
 
 BILLING_COMMAND_TYPES = frozenset({
@@ -49,6 +50,7 @@ BILLING_COMMAND_TYPES = frozenset({
     BILLING_INVOICE_VOID_REQUEST,
     BILLING_INVOICE_MARK_PAID_REQUEST,
     BILLING_INVOICE_DUE_DATE_EXTEND_REQUEST,
+    BILLING_INVOICE_DISPUTE_OPEN_REQUEST,
     BILLING_USAGE_METER_REQUEST,
 })
 
@@ -667,6 +669,41 @@ class InvoiceDueDateExtendRequest:
                 "invoice_reference": self.invoice_reference,
                 "new_due_on": self.new_due_on,
                 "extension_reason": self.extension_reason,
+            },
+            business_id=business_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            command_id=command_id or uuid.uuid4(),
+            correlation_id=correlation_id or uuid.uuid4(),
+            issued_at=issued_at,
+            branch_id=branch_id,
+        )
+
+
+@dataclass(frozen=True)
+class InvoiceDisputeOpenRequest:
+    subscription_id: str
+    invoice_reference: str
+    dispute_reason: str
+
+    def __post_init__(self):
+        if not self.subscription_id.strip():
+            raise ValueError("subscription_id must be non-empty.")
+        if not self.invoice_reference.strip():
+            raise ValueError("invoice_reference must be non-empty.")
+        if not self.dispute_reason.strip():
+            raise ValueError("dispute_reason must be non-empty.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id=None,
+                   correlation_id=None,
+                   issued_at: datetime, branch_id=None) -> Command:
+        return _cmd(
+            BILLING_INVOICE_DISPUTE_OPEN_REQUEST,
+            {
+                "subscription_id": self.subscription_id,
+                "invoice_reference": self.invoice_reference,
+                "dispute_reason": self.dispute_reason,
             },
             business_id=business_id,
             actor_type=actor_type,

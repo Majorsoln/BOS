@@ -362,3 +362,16 @@ def invoice_reference_must_not_be_paid_policy(command: Command, invoice_referenc
             policy_name="invoice_reference_must_not_be_paid_policy",
         )
     return None
+
+
+def invoice_reference_must_not_be_disputed_policy(command: Command, invoice_reference_disputed) -> RejectionReason | None:
+    invoice_reference = command.payload.get("invoice_reference", "")
+    if not invoice_reference:
+        return None
+    if invoice_reference_disputed(invoice_reference):
+        return RejectionReason(
+            code="INVOICE_ALREADY_DISPUTED",
+            message=f"invoice_reference '{invoice_reference}' already disputed.",
+            policy_name="invoice_reference_must_not_be_disputed_policy",
+        )
+    return None

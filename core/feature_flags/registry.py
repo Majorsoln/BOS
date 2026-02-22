@@ -142,6 +142,7 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "billing.invoice.void.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.invoice.mark_paid.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.invoice.due_date.extend.request": FLAG_ENABLE_BILLING_ENGINE,
+    "billing.invoice.dispute.open.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.usage.meter.request": FLAG_ENABLE_BILLING_ENGINE,
 
     # ── Reporting / BI Engine ─────────────────────────────────

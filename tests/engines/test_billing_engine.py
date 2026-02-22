@@ -102,6 +102,7 @@ class TestBillingService:
             InvoiceVoidRequest,
             InvoiceMarkPaidRequest,
             InvoiceDueDateExtendRequest,
+            InvoiceDisputeOpenRequest,
             UsageMeterRequest,
         )
 
@@ -155,10 +156,31 @@ class TestBillingService:
             extension_reason="grace period",
         ).to_command(**kw()))
         assert due_extend_result.event_type == "billing.invoice.due_date_extended.v1"
-        mark_paid_result = svc._execute_command(InvoiceMarkPaidRequest(
+        dispute_open_result = svc._execute_command(InvoiceDisputeOpenRequest(
             subscription_id=sub_id,
             invoice_reference="inv-002",
-            payment_reference="pay-inv-002",
+            dispute_reason="line item mismatch",
+        ).to_command(**kw()))
+        assert dispute_open_result.event_type == "billing.invoice.dispute.opened.v1"
+        with pytest.raises(ValueError, match="disputed"):
+            svc._execute_command(InvoiceMarkPaidRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-002",
+                payment_reference="pay-inv-002",
+            ).to_command(**kw()))
+
+        replacement_invoice = svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-003",
+            amount_minor=120000,
+            currency="USD",
+            due_on="2026-03-25",
+        ).to_command(**kw()))
+        assert replacement_invoice.event_type == "billing.invoice.issued.v1"
+        mark_paid_result = svc._execute_command(InvoiceMarkPaidRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-003",
+            payment_reference="pay-inv-003",
         ).to_command(**kw()))
         assert mark_paid_result.event_type == "billing.invoice.marked_paid.v1"
         assert svc.projection_store.get_subscription(sub_id)["paid_invoice_minor"] == 120000
@@ -1274,4 +1296,73 @@ class TestBillingService:
                 invoice_reference="inv-due-paid",
                 new_due_on="2026-03-20",
                 extension_reason="late extension",
+            ).to_command(**kw()))
+
+    def test_invoice_dispute_open_rejects_already_disputed_invoice(self):
+        from engines.billing.commands import (
+            InvoiceDisputeOpenRequest,
+            InvoiceIssueRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-disp-dup"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-disp-1",
+            amount_minor=100,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceDisputeOpenRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-disp-1",
+            dispute_reason="wrong amount",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="already disputed"):
+            svc._execute_command(InvoiceDisputeOpenRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-disp-1",
+                dispute_reason="second dispute",
+            ).to_command(**kw()))
+
+    def test_invoice_dispute_open_rejects_paid_invoice(self):
+        from engines.billing.commands import (
+            InvoiceDisputeOpenRequest,
+            InvoiceIssueRequest,
+            InvoiceMarkPaidRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-disp-paid"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-disp-paid",
+            amount_minor=55,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceMarkPaidRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-disp-paid",
+            payment_reference="pay-disp-paid",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="already marked paid"):
+            svc._execute_command(InvoiceDisputeOpenRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-disp-paid",
+                dispute_reason="late dispute",
             ).to_command(**kw()))
