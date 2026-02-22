@@ -96,6 +96,7 @@ class TestBillingService:
             SubscriptionMarkDelinquentRequest,
             SubscriptionClearDelinquencyRequest,
             SubscriptionWriteOffRequest,
+            SubscriptionReactivateRequest,
             UsageMeterRequest,
         )
 
@@ -223,6 +224,21 @@ class TestBillingService:
         ).to_command(**kw()))
         assert cancel_result.event_type == "billing.subscription.cancelled.v1"
         assert svc.projection_store.get_subscription(sub_id)["status"] == "CANCELLED"
+
+        reactivate_result = svc._execute_command(SubscriptionReactivateRequest(
+            subscription_id=sub_id,
+            reactivation_reason="customer returned",
+        ).to_command(**kw()))
+        assert reactivate_result.event_type == "billing.subscription.reactivated.v1"
+        assert svc.projection_store.get_subscription(sub_id)["status"] == "ACTIVE"
+
+        payment_after_reactivate = svc._execute_command(PaymentRecordRequest(
+            subscription_id=sub_id,
+            payment_reference="pay-after-reactivate",
+            amount_minor=100,
+            currency="USD",
+        ).to_command(**kw()))
+        assert payment_after_reactivate.event_type == "billing.payment.recorded.v1"
 
 
     def test_payment_requires_existing_subscription(self):
@@ -811,4 +827,55 @@ class TestBillingService:
             svc._execute_command(SubscriptionClearDelinquencyRequest(
                 subscription_id=sub_id,
                 clearance_reason="late payment",
+            ).to_command(**kw()))
+
+    def test_reactivate_requires_cancelled_subscription(self):
+        from engines.billing.commands import (
+            SubscriptionReactivateRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-reactivate-not-cancelled"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="not CANCELLED"):
+            svc._execute_command(SubscriptionReactivateRequest(
+                subscription_id=sub_id,
+                reactivation_reason="should fail",
+            ).to_command(**kw()))
+
+    def test_reactivate_rejected_for_written_off_subscription(self):
+        from engines.billing.commands import (
+            SubscriptionCancelRequest,
+            SubscriptionMarkDelinquentRequest,
+            SubscriptionReactivateRequest,
+            SubscriptionStartRequest,
+            SubscriptionWriteOffRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-reactivate-written-off"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionMarkDelinquentRequest(
+            subscription_id=sub_id,
+            delinquency_reason="arrears",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionWriteOffRequest(
+            subscription_id=sub_id,
+            write_off_reason="bad debt",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="WRITTEN_OFF"):
+            svc._execute_command(SubscriptionReactivateRequest(
+                subscription_id=sub_id,
+                reactivation_reason="blocked",
             ).to_command(**kw()))

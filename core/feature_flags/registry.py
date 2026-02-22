@@ -136,6 +136,7 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "billing.subscription.mark_delinquent.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.subscription.clear_delinquency.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.subscription.write_off.request": FLAG_ENABLE_BILLING_ENGINE,
+    "billing.subscription.reactivate.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.usage.meter.request": FLAG_ENABLE_BILLING_ENGINE,
 
     # ── Reporting / BI Engine ─────────────────────────────────

@@ -252,3 +252,21 @@ def subscription_must_not_be_written_off_policy(command: Command, subscription_l
             policy_name="subscription_must_not_be_written_off_policy",
         )
     return None
+
+
+def subscription_must_be_cancelled_policy(command: Command, subscription_lookup) -> RejectionReason | None:
+    subscription_id = command.payload.get("subscription_id", "")
+    if not subscription_id:
+        return None
+
+    subscription = subscription_lookup(subscription_id)
+    if subscription is None:
+        return None
+
+    if subscription.get("status") != "CANCELLED":
+        return RejectionReason(
+            code="SUBSCRIPTION_NOT_CANCELLED",
+            message=f"Subscription '{subscription_id}' is not CANCELLED.",
+            policy_name="subscription_must_be_cancelled_policy",
+        )
+    return None
