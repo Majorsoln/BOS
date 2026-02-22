@@ -288,3 +288,16 @@ def subscription_must_not_be_closed_policy(command: Command, subscription_lookup
             policy_name="subscription_must_not_be_closed_policy",
         )
     return None
+
+
+def invoice_reference_must_be_unique_policy(command: Command, invoice_reference_exists) -> RejectionReason | None:
+    invoice_reference = command.payload.get("invoice_reference", "")
+    if not invoice_reference:
+        return None
+    if invoice_reference_exists(invoice_reference):
+        return RejectionReason(
+            code="DUPLICATE_INVOICE_REFERENCE",
+            message=f"invoice_reference '{invoice_reference}' already issued.",
+            policy_name="invoice_reference_must_be_unique_policy",
+        )
+    return None

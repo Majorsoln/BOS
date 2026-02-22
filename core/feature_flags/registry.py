@@ -138,6 +138,7 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "billing.subscription.write_off.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.subscription.reactivate.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.subscription.close.request": FLAG_ENABLE_BILLING_ENGINE,
+    "billing.invoice.issue.request": FLAG_ENABLE_BILLING_ENGINE,
     "billing.usage.meter.request": FLAG_ENABLE_BILLING_ENGINE,
 
     # ── Reporting / BI Engine ─────────────────────────────────

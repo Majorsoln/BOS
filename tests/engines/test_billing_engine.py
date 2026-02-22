@@ -98,6 +98,7 @@ class TestBillingService:
             SubscriptionWriteOffRequest,
             SubscriptionReactivateRequest,
             SubscriptionCloseRequest,
+            InvoiceIssueRequest,
             UsageMeterRequest,
         )
 
@@ -117,6 +118,16 @@ class TestBillingService:
         ).to_command(**kw()))
         assert start_result.event_type == "billing.subscription.started.v1"
         assert svc.projection_store.get_subscription(sub_id)["status"] == "ACTIVE"
+
+        invoice_result = svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-001",
+            amount_minor=450000,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+        assert invoice_result.event_type == "billing.invoice.issued.v1"
+        assert svc.projection_store.get_subscription(sub_id)["invoiced_minor"] == 450000
 
         pay_result = svc._execute_command(PaymentRecordRequest(
             subscription_id=sub_id,
@@ -940,4 +951,47 @@ class TestBillingService:
             svc._execute_command(SubscriptionReactivateRequest(
                 subscription_id=sub_id,
                 reactivation_reason="should block",
+            ).to_command(**kw()))
+
+    def test_invoice_issue_requires_existing_subscription(self):
+        from engines.billing.commands import InvoiceIssueRequest
+
+        svc = self._svc()
+        cmd = InvoiceIssueRequest(
+            subscription_id="missing-invoice-sub",
+            invoice_reference="inv-missing",
+            amount_minor=100,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw())
+
+        with pytest.raises(ValueError, match="not found"):
+            svc._execute_command(cmd)
+
+    def test_duplicate_invoice_reference_rejected(self):
+        from engines.billing.commands import InvoiceIssueRequest, SubscriptionStartRequest
+
+        svc = self._svc()
+        sub_id = "sub-invoice-dup"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-dup-1",
+            amount_minor=100,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="already issued"):
+            svc._execute_command(InvoiceIssueRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-dup-1",
+                amount_minor=120,
+                currency="USD",
+                due_on="2026-03-10",
             ).to_command(**kw()))
