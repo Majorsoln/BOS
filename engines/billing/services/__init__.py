@@ -27,6 +27,7 @@ from engines.billing.events import (
     build_invoice_issued_payload,
     build_invoice_voided_payload,
     build_invoice_marked_paid_payload,
+    build_invoice_due_date_extended_payload,
     build_usage_metered_payload,
     register_billing_event_types,
     resolve_billing_event_type,
@@ -173,6 +174,7 @@ class BillingProjectionStore:
             self._invoice_records[invoice_reference] = {
                 "subscription_id": payload["subscription_id"],
                 "amount_minor": payload["amount_minor"],
+                "due_on": payload["due_on"],
             }
         elif event_type.startswith("billing.invoice.voided"):
             invoice_reference = payload["invoice_reference"]
@@ -190,6 +192,11 @@ class BillingProjectionStore:
                 if subscription is not None:
                     subscription["paid_invoice_minor"] = subscription.get("paid_invoice_minor", 0) + invoice_record["amount_minor"]
             self._paid_invoice_references.add(invoice_reference)
+        elif event_type.startswith("billing.invoice.due_date_extended"):
+            invoice_reference = payload["invoice_reference"]
+            invoice_record = self._invoice_records.get(invoice_reference)
+            if invoice_record is not None:
+                invoice_record["due_on"] = payload["new_due_on"]
         elif event_type.startswith("billing.usage.metered"):
             metric_key = payload["metric_key"]
             metric_value = payload["metric_value"]
@@ -280,6 +287,7 @@ PAYLOAD_BUILDERS = {
     "billing.invoice.issue.request": build_invoice_issued_payload,
     "billing.invoice.void.request": build_invoice_voided_payload,
     "billing.invoice.mark_paid.request": build_invoice_marked_paid_payload,
+    "billing.invoice.due_date.extend.request": build_invoice_due_date_extended_payload,
     "billing.usage.meter.request": build_usage_metered_payload,
 }
 
@@ -348,7 +356,7 @@ class BillingService:
             if duplicate_invoice_rejection is not None:
                 raise ValueError(duplicate_invoice_rejection.message)
 
-        if command.command_type in {"billing.invoice.void.request", "billing.invoice.mark_paid.request"}:
+        if command.command_type in {"billing.invoice.void.request", "billing.invoice.mark_paid.request", "billing.invoice.due_date.extend.request"}:
             invoice_exists_rejection = invoice_reference_must_exist_policy(
                 command,
                 invoice_reference_exists=self._projection_store.has_invoice_reference,
@@ -371,7 +379,7 @@ class BillingService:
             if invoice_not_voided_rejection is not None:
                 raise ValueError(invoice_not_voided_rejection.message)
 
-        if command.command_type == "billing.invoice.mark_paid.request":
+        if command.command_type in {"billing.invoice.mark_paid.request", "billing.invoice.due_date.extend.request"}:
             invoice_not_voided_rejection = invoice_reference_must_not_be_voided_policy(
                 command,
                 invoice_reference_voided=self._projection_store.is_invoice_reference_voided,
@@ -440,6 +448,7 @@ class BillingService:
             "billing.invoice.issue.request",
             "billing.invoice.void.request",
             "billing.invoice.mark_paid.request",
+            "billing.invoice.due_date.extend.request",
             "billing.usage.meter.request",
         }:
             exists_rejection = subscription_must_exist_policy(
@@ -481,6 +490,7 @@ class BillingService:
             "billing.invoice.issue.request",
             "billing.invoice.void.request",
             "billing.invoice.mark_paid.request",
+            "billing.invoice.due_date.extend.request",
             "billing.payment.record.request",
             "billing.payment.reverse.request",
             "billing.usage.meter.request",
@@ -506,6 +516,7 @@ class BillingService:
             "billing.invoice.issue.request",
             "billing.invoice.void.request",
             "billing.invoice.mark_paid.request",
+            "billing.invoice.due_date.extend.request",
             "billing.payment.record.request",
             "billing.payment.reverse.request",
             "billing.usage.meter.request",
@@ -528,6 +539,7 @@ class BillingService:
             "billing.invoice.issue.request",
             "billing.invoice.void.request",
             "billing.invoice.mark_paid.request",
+            "billing.invoice.due_date.extend.request",
         }:
             delinquent_rejection = subscription_must_not_be_delinquent_policy(
                 command,
@@ -583,6 +595,7 @@ class BillingService:
             "billing.invoice.issue.request",
             "billing.invoice.void.request",
             "billing.invoice.mark_paid.request",
+            "billing.invoice.due_date.extend.request",
         }:
             active_rejection = subscription_must_be_active_policy(
                 command,

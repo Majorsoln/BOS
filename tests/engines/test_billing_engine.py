@@ -101,6 +101,7 @@ class TestBillingService:
             InvoiceIssueRequest,
             InvoiceVoidRequest,
             InvoiceMarkPaidRequest,
+            InvoiceDueDateExtendRequest,
             UsageMeterRequest,
         )
 
@@ -147,6 +148,13 @@ class TestBillingService:
             due_on="2026-03-15",
         ).to_command(**kw()))
         assert second_invoice.event_type == "billing.invoice.issued.v1"
+        due_extend_result = svc._execute_command(InvoiceDueDateExtendRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-002",
+            new_due_on="2026-03-20",
+            extension_reason="grace period",
+        ).to_command(**kw()))
+        assert due_extend_result.event_type == "billing.invoice.due_date_extended.v1"
         mark_paid_result = svc._execute_command(InvoiceMarkPaidRequest(
             subscription_id=sub_id,
             invoice_reference="inv-002",
@@ -1194,4 +1202,76 @@ class TestBillingService:
                 subscription_id=sub_id,
                 invoice_reference="inv-paid-dup",
                 payment_reference="pay-second",
+            ).to_command(**kw()))
+
+    def test_invoice_due_date_extend_rejects_voided_invoice(self):
+        from engines.billing.commands import (
+            InvoiceDueDateExtendRequest,
+            InvoiceIssueRequest,
+            InvoiceVoidRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-due-voided"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-due-voided",
+            amount_minor=99,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceVoidRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-due-voided",
+            void_reason="replace",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="voided"):
+            svc._execute_command(InvoiceDueDateExtendRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-due-voided",
+                new_due_on="2026-03-20",
+                extension_reason="grace",
+            ).to_command(**kw()))
+
+    def test_invoice_due_date_extend_rejects_paid_invoice(self):
+        from engines.billing.commands import (
+            InvoiceDueDateExtendRequest,
+            InvoiceIssueRequest,
+            InvoiceMarkPaidRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-due-paid"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-due-paid",
+            amount_minor=130,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceMarkPaidRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-due-paid",
+            payment_reference="pay-due-paid",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="already marked paid"):
+            svc._execute_command(InvoiceDueDateExtendRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-due-paid",
+                new_due_on="2026-03-20",
+                extension_reason="late extension",
             ).to_command(**kw()))
