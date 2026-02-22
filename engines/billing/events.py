@@ -23,6 +23,7 @@ BILLING_INVOICE_VOIDED_V1 = "billing.invoice.voided.v1"
 BILLING_INVOICE_MARKED_PAID_V1 = "billing.invoice.marked_paid.v1"
 BILLING_INVOICE_DUE_DATE_EXTENDED_V1 = "billing.invoice.due_date_extended.v1"
 BILLING_INVOICE_DISPUTE_OPENED_V1 = "billing.invoice.dispute.opened.v1"
+BILLING_INVOICE_DISPUTE_RESOLVED_V1 = "billing.invoice.dispute.resolved.v1"
 BILLING_USAGE_METERED_V1 = "billing.usage.metered.v1"
 
 BILLING_EVENT_TYPES = (
@@ -45,6 +46,7 @@ BILLING_EVENT_TYPES = (
     BILLING_INVOICE_MARKED_PAID_V1,
     BILLING_INVOICE_DUE_DATE_EXTENDED_V1,
     BILLING_INVOICE_DISPUTE_OPENED_V1,
+    BILLING_INVOICE_DISPUTE_RESOLVED_V1,
     BILLING_USAGE_METERED_V1,
 )
 
@@ -68,6 +70,7 @@ COMMAND_TO_EVENT_TYPE = {
     "billing.invoice.mark_paid.request": BILLING_INVOICE_MARKED_PAID_V1,
     "billing.invoice.due_date.extend.request": BILLING_INVOICE_DUE_DATE_EXTENDED_V1,
     "billing.invoice.dispute.open.request": BILLING_INVOICE_DISPUTE_OPENED_V1,
+    "billing.invoice.dispute.resolve.request": BILLING_INVOICE_DISPUTE_RESOLVED_V1,
     "billing.usage.meter.request": BILLING_USAGE_METERED_V1,
 }
 
@@ -305,5 +308,16 @@ def build_invoice_dispute_opened_payload(command: Command) -> dict:
         "invoice_reference": command.payload["invoice_reference"],
         "dispute_reason": command.payload["dispute_reason"],
         "dispute_opened_at": command.issued_at,
+    })
+    return payload
+
+
+def build_invoice_dispute_resolved_payload(command: Command) -> dict:
+    payload = _base_payload(command)
+    payload.update({
+        "subscription_id": command.payload["subscription_id"],
+        "invoice_reference": command.payload["invoice_reference"],
+        "resolution_reason": command.payload["resolution_reason"],
+        "dispute_resolved_at": command.issued_at,
     })
     return payload

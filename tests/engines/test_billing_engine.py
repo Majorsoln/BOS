@@ -103,6 +103,7 @@ class TestBillingService:
             InvoiceMarkPaidRequest,
             InvoiceDueDateExtendRequest,
             InvoiceDisputeOpenRequest,
+            InvoiceDisputeResolveRequest,
             UsageMeterRequest,
         )
 
@@ -169,6 +170,19 @@ class TestBillingService:
                 payment_reference="pay-inv-002",
             ).to_command(**kw()))
 
+        resolve_result = svc._execute_command(InvoiceDisputeResolveRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-002",
+            resolution_reason="credit memo agreed",
+        ).to_command(**kw()))
+        assert resolve_result.event_type == "billing.invoice.dispute.resolved.v1"
+        mark_paid_after_resolve = svc._execute_command(InvoiceMarkPaidRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-002",
+            payment_reference="pay-inv-002",
+        ).to_command(**kw()))
+        assert mark_paid_after_resolve.event_type == "billing.invoice.marked_paid.v1"
+
         replacement_invoice = svc._execute_command(InvoiceIssueRequest(
             subscription_id=sub_id,
             invoice_reference="inv-003",
@@ -183,7 +197,7 @@ class TestBillingService:
             payment_reference="pay-inv-003",
         ).to_command(**kw()))
         assert mark_paid_result.event_type == "billing.invoice.marked_paid.v1"
-        assert svc.projection_store.get_subscription(sub_id)["paid_invoice_minor"] == 120000
+        assert svc.projection_store.get_subscription(sub_id)["paid_invoice_minor"] == 240000
 
         pay_result = svc._execute_command(PaymentRecordRequest(
             subscription_id=sub_id,
@@ -1366,3 +1380,82 @@ class TestBillingService:
                 invoice_reference="inv-disp-paid",
                 dispute_reason="late dispute",
             ).to_command(**kw()))
+
+    def test_invoice_dispute_resolve_requires_disputed_invoice(self):
+        from engines.billing.commands import (
+            InvoiceDisputeResolveRequest,
+            InvoiceIssueRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-disp-resolve-not-open"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-r-not-open",
+            amount_minor=10,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="not disputed"):
+            svc._execute_command(InvoiceDisputeResolveRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-r-not-open",
+                resolution_reason="noop",
+            ).to_command(**kw()))
+
+    def test_invoice_dispute_resolve_allows_due_date_extend_again(self):
+        from engines.billing.commands import (
+            InvoiceDisputeOpenRequest,
+            InvoiceDisputeResolveRequest,
+            InvoiceDueDateExtendRequest,
+            InvoiceIssueRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-disp-resolved"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-r-1",
+            amount_minor=11,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceDisputeOpenRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-r-1",
+            dispute_reason="review",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="disputed"):
+            svc._execute_command(InvoiceDueDateExtendRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-r-1",
+                new_due_on="2026-03-07",
+                extension_reason="blocked",
+            ).to_command(**kw()))
+
+        svc._execute_command(InvoiceDisputeResolveRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-r-1",
+            resolution_reason="resolved",
+        ).to_command(**kw()))
+        ok = svc._execute_command(InvoiceDueDateExtendRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-r-1",
+            new_due_on="2026-03-07",
+            extension_reason="granted",
+        ).to_command(**kw()))
+        assert ok.event_type == "billing.invoice.due_date_extended.v1"
