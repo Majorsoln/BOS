@@ -99,6 +99,7 @@ class TestBillingService:
             SubscriptionReactivateRequest,
             SubscriptionCloseRequest,
             InvoiceIssueRequest,
+            InvoiceVoidRequest,
             UsageMeterRequest,
         )
 
@@ -128,6 +129,14 @@ class TestBillingService:
         ).to_command(**kw()))
         assert invoice_result.event_type == "billing.invoice.issued.v1"
         assert svc.projection_store.get_subscription(sub_id)["invoiced_minor"] == 450000
+
+        void_result = svc._execute_command(InvoiceVoidRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-001",
+            void_reason="rebill correction",
+        ).to_command(**kw()))
+        assert void_result.event_type == "billing.invoice.voided.v1"
+        assert svc.projection_store.get_subscription(sub_id)["invoiced_minor"] == 0
 
         pay_result = svc._execute_command(PaymentRecordRequest(
             subscription_id=sub_id,
@@ -994,4 +1003,91 @@ class TestBillingService:
                 amount_minor=120,
                 currency="USD",
                 due_on="2026-03-10",
+            ).to_command(**kw()))
+
+    def test_invoice_void_requires_existing_reference(self):
+        from engines.billing.commands import InvoiceVoidRequest, SubscriptionStartRequest
+
+        svc = self._svc()
+        sub_id = "sub-void-missing"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="not found"):
+            svc._execute_command(InvoiceVoidRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-nope",
+                void_reason="missing",
+            ).to_command(**kw()))
+
+    def test_invoice_void_rejects_already_voided_reference(self):
+        from engines.billing.commands import (
+            InvoiceIssueRequest,
+            InvoiceVoidRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-void-dup"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-void-1",
+            amount_minor=50,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceVoidRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-void-1",
+            void_reason="first void",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="already voided"):
+            svc._execute_command(InvoiceVoidRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-void-1",
+                void_reason="second void",
+            ).to_command(**kw()))
+
+    def test_invoice_void_requires_reference_subscription_match(self):
+        from engines.billing.commands import (
+            InvoiceIssueRequest,
+            InvoiceVoidRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_a = "sub-inv-a"
+        sub_b = "sub-inv-b"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_a,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_b,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_a,
+            invoice_reference="inv-sub-a",
+            amount_minor=70,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="does not belong"):
+            svc._execute_command(InvoiceVoidRequest(
+                subscription_id=sub_b,
+                invoice_reference="inv-sub-a",
+                void_reason="wrong sub",
             ).to_command(**kw()))

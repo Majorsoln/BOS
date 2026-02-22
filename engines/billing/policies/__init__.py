@@ -301,3 +301,51 @@ def invoice_reference_must_be_unique_policy(command: Command, invoice_reference_
             policy_name="invoice_reference_must_be_unique_policy",
         )
     return None
+
+
+def invoice_reference_must_exist_policy(command: Command, invoice_reference_exists) -> RejectionReason | None:
+    invoice_reference = command.payload.get("invoice_reference", "")
+    if not invoice_reference:
+        return None
+    if not invoice_reference_exists(invoice_reference):
+        return RejectionReason(
+            code="INVOICE_REFERENCE_NOT_FOUND",
+            message=f"invoice_reference '{invoice_reference}' not found.",
+            policy_name="invoice_reference_must_exist_policy",
+        )
+    return None
+
+
+def invoice_reference_must_not_be_voided_policy(command: Command, invoice_reference_voided) -> RejectionReason | None:
+    invoice_reference = command.payload.get("invoice_reference", "")
+    if not invoice_reference:
+        return None
+    if invoice_reference_voided(invoice_reference):
+        return RejectionReason(
+            code="INVOICE_ALREADY_VOIDED",
+            message=f"invoice_reference '{invoice_reference}' already voided.",
+            policy_name="invoice_reference_must_not_be_voided_policy",
+        )
+    return None
+
+
+def invoice_reference_must_belong_to_subscription_policy(command: Command, resolve_invoice_reference) -> RejectionReason | None:
+    subscription_id = command.payload.get("subscription_id", "")
+    invoice_reference = command.payload.get("invoice_reference", "")
+    if not subscription_id or not invoice_reference:
+        return None
+
+    invoice_record = resolve_invoice_reference(invoice_reference)
+    if invoice_record is None:
+        return None
+
+    if invoice_record.get("subscription_id") != subscription_id:
+        return RejectionReason(
+            code="INVOICE_REFERENCE_SUBSCRIPTION_MISMATCH",
+            message=(
+                f"invoice_reference '{invoice_reference}' does not belong to "
+                f"subscription '{subscription_id}'."
+            ),
+            policy_name="invoice_reference_must_belong_to_subscription_policy",
+        )
+    return None
