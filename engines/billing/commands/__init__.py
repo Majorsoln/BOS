@@ -30,6 +30,7 @@ BILLING_INVOICE_MARK_PAID_REQUEST = "billing.invoice.mark_paid.request"
 BILLING_INVOICE_DUE_DATE_EXTEND_REQUEST = "billing.invoice.due_date.extend.request"
 BILLING_INVOICE_DISPUTE_OPEN_REQUEST = "billing.invoice.dispute.open.request"
 BILLING_INVOICE_DISPUTE_RESOLVE_REQUEST = "billing.invoice.dispute.resolve.request"
+BILLING_INVOICE_REMINDER_SEND_REQUEST = "billing.invoice.reminder.send.request"
 BILLING_USAGE_METER_REQUEST = "billing.usage.meter.request"
 
 BILLING_COMMAND_TYPES = frozenset({
@@ -53,6 +54,7 @@ BILLING_COMMAND_TYPES = frozenset({
     BILLING_INVOICE_DUE_DATE_EXTEND_REQUEST,
     BILLING_INVOICE_DISPUTE_OPEN_REQUEST,
     BILLING_INVOICE_DISPUTE_RESOLVE_REQUEST,
+    BILLING_INVOICE_REMINDER_SEND_REQUEST,
     BILLING_USAGE_METER_REQUEST,
 })
 
@@ -741,6 +743,41 @@ class InvoiceDisputeResolveRequest:
                 "subscription_id": self.subscription_id,
                 "invoice_reference": self.invoice_reference,
                 "resolution_reason": self.resolution_reason,
+            },
+            business_id=business_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            command_id=command_id or uuid.uuid4(),
+            correlation_id=correlation_id or uuid.uuid4(),
+            issued_at=issued_at,
+            branch_id=branch_id,
+        )
+
+
+@dataclass(frozen=True)
+class InvoiceReminderSendRequest:
+    subscription_id: str
+    invoice_reference: str
+    reminder_template: str
+
+    def __post_init__(self):
+        if not self.subscription_id.strip():
+            raise ValueError("subscription_id must be non-empty.")
+        if not self.invoice_reference.strip():
+            raise ValueError("invoice_reference must be non-empty.")
+        if not self.reminder_template.strip():
+            raise ValueError("reminder_template must be non-empty.")
+
+    def to_command(self, *, business_id, actor_type, actor_id,
+                   command_id=None,
+                   correlation_id=None,
+                   issued_at: datetime, branch_id=None) -> Command:
+        return _cmd(
+            BILLING_INVOICE_REMINDER_SEND_REQUEST,
+            {
+                "subscription_id": self.subscription_id,
+                "invoice_reference": self.invoice_reference,
+                "reminder_template": self.reminder_template,
             },
             business_id=business_id,
             actor_type=actor_type,

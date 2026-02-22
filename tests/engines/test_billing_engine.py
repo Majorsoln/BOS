@@ -104,6 +104,7 @@ class TestBillingService:
             InvoiceDueDateExtendRequest,
             InvoiceDisputeOpenRequest,
             InvoiceDisputeResolveRequest,
+            InvoiceReminderSendRequest,
             UsageMeterRequest,
         )
 
@@ -157,6 +158,13 @@ class TestBillingService:
             extension_reason="grace period",
         ).to_command(**kw()))
         assert due_extend_result.event_type == "billing.invoice.due_date_extended.v1"
+        reminder_result = svc._execute_command(InvoiceReminderSendRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-002",
+            reminder_template="T1_OVERDUE",
+        ).to_command(**kw()))
+        assert reminder_result.event_type == "billing.invoice.reminder.sent.v1"
+        assert svc.projection_store.get_subscription(sub_id)["invoice_reminders_sent"] == 1
         dispute_open_result = svc._execute_command(InvoiceDisputeOpenRequest(
             subscription_id=sub_id,
             invoice_reference="inv-002",
@@ -1459,3 +1467,73 @@ class TestBillingService:
             extension_reason="granted",
         ).to_command(**kw()))
         assert ok.event_type == "billing.invoice.due_date_extended.v1"
+
+    def test_invoice_reminder_rejected_for_disputed_invoice(self):
+        from engines.billing.commands import (
+            InvoiceDisputeOpenRequest,
+            InvoiceIssueRequest,
+            InvoiceReminderSendRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-rem-disputed"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-rem-1",
+            amount_minor=20,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceDisputeOpenRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-rem-1",
+            dispute_reason="query",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="disputed"):
+            svc._execute_command(InvoiceReminderSendRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-rem-1",
+                reminder_template="T1_OVERDUE",
+            ).to_command(**kw()))
+
+    def test_invoice_reminder_rejected_for_paid_invoice(self):
+        from engines.billing.commands import (
+            InvoiceIssueRequest,
+            InvoiceMarkPaidRequest,
+            InvoiceReminderSendRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-rem-paid"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceIssueRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-rem-paid",
+            amount_minor=25,
+            currency="USD",
+            due_on="2026-03-01",
+        ).to_command(**kw()))
+        svc._execute_command(InvoiceMarkPaidRequest(
+            subscription_id=sub_id,
+            invoice_reference="inv-rem-paid",
+            payment_reference="pay-rem-paid",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="already marked paid"):
+            svc._execute_command(InvoiceReminderSendRequest(
+                subscription_id=sub_id,
+                invoice_reference="inv-rem-paid",
+                reminder_template="T1_OVERDUE",
+            ).to_command(**kw()))
