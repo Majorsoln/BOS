@@ -23,6 +23,7 @@ from engines.billing.events import (
     build_subscription_delinquency_cleared_payload,
     build_subscription_written_off_payload,
     build_subscription_reactivated_payload,
+    build_subscription_closed_payload,
     build_usage_metered_payload,
     register_billing_event_types,
     resolve_billing_event_type,
@@ -45,6 +46,7 @@ from engines.billing.policies import (
     subscription_must_be_delinquent_policy,
     subscription_must_not_be_written_off_policy,
     subscription_must_be_cancelled_policy,
+    subscription_must_not_be_closed_policy,
 )
 
 
@@ -145,6 +147,11 @@ class BillingProjectionStore:
             if subscription is not None:
                 subscription["status"] = "ACTIVE"
                 subscription["reactivation_reason"] = payload["reactivation_reason"]
+        elif event_type.startswith("billing.subscription.closed"):
+            subscription = self._subscriptions.get(payload["subscription_id"])
+            if subscription is not None:
+                subscription["status"] = "CLOSED"
+                subscription["closure_reason"] = payload["closure_reason"]
         elif event_type.startswith("billing.usage.metered"):
             metric_key = payload["metric_key"]
             metric_value = payload["metric_value"]
@@ -213,6 +220,7 @@ PAYLOAD_BUILDERS = {
     "billing.subscription.clear_delinquency.request": build_subscription_delinquency_cleared_payload,
     "billing.subscription.write_off.request": build_subscription_written_off_payload,
     "billing.subscription.reactivate.request": build_subscription_reactivated_payload,
+    "billing.subscription.close.request": build_subscription_closed_payload,
     "billing.usage.meter.request": build_usage_metered_payload,
 }
 
@@ -323,6 +331,7 @@ class BillingService:
             "billing.subscription.clear_delinquency.request",
             "billing.subscription.write_off.request",
             "billing.subscription.reactivate.request",
+            "billing.subscription.close.request",
             "billing.usage.meter.request",
         }:
             exists_rejection = subscription_must_exist_policy(
@@ -360,6 +369,7 @@ class BillingService:
             "billing.subscription.clear_delinquency.request",
             "billing.subscription.write_off.request",
             "billing.subscription.reactivate.request",
+            "billing.subscription.close.request",
             "billing.payment.record.request",
             "billing.payment.reverse.request",
             "billing.usage.meter.request",
@@ -370,6 +380,28 @@ class BillingService:
             )
             if written_off_rejection is not None:
                 raise ValueError(written_off_rejection.message)
+
+        if command.command_type in {
+            "billing.subscription.suspend.request",
+            "billing.subscription.renew.request",
+            "billing.subscription.cancel.request",
+            "billing.subscription.resume.request",
+            "billing.subscription.plan_change.request",
+            "billing.subscription.mark_delinquent.request",
+            "billing.subscription.clear_delinquency.request",
+            "billing.subscription.write_off.request",
+            "billing.subscription.reactivate.request",
+            "billing.subscription.close.request",
+            "billing.payment.record.request",
+            "billing.payment.reverse.request",
+            "billing.usage.meter.request",
+        }:
+            closed_rejection = subscription_must_not_be_closed_policy(
+                command,
+                subscription_lookup=self._projection_store.get_subscription,
+            )
+            if closed_rejection is not None:
+                raise ValueError(closed_rejection.message)
 
         if command.command_type in {
             "billing.subscription.resume.request",
@@ -398,7 +430,10 @@ class BillingService:
             if must_be_delinquent_rejection is not None:
                 raise ValueError(must_be_delinquent_rejection.message)
 
-        if command.command_type == "billing.subscription.reactivate.request":
+        if command.command_type in {
+            "billing.subscription.reactivate.request",
+            "billing.subscription.close.request",
+        }:
             must_be_cancelled_rejection = subscription_must_be_cancelled_policy(
                 command,
                 subscription_lookup=self._projection_store.get_subscription,

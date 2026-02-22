@@ -17,6 +17,7 @@ BILLING_SUBSCRIPTION_DELINQUENT_MARKED_V1 = "billing.subscription.delinquent_mar
 BILLING_SUBSCRIPTION_DELINQUENCY_CLEARED_V1 = "billing.subscription.delinquency_cleared.v1"
 BILLING_SUBSCRIPTION_WRITTEN_OFF_V1 = "billing.subscription.written_off.v1"
 BILLING_SUBSCRIPTION_REACTIVATED_V1 = "billing.subscription.reactivated.v1"
+BILLING_SUBSCRIPTION_CLOSED_V1 = "billing.subscription.closed.v1"
 BILLING_USAGE_METERED_V1 = "billing.usage.metered.v1"
 
 BILLING_EVENT_TYPES = (
@@ -33,6 +34,7 @@ BILLING_EVENT_TYPES = (
     BILLING_SUBSCRIPTION_DELINQUENCY_CLEARED_V1,
     BILLING_SUBSCRIPTION_WRITTEN_OFF_V1,
     BILLING_SUBSCRIPTION_REACTIVATED_V1,
+    BILLING_SUBSCRIPTION_CLOSED_V1,
     BILLING_USAGE_METERED_V1,
 )
 
@@ -50,6 +52,7 @@ COMMAND_TO_EVENT_TYPE = {
     "billing.subscription.clear_delinquency.request": BILLING_SUBSCRIPTION_DELINQUENCY_CLEARED_V1,
     "billing.subscription.write_off.request": BILLING_SUBSCRIPTION_WRITTEN_OFF_V1,
     "billing.subscription.reactivate.request": BILLING_SUBSCRIPTION_REACTIVATED_V1,
+    "billing.subscription.close.request": BILLING_SUBSCRIPTION_CLOSED_V1,
     "billing.usage.meter.request": BILLING_USAGE_METERED_V1,
 }
 
@@ -219,5 +222,15 @@ def build_subscription_reactivated_payload(command: Command) -> dict:
         "subscription_id": command.payload["subscription_id"],
         "reactivation_reason": command.payload["reactivation_reason"],
         "reactivated_at": command.issued_at,
+    })
+    return payload
+
+
+def build_subscription_closed_payload(command: Command) -> dict:
+    payload = _base_payload(command)
+    payload.update({
+        "subscription_id": command.payload["subscription_id"],
+        "closure_reason": command.payload["closure_reason"],
+        "closed_at": command.issued_at,
     })
     return payload

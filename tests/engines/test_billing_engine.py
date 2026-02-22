@@ -97,6 +97,7 @@ class TestBillingService:
             SubscriptionClearDelinquencyRequest,
             SubscriptionWriteOffRequest,
             SubscriptionReactivateRequest,
+            SubscriptionCloseRequest,
             UsageMeterRequest,
         )
 
@@ -239,6 +240,17 @@ class TestBillingService:
             currency="USD",
         ).to_command(**kw()))
         assert payment_after_reactivate.event_type == "billing.payment.recorded.v1"
+
+        svc._execute_command(SubscriptionCancelRequest(
+            subscription_id=sub_id,
+            cancellation_reason="second closure cycle",
+        ).to_command(**kw()))
+        close_result = svc._execute_command(SubscriptionCloseRequest(
+            subscription_id=sub_id,
+            closure_reason="legal retention complete",
+        ).to_command(**kw()))
+        assert close_result.event_type == "billing.subscription.closed.v1"
+        assert svc.projection_store.get_subscription(sub_id)["status"] == "CLOSED"
 
 
     def test_payment_requires_existing_subscription(self):
@@ -878,4 +890,54 @@ class TestBillingService:
             svc._execute_command(SubscriptionReactivateRequest(
                 subscription_id=sub_id,
                 reactivation_reason="blocked",
+            ).to_command(**kw()))
+
+    def test_close_requires_cancelled_subscription(self):
+        from engines.billing.commands import (
+            SubscriptionCloseRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-close-not-cancelled"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="not CANCELLED"):
+            svc._execute_command(SubscriptionCloseRequest(
+                subscription_id=sub_id,
+                closure_reason="not allowed",
+            ).to_command(**kw()))
+
+    def test_reactivate_rejected_for_closed_subscription(self):
+        from engines.billing.commands import (
+            SubscriptionCancelRequest,
+            SubscriptionCloseRequest,
+            SubscriptionReactivateRequest,
+            SubscriptionStartRequest,
+        )
+
+        svc = self._svc()
+        sub_id = "sub-reactivate-closed"
+        svc._execute_command(SubscriptionStartRequest(
+            subscription_id=sub_id,
+            plan_code="STARTER",
+            cycle="MONTHLY",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionCancelRequest(
+            subscription_id=sub_id,
+            cancellation_reason="customer requested",
+        ).to_command(**kw()))
+        svc._execute_command(SubscriptionCloseRequest(
+            subscription_id=sub_id,
+            closure_reason="archive final",
+        ).to_command(**kw()))
+
+        with pytest.raises(ValueError, match="CLOSED"):
+            svc._execute_command(SubscriptionReactivateRequest(
+                subscription_id=sub_id,
+                reactivation_reason="should block",
             ).to_command(**kw()))

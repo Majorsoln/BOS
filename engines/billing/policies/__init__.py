@@ -270,3 +270,21 @@ def subscription_must_be_cancelled_policy(command: Command, subscription_lookup)
             policy_name="subscription_must_be_cancelled_policy",
         )
     return None
+
+
+def subscription_must_not_be_closed_policy(command: Command, subscription_lookup) -> RejectionReason | None:
+    subscription_id = command.payload.get("subscription_id", "")
+    if not subscription_id:
+        return None
+
+    subscription = subscription_lookup(subscription_id)
+    if subscription is None:
+        return None
+
+    if subscription.get("status") == "CLOSED":
+        return RejectionReason(
+            code="SUBSCRIPTION_CLOSED",
+            message=f"Subscription '{subscription_id}' is CLOSED and cannot transition.",
+            policy_name="subscription_must_not_be_closed_policy",
+        )
+    return None
