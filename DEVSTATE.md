@@ -1,6 +1,6 @@
 # BOS — Developer State File
 > Maintained by: Codex (Claude AI Engineer)
-> Last updated: Phase 11 Enterprise Admin built — tenant lifecycle, settings, dashboard — 1046+ tests passing
+> Last updated: Phase 12 SaaS Productization built — plans, subscriptions, onboarding, branding, region packs — 1135+ tests passing
 > Read this file at the start of every session before touching any code.
 
 ---
@@ -31,7 +31,7 @@ Phase 8  ✅ Security & Isolation (tenant isolation, rate limiting, anomaly dete
 Phase 9  ✅ Integration Layer    (inbound adapters, outbound publishers, audit log, webhook verification, permissions)
 Phase 10 ✅ Performance & Scale  (caching, projection registry, snapshots, cross-engine read models, metrics, freshness guard)
 Phase 11 ✅ Enterprise Admin     (tenant lifecycle, system settings, dashboard aggregation, health status)
-Phase 12 ❌ SaaS Productization  (not started)
+Phase 12 ✅ SaaS Productization  (subscription plans, subscriptions lifecycle, onboarding automation, white-label branding, region packs)
 Phase 13 ❌ Documentation        (not started)
 ```
 
@@ -159,8 +159,17 @@ COMPLETED ✅:
   - Dashboard: SystemOverview (tenant counts by state), TenantSummary, TenantDetail, HealthStatus
   - 33 admin tests passing
 
+COMPLETED ✅:
+  Phase 12 — SaaS Productization
+  - Subscription Plans: PlanDefinition (STARTER/PROFESSIONAL/ENTERPRISE tiers), PlanQuota, PlanProjection, PlanManager
+  - Plan-Based Engine Activation: resolve_engines_for_plan(), check_quota() enforcement
+  - Subscription Lifecycle: activate/renew/suspend/cancel/upgrade with state machine transitions
+  - Tenant Onboarding Automation: multi-step workflow (INITIATED → BUSINESS_CREATED → PLAN_SELECTED → BRANCH_CREATED → ADMIN_SETUP → COMPLETED)
+  - White-Label Branding: BrandConfig per business (logo, colors, domain, tagline), domain-based resolution
+  - Regional Configuration Packs: TaxPreset, RegionPack (TZ, KE, etc.), auto-apply to tenants
+  - 89 SaaS tests passing
+
 NEXT:
-  Phase 12 — SaaS Productization (multi-tenant billing, onboarding)
   Phase 13 — Documentation (API docs, developer guide)
 ```
 
