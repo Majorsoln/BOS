@@ -1,6 +1,6 @@
 # BOS — Developer State File
 > Maintained by: Codex (Claude AI Engineer)
-> Last updated: Phase 13 Documentation & Certification complete — ALL 13 PHASES DONE — 1135+ tests passing
+> Last updated: Phase 14 (WIP) — Customer Identity, Loyalty, Wallet, Promotion v2, Cart QR, QR Menu — 1226 tests passing
 > Read this file at the start of every session before touching any code.
 
 ---
@@ -33,6 +33,7 @@ Phase 10 ✅ Performance & Scale  (caching, projection registry, snapshots, cros
 Phase 11 ✅ Enterprise Admin     (tenant lifecycle, system settings, dashboard aggregation, health status)
 Phase 12 ✅ SaaS Productization  (subscription plans, subscriptions lifecycle, onboarding automation, white-label branding, region packs)
 Phase 13 ✅ Documentation        (developer handbook, engine guide, governance, compliance, DR, certification, API reference)
+Phase 14 🔄 Retail Enhancement   (Customer Identity ✅, Loyalty ✅, Credit Wallet ✅, Promotion v2 ✅, Cart QR ✅, QR Menu ✅ — tests ✅)
 ```
 
 ---
