@@ -22,6 +22,12 @@ WORKSHOP_CUTLIST_GENERATE_REQUEST = "workshop.cutlist.generate.request"
 WORKSHOP_MATERIAL_CONSUME_REQUEST = "workshop.material.consume.request"
 WORKSHOP_OFFCUT_RECORD_REQUEST = "workshop.offcut.record.request"
 
+# Phase 16 — Style Registry & Quote Engine
+WORKSHOP_STYLE_REGISTER_REQUEST = "workshop.style.register.request"
+WORKSHOP_STYLE_UPDATE_REQUEST = "workshop.style.update.request"
+WORKSHOP_STYLE_DEACTIVATE_REQUEST = "workshop.style.deactivate.request"
+WORKSHOP_QUOTE_GENERATE_REQUEST = "workshop.quote.generate.request"
+
 WORKSHOP_COMMAND_TYPES = frozenset({
     WORKSHOP_JOB_CREATE_REQUEST,
     WORKSHOP_JOB_ASSIGN_REQUEST,
@@ -31,6 +37,10 @@ WORKSHOP_COMMAND_TYPES = frozenset({
     WORKSHOP_CUTLIST_GENERATE_REQUEST,
     WORKSHOP_MATERIAL_CONSUME_REQUEST,
     WORKSHOP_OFFCUT_RECORD_REQUEST,
+    WORKSHOP_STYLE_REGISTER_REQUEST,
+    WORKSHOP_STYLE_UPDATE_REQUEST,
+    WORKSHOP_STYLE_DEACTIVATE_REQUEST,
+    WORKSHOP_QUOTE_GENERATE_REQUEST,
 })
 
 VALID_MATERIAL_UNITS = frozenset({"MM", "M", "SQM", "SHT", "PC", "KG"})
@@ -258,3 +268,140 @@ class OffcutRecordRequest:
             "length_mm": self.length_mm,
             "location_id": self.location_id,
         }, branch_id=self.branch_id, scope=SCOPE_BRANCH_REQUIRED, **kw)
+
+
+# ── Phase 16: Style Registry & Quote Engine ──────────────────────────────────
+
+_REQUIRED_COMPONENT_KEYS = frozenset({"component_id", "name", "shape_type", "material_id"})
+
+
+def _validate_components_list(components) -> None:
+    if not isinstance(components, (list, tuple)) or not components:
+        raise ValueError("components must be a non-empty list.")
+    for i, c in enumerate(components):
+        if not isinstance(c, dict):
+            raise ValueError(f"components[{i}] must be a dict.")
+        missing = _REQUIRED_COMPONENT_KEYS - c.keys()
+        if missing:
+            raise ValueError(f"components[{i}] missing keys: {sorted(missing)}.")
+        if not c.get("component_id"):
+            raise ValueError(f"components[{i}].component_id must be non-empty.")
+        if not c.get("name"):
+            raise ValueError(f"components[{i}].name must be non-empty.")
+        if not c.get("material_id"):
+            raise ValueError(f"components[{i}].material_id must be non-empty.")
+
+
+@dataclass(frozen=True)
+class StyleRegisterRequest:
+    """Register a new window/door style definition into the workshop catalog."""
+    style_id: str
+    name: str
+    components: tuple  # tuple of dicts (component definitions)
+    variables: dict = None  # {var_name: description}, e.g. {"X": "Sash height var"}
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.style_id:
+            raise ValueError("style_id must be non-empty.")
+        if not self.name:
+            raise ValueError("name must be non-empty.")
+        _validate_components_list(self.components)
+
+    def to_command(self, **kw) -> Command:
+        return _cmd(WORKSHOP_STYLE_REGISTER_REQUEST, {
+            "style_id": self.style_id,
+            "name": self.name,
+            "components": list(self.components),
+            "variables": self.variables or {},
+        }, branch_id=self.branch_id, **kw)
+
+
+@dataclass(frozen=True)
+class StyleUpdateRequest:
+    """Update an existing style definition (name, components, or variables)."""
+    style_id: str
+    name: Optional[str] = None
+    components: Optional[tuple] = None
+    variables: Optional[dict] = None
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.style_id:
+            raise ValueError("style_id must be non-empty.")
+        if self.name is None and self.components is None and self.variables is None:
+            raise ValueError("At least one of name, components, or variables must be provided.")
+        if self.components is not None:
+            _validate_components_list(self.components)
+
+    def to_command(self, **kw) -> Command:
+        payload = {"style_id": self.style_id}
+        if self.name is not None:
+            payload["name"] = self.name
+        if self.components is not None:
+            payload["components"] = list(self.components)
+        if self.variables is not None:
+            payload["variables"] = self.variables
+        return _cmd(WORKSHOP_STYLE_UPDATE_REQUEST, payload, branch_id=self.branch_id, **kw)
+
+
+@dataclass(frozen=True)
+class StyleDeactivateRequest:
+    """Deactivate a style (soft-delete via event — style is never destroyed)."""
+    style_id: str
+    reason: str
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.style_id:
+            raise ValueError("style_id must be non-empty.")
+        if not self.reason:
+            raise ValueError("reason must be non-empty.")
+
+    def to_command(self, **kw) -> Command:
+        return _cmd(WORKSHOP_STYLE_DEACTIVATE_REQUEST, {
+            "style_id": self.style_id,
+            "reason": self.reason,
+        }, branch_id=self.branch_id, **kw)
+
+
+@dataclass(frozen=True)
+class QuoteGenerateRequest:
+    """
+    Generate a production quote for a style + dimensions.
+
+    The service resolves the style from the catalog, runs the formula engine,
+    and records the resulting cut list as a WORKSHOP_QUOTE_GENERATED_V1 event.
+    Callers only need to supply style_id, dimensions, and unit_quantity.
+    """
+    quote_id: str
+    job_id: str
+    style_id: str
+    dimensions: dict   # {"W": int, "H": int} plus optional X, Y, Z
+    unit_quantity: int = 1
+    stock_lengths: dict = None  # {material_id: stock_length_mm} — defaults to 6000
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.quote_id:
+            raise ValueError("quote_id must be non-empty.")
+        if not self.job_id:
+            raise ValueError("job_id must be non-empty.")
+        if not self.style_id:
+            raise ValueError("style_id must be non-empty.")
+        if not isinstance(self.dimensions, dict):
+            raise ValueError("dimensions must be a dict.")
+        if "W" not in self.dimensions or "H" not in self.dimensions:
+            raise ValueError("dimensions must include W and H.")
+        if not isinstance(self.unit_quantity, int) or self.unit_quantity < 1:
+            raise ValueError("unit_quantity must be a positive integer.")
+
+    def to_command(self, **kw) -> Command:
+        return _cmd(WORKSHOP_QUOTE_GENERATE_REQUEST, {
+            "quote_id": self.quote_id,
+            "job_id": self.job_id,
+            "style_id": self.style_id,
+            "dimensions": self.dimensions,
+            "unit_quantity": self.unit_quantity,
+            "stock_lengths": self.stock_lengths or {},
+        }, branch_id=self.branch_id, **kw)

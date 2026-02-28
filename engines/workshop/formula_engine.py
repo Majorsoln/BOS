@@ -347,6 +347,12 @@ def compute_pieces(
 
     Raises:
         ValueError if formula evaluation fails or dimensions missing.
+
+    Shared-Name Rule:
+        Components sharing the same `name` share the same computed value.
+        The first component with a given name is evaluated normally; subsequent
+        components with the same name reuse that result without re-evaluating.
+        Formulas may also reference components by name (not just component_id).
     """
     if "W" not in dimensions or "H" not in dimensions:
         raise ValueError("dimensions must include W (width) and H (height).")
@@ -354,34 +360,50 @@ def compute_pieces(
     # Build the variable scope, starting with W, H, X, Y, Z
     scope: Dict[str, int] = {k: v for k, v in dimensions.items()}
 
+    # Shared-name tracking: name → first computed length/width for that name
+    name_length_map: Dict[str, int] = {}
+    name_width_map: Dict[str, Optional[int]] = {}
+
     pieces: List[ComputedPiece] = []
 
     for component in style.components:
-        # Evaluate length formula
-        if component.formula_length is None:
-            # null formula — frame component
-            if component.orientation == Orientation.HORIZONTAL:
-                length_mm = dimensions["W"]
-            else:
-                length_mm = dimensions["H"]
+        if component.name in name_length_map:
+            # Shared-name rule: reuse the value computed by the first
+            # component with this name (e.g. two "Hframe" pieces share H).
+            length_mm = name_length_map[component.name]
+            width_mm = name_width_map.get(component.name)
         else:
-            length_mm = evaluate_formula(component.formula_length, scope)
-
-        # Evaluate width formula (for FILL shapes)
-        width_mm: Optional[int] = None
-        if component.shape_type in (ShapeType.FILL_AREA, ShapeType.FILL_CUT):
-            if component.formula_width is not None:
-                width_mm = evaluate_formula(component.formula_width, scope)
+            # Evaluate length formula
+            if component.formula_length is None:
+                # null formula — frame component
+                if component.orientation == Orientation.HORIZONTAL:
+                    length_mm = dimensions["W"]
+                else:
+                    length_mm = dimensions["H"]
             else:
-                # If no width formula, use H (height dimension)
-                width_mm = dimensions["H"]
+                length_mm = evaluate_formula(component.formula_length, scope)
 
-        # Clamp to non-negative (negative cutting doesn't make sense)
-        length_mm = max(0, length_mm)
-        if width_mm is not None:
-            width_mm = max(0, width_mm)
+            # Evaluate width formula (for FILL shapes)
+            width_mm = None
+            if component.shape_type in (ShapeType.FILL_AREA, ShapeType.FILL_CUT):
+                if component.formula_width is not None:
+                    width_mm = evaluate_formula(component.formula_width, scope)
+                else:
+                    width_mm = dimensions["H"]
 
-        # Register this component's computed value for subsequent formulas
+            # Clamp to non-negative
+            length_mm = max(0, length_mm)
+            if width_mm is not None:
+                width_mm = max(0, width_mm)
+
+            # Cache by name (shared-name rule) and expose name in scope
+            # so that subsequent formulas can reference by name as well as
+            # component_id (e.g. "Hframe-(9+X)" works when name="Hframe").
+            name_length_map[component.name] = length_mm
+            name_width_map[component.name] = width_mm
+            scope[component.name] = length_mm
+
+        # Always register by component_id for formula cross-references
         scope[component.component_id] = length_mm
 
         pieces.append(ComputedPiece(

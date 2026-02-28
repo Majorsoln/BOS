@@ -17,6 +17,12 @@ WORKSHOP_CUTLIST_GENERATED_V1 = "workshop.cutlist.generated.v1"
 WORKSHOP_MATERIAL_CONSUMED_V1 = "workshop.material.consumed.v1"
 WORKSHOP_OFFCUT_RECORDED_V1 = "workshop.offcut.recorded.v1"
 
+# Phase 16 — Style Registry & Quote Engine
+WORKSHOP_STYLE_REGISTERED_V1 = "workshop.style.registered.v1"
+WORKSHOP_STYLE_UPDATED_V1 = "workshop.style.updated.v1"
+WORKSHOP_STYLE_DEACTIVATED_V1 = "workshop.style.deactivated.v1"
+WORKSHOP_QUOTE_GENERATED_V1 = "workshop.quote.generated.v1"
+
 WORKSHOP_EVENT_TYPES = (
     WORKSHOP_JOB_CREATED_V1,
     WORKSHOP_JOB_ASSIGNED_V1,
@@ -26,6 +32,10 @@ WORKSHOP_EVENT_TYPES = (
     WORKSHOP_CUTLIST_GENERATED_V1,
     WORKSHOP_MATERIAL_CONSUMED_V1,
     WORKSHOP_OFFCUT_RECORDED_V1,
+    WORKSHOP_STYLE_REGISTERED_V1,
+    WORKSHOP_STYLE_UPDATED_V1,
+    WORKSHOP_STYLE_DEACTIVATED_V1,
+    WORKSHOP_QUOTE_GENERATED_V1,
 )
 
 COMMAND_TO_EVENT_TYPE = {
@@ -37,6 +47,11 @@ COMMAND_TO_EVENT_TYPE = {
     "workshop.cutlist.generate.request": WORKSHOP_CUTLIST_GENERATED_V1,
     "workshop.material.consume.request": WORKSHOP_MATERIAL_CONSUMED_V1,
     "workshop.offcut.record.request": WORKSHOP_OFFCUT_RECORDED_V1,
+    "workshop.style.register.request": WORKSHOP_STYLE_REGISTERED_V1,
+    "workshop.style.update.request": WORKSHOP_STYLE_UPDATED_V1,
+    "workshop.style.deactivate.request": WORKSHOP_STYLE_DEACTIVATED_V1,
+    # Note: workshop.quote.generate.request is handled specially in service
+    # (requires formula computation before event creation)
 }
 
 
@@ -152,5 +167,62 @@ def build_offcut_recorded_payload(command: Command) -> dict:
         "length_mm": command.payload["length_mm"],
         "location_id": command.payload.get("location_id"),
         "recorded_at": command.issued_at,
+    })
+    return p
+
+
+# ── Phase 16: Style Registry & Quote Engine ──────────────────────────────────
+
+def build_style_registered_payload(command: Command) -> dict:
+    p = _base_payload(command)
+    p.update({
+        "style_id": command.payload["style_id"],
+        "name": command.payload["name"],
+        "components": command.payload["components"],
+        "variables": command.payload.get("variables") or {},
+        "registered_at": command.issued_at,
+    })
+    return p
+
+
+def build_style_updated_payload(command: Command) -> dict:
+    p = _base_payload(command)
+    p.update({
+        "style_id": command.payload["style_id"],
+        "name": command.payload.get("name"),
+        "components": command.payload.get("components"),
+        "variables": command.payload.get("variables"),
+        "updated_at": command.issued_at,
+    })
+    return p
+
+
+def build_style_deactivated_payload(command: Command) -> dict:
+    p = _base_payload(command)
+    p.update({
+        "style_id": command.payload["style_id"],
+        "reason": command.payload["reason"],
+        "deactivated_at": command.issued_at,
+    })
+    return p
+
+
+def build_quote_generated_payload(command: Command, pieces: list, material_requirements: dict) -> dict:
+    """
+    Quote payload builder receives pre-computed pieces and material_requirements
+    (computed by the service using formula_engine) rather than reading them
+    from the command payload, since quote generation involves computation.
+    """
+    p = _base_payload(command)
+    p.update({
+        "quote_id": command.payload["quote_id"],
+        "job_id": command.payload["job_id"],
+        "style_id": command.payload["style_id"],
+        "dimensions": command.payload["dimensions"],
+        "unit_quantity": command.payload.get("unit_quantity", 1),
+        "stock_lengths": command.payload.get("stock_lengths") or {},
+        "pieces": pieces,
+        "material_requirements": material_requirements,
+        "generated_at": command.issued_at,
     })
     return p

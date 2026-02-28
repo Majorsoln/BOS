@@ -1,6 +1,6 @@
 # BOS — Developer State File
 > Maintained by: Codex (Claude AI Engineer)
-> Last updated: Phase 14 (WIP) — Customer Identity, Loyalty, Wallet, Promotion v2, Cart QR, QR Menu — 1226 tests passing
+> Last updated: Phase 16 ✅ — Workshop Style Registry & Quote Engine — 1272+ tests passing
 > Read this file at the start of every session before touching any code.
 
 ---
@@ -33,7 +33,9 @@ Phase 10 ✅ Performance & Scale  (caching, projection registry, snapshots, cros
 Phase 11 ✅ Enterprise Admin     (tenant lifecycle, system settings, dashboard aggregation, health status)
 Phase 12 ✅ SaaS Productization  (subscription plans, subscriptions lifecycle, onboarding automation, white-label branding, region packs)
 Phase 13 ✅ Documentation        (developer handbook, engine guide, governance, compliance, DR, certification, API reference)
-Phase 14 🔄 Retail Enhancement   (Customer Identity ✅, Loyalty ✅, Credit Wallet ✅, Promotion v2 ✅, Cart QR ✅, QR Menu ✅ — tests ✅)
+Phase 14 ✅ Retail Enhancement   (Customer Identity ✅, Loyalty ✅, Credit Wallet ✅, Promotion v2 ✅, Cart QR ✅, QR Menu ✅ — tests ✅)
+Phase 15 ✅ Hotel/Hospitality PMS (Property ✅, Reservation ✅, Folio ✅, Housekeeping ✅, Channel ✅, Booking ✅ — tests ✅)
+Phase 16 ✅ Workshop Enhancement  (Style Registry ✅, Shared-Name Rule ✅, Quote Engine ✅, StyleCatalogProjection ✅ — 46 tests ✅)
 ```
 
 ---
@@ -50,7 +52,7 @@ All 10 engines have full structure: `events.py`, `commands/`, `services/`, `poli
 | procurement | 6 | 8 | ✅ | ✅ | N/A | ✅ |
 | retail | 6 | 7 | ✅ | ✅ | N/A | ✅ |
 | restaurant | 7 | 8 | ✅ | ✅ | N/A | ✅ |
-| workshop | 7 | 8 | ✅ | ✅ | N/A | ✅ |
+| workshop | 16 | 12 | ✅ | ✅ | N/A | ✅ |
 | promotion | 7 | 5 | ✅ | ✅ | N/A | ✅ |
 | hr | 7 | 5 | ✅ | ✅ | N/A | ✅ |
 | reporting | 5.5 | 3 | ✅ | ✅ | ✅ subscribes to 8 events | ✅ |
