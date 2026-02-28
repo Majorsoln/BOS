@@ -28,6 +28,9 @@ WORKSHOP_STYLE_UPDATE_REQUEST = "workshop.style.update.request"
 WORKSHOP_STYLE_DEACTIVATE_REQUEST = "workshop.style.deactivate.request"
 WORKSHOP_QUOTE_GENERATE_REQUEST = "workshop.quote.generate.request"
 
+# Phase 17 — Multi-Item Project Quotes
+WORKSHOP_PROJECT_QUOTE_REQUEST = "workshop.project.quote.request"
+
 WORKSHOP_COMMAND_TYPES = frozenset({
     WORKSHOP_JOB_CREATE_REQUEST,
     WORKSHOP_JOB_ASSIGN_REQUEST,
@@ -41,6 +44,7 @@ WORKSHOP_COMMAND_TYPES = frozenset({
     WORKSHOP_STYLE_UPDATE_REQUEST,
     WORKSHOP_STYLE_DEACTIVATE_REQUEST,
     WORKSHOP_QUOTE_GENERATE_REQUEST,
+    WORKSHOP_PROJECT_QUOTE_REQUEST,
 })
 
 VALID_MATERIAL_UNITS = frozenset({"MM", "M", "SQM", "SHT", "PC", "KG"})
@@ -404,4 +408,81 @@ class QuoteGenerateRequest:
             "dimensions": self.dimensions,
             "unit_quantity": self.unit_quantity,
             "stock_lengths": self.stock_lengths or {},
+        }, branch_id=self.branch_id, **kw)
+
+
+# ── Phase 17: Multi-Item Project Quotes ──────────────────────────────────────
+
+VALID_CHARGE_METHODS = frozenset({"RATE_BASED", "COST_BASED"})
+
+_REQUIRED_ITEM_KEYS = frozenset({"style_id", "dimensions"})
+
+
+def _validate_items_list(items) -> None:
+    if not isinstance(items, (list, tuple)) or not items:
+        raise ValueError("items must be a non-empty list.")
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError(f"items[{i}] must be a dict.")
+        if not item.get("style_id"):
+            raise ValueError(f"items[{i}].style_id must be non-empty.")
+        dims = item.get("dimensions")
+        if not isinstance(dims, dict) or "W" not in dims or "H" not in dims:
+            raise ValueError(f"items[{i}].dimensions must be a dict with W and H.")
+
+
+@dataclass(frozen=True)
+class ProjectQuoteRequest:
+    """
+    Generate a project-level quote covering N items (windows/doors/panels).
+
+    Each item in `items` is a dict:
+        {
+            "style_id":      str,             # must be ACTIVE in catalog
+            "dimensions":    {"W": int, "H": int, ...},
+            "unit_quantity": int,             # optional, default 1
+            "label":         str,             # optional, e.g. "Dirisha #1"
+        }
+
+    ItemIDs (1..N) are assigned automatically from list order.
+    The resulting cutting list and cutting plan label every piece with its
+    ItemID so the fundi knows which bar cut belongs to which item.
+
+    charge_method:
+        RATE_BASED — price = sum(style_rate × unit_qty) per item.
+                     rates = {style_id: rate_per_unit_in_minor_currency}
+        COST_BASED — price = sum(bars_used × cost_per_bar) per material + labor.
+                     rates = {material_id: cost_per_bar, "LABOR": labor_cost}
+    """
+    project_quote_id: str
+    job_id: str
+    items: tuple          # tuple of item dicts
+    charge_method: str    # "RATE_BASED" | "COST_BASED"
+    currency: str         # ISO 4217 e.g. "TZS"
+    stock_lengths: dict = None   # {material_id: stock_length_mm}, default 6000
+    rates: dict = None           # pricing rates (see charge_method above)
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.project_quote_id:
+            raise ValueError("project_quote_id must be non-empty.")
+        if not self.job_id:
+            raise ValueError("job_id must be non-empty.")
+        _validate_items_list(self.items)
+        if self.charge_method not in VALID_CHARGE_METHODS:
+            raise ValueError(
+                f"charge_method must be one of {sorted(VALID_CHARGE_METHODS)}."
+            )
+        if not self.currency or len(self.currency) != 3:
+            raise ValueError("currency must be a 3-letter ISO 4217 code.")
+
+    def to_command(self, **kw) -> Command:
+        return _cmd(WORKSHOP_PROJECT_QUOTE_REQUEST, {
+            "project_quote_id": self.project_quote_id,
+            "job_id": self.job_id,
+            "items": [dict(item) for item in self.items],
+            "charge_method": self.charge_method,
+            "currency": self.currency,
+            "stock_lengths": self.stock_lengths or {},
+            "rates": self.rates or {},
         }, branch_id=self.branch_id, **kw)

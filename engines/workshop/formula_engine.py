@@ -515,7 +515,8 @@ def generate_cut_list(
 
 def _pack_1d(lengths: List[int], stock_length: int) -> Tuple[int, int]:
     """
-    Greedy 1D bin-packing (largest-first).
+    Greedy 1D bin-packing (First-Fit Decreasing).
+    Used by generate_cut_list() for single-item cut lists.
     Returns (sticks_needed, total_waste_mm).
     """
     if not lengths:
@@ -545,3 +546,478 @@ def _pack_1d(lengths: List[int], stock_length: int) -> Tuple[int, int]:
 
     total_waste = sum(sticks)
     return len(sticks), total_waste
+
+
+# ══════════════════════════════════════════════════════════════
+# PHASE 17: MULTI-ITEM PROJECT — STRUCTURES
+# ══════════════════════════════════════════════════════════════
+#
+# A Project contains N Items (e.g. 200 windows/doors).
+# Each Item has a Style + dimensions → produces cut pieces.
+# ItemID = 1..N from input order.
+#
+# The cutting plan labels every cut with its ItemID so the fundi
+# knows: "this 1,150mm piece on Bar 3 is for Dirisha #7".
+#
+# Cutting Optimization:
+#   Single-item cut list → FFD (existing generate_cut_list)
+#   Multi-item project   → BFD (Best-Fit Decreasing, this phase)
+#   BFD difference from FFD: for each piece, instead of placing it
+#   in the FIRST bin that fits, we find the bin with the LEAST
+#   remaining space that still fits (minimising fragmentation).
+#
+# Charge Methods:
+#   RATE_BASED — price = sum(style_rate × unit_qty) per item
+#   COST_BASED — price = sum(bars_used × cost_per_bar) per material
+#                        + flat labor_cost
+
+
+class ChargeMethod(Enum):
+    RATE_BASED = "RATE_BASED"   # charge by style rate × unit_quantity per item
+    COST_BASED = "COST_BASED"   # charge by actual bars/sheets consumed + labor
+
+
+@dataclass
+class ProjectItem:
+    """
+    One item in a multi-item project quote.
+
+    Fields:
+        item_id:       1..N — position in project (from input order)
+        item_label:    Human label e.g. "Dirisha #1", "Door A"
+        style:         The StyleDefinition for this item
+        dimensions:    {"W": int, "H": int} + optional X/Y/Z
+        unit_quantity: How many identical units of this item (default 1)
+    """
+    item_id: int
+    item_label: str
+    style: StyleDefinition
+    dimensions: Dict[str, int]
+    unit_quantity: int = 1
+
+    def __post_init__(self):
+        if self.item_id < 1:
+            raise ValueError("item_id must be >= 1.")
+        if not self.item_label:
+            raise ValueError("item_label must be non-empty.")
+        if not self.style:
+            raise ValueError("style must be provided.")
+        if "W" not in self.dimensions or "H" not in self.dimensions:
+            raise ValueError("dimensions must include W and H.")
+        if self.unit_quantity < 1:
+            raise ValueError("unit_quantity must be >= 1.")
+
+
+@dataclass(frozen=True)
+class LabeledPiece:
+    """
+    A single physical piece (quantity=1) tagged with the ItemID of the
+    project item it belongs to.
+
+    Produced by expanding ComputedPiece.quantity into one LabeledPiece per
+    physical cut, so that the cutting plan can assign each piece to a bar and
+    label it with its ItemID.
+    """
+    item_id: int
+    item_label: str
+    component_id: str
+    component_name: str
+    material_id: str
+    shape_type: ShapeType
+    length_mm: int
+    width_mm: Optional[int]
+    offcut_mm: int
+
+    @property
+    def total_length_mm(self) -> int:
+        """Cut length including offcut/kerf allowance."""
+        return self.length_mm + self.offcut_mm
+
+
+# ══════════════════════════════════════════════════════════════
+# CUTTING PLAN STRUCTURES
+# ══════════════════════════════════════════════════════════════
+
+@dataclass(frozen=True)
+class CutAllocation:
+    """
+    One cut assigned to a stock bar or sheet, labeled with its ItemID.
+    Used in the Cutting Plan so the fundi knows which window/door
+    each cut piece belongs to.
+    """
+    item_id: int           # which project item owns this piece
+    item_label: str        # e.g. "Dirisha #3"
+    component_id: str
+    component_name: str    # e.g. "Top Frame", "Glass Pane"
+    length_mm: int         # piece cut length (not including offcut)
+    offcut_mm: int         # kerf/end allowance after this piece
+    position_mm: int       # start position from bar/sheet origin
+
+
+@dataclass(frozen=True)
+class StockBar:
+    """
+    One physical bar (for CUT_SHAPE) or sheet (for FILL_AREA) of stock
+    material, with all cut allocations assigned to it.
+    """
+    bar_index: int                          # 1-based
+    stock_length_mm: int                    # total bar/sheet length
+    allocations: Tuple[CutAllocation, ...]  # cuts in position order
+    waste_mm: int                           # unused material at end
+
+
+@dataclass(frozen=True)
+class CuttingPlan:
+    """
+    Complete cutting plan for one material across the entire project.
+    Shows which pieces (with ItemID labels) go on which bar or sheet.
+    """
+    material_id: str
+    shape_type: ShapeType
+    stock_length_mm: int
+    bars: Tuple[StockBar, ...]
+    total_pieces: int
+    total_waste_mm: int
+    waste_pct: int          # 0-100
+
+
+# ══════════════════════════════════════════════════════════════
+# BFD — BEST-FIT DECREASING (for project-level cutting plans)
+# ══════════════════════════════════════════════════════════════
+
+def _bfd_pack_1d(
+    labeled_pieces: List[LabeledPiece],
+    stock_length: int,
+) -> Tuple[List[StockBar], int]:
+    """
+    Best-Fit Decreasing (BFD) 1D bin-packing for project cutting plans.
+
+    Algorithm:
+        1. Sort pieces by total_length_mm descending (decreasing).
+        2. For each piece, find the open bar with the LEAST remaining space
+           that still fits the piece (best-fit minimises fragmentation).
+        3. If no bar fits, open a new bar.
+
+    Difference from FFD (_pack_1d):
+        FFD: first bar that fits.
+        BFD: bar with minimum remaining space that still fits.
+        BFD wastes less material when piece sizes vary.
+
+    Oversized pieces (> stock_length) are assigned to a dedicated bar and
+    flagged — the fundi decides whether to join or special-order stock.
+
+    Returns: (list of StockBar, total_waste_mm)
+    """
+    if not labeled_pieces:
+        return [], 0
+
+    # Sort largest-first (Decreasing part of BFD)
+    sorted_pieces = sorted(
+        labeled_pieces, key=lambda p: p.total_length_mm, reverse=True
+    )
+
+    # Each slot represents an open bar.
+    # remaining: space left; position_used: next cut starts here; allocations: cuts so far
+    slots: List[Dict] = []
+
+    for piece in sorted_pieces:
+        piece_len = piece.total_length_mm
+
+        if piece_len > stock_length:
+            # Oversized: own bar, flagged for fundi decision
+            alloc = CutAllocation(
+                item_id=piece.item_id, item_label=piece.item_label,
+                component_id=piece.component_id, component_name=piece.component_name,
+                length_mm=piece.length_mm, offcut_mm=piece.offcut_mm,
+                position_mm=0,
+            )
+            slots.append({
+                "remaining": 0, "position_used": piece_len,
+                "allocations": [alloc], "oversized": True,
+            })
+            continue
+
+        # Best-Fit: find bar with minimum remaining space >= piece_len
+        best_idx = -1
+        best_remaining = stock_length + 1  # sentinel
+
+        for i, slot in enumerate(slots):
+            if slot.get("oversized"):
+                continue
+            r = slot["remaining"]
+            if r >= piece_len and r < best_remaining:
+                best_remaining = r
+                best_idx = i
+
+        if best_idx == -1:
+            # No bar fits — open a new bar
+            alloc = CutAllocation(
+                item_id=piece.item_id, item_label=piece.item_label,
+                component_id=piece.component_id, component_name=piece.component_name,
+                length_mm=piece.length_mm, offcut_mm=piece.offcut_mm,
+                position_mm=0,
+            )
+            slots.append({
+                "remaining": stock_length - piece_len,
+                "position_used": piece_len,
+                "allocations": [alloc],
+            })
+        else:
+            pos = slots[best_idx]["position_used"]
+            alloc = CutAllocation(
+                item_id=piece.item_id, item_label=piece.item_label,
+                component_id=piece.component_id, component_name=piece.component_name,
+                length_mm=piece.length_mm, offcut_mm=piece.offcut_mm,
+                position_mm=pos,
+            )
+            slots[best_idx]["remaining"] -= piece_len
+            slots[best_idx]["position_used"] += piece_len
+            slots[best_idx]["allocations"].append(alloc)
+
+    # Convert to StockBar objects
+    bars = [
+        StockBar(
+            bar_index=i + 1,
+            stock_length_mm=stock_length,
+            allocations=tuple(slot["allocations"]),
+            waste_mm=slot["remaining"],
+        )
+        for i, slot in enumerate(slots)
+    ]
+    total_waste = sum(s["remaining"] for s in slots)
+    return bars, total_waste
+
+
+def _pack_2d_labeled(
+    pieces: List[LabeledPiece],
+    sheet_area: int,
+    sheet_width: int,
+) -> List[StockBar]:
+    """
+    Simple area-based 2D sheet packing for FILL_AREA/FILL_CUT materials.
+    Groups pieces into sheets (largest-first) by cumulative area.
+    Each allocation carries its ItemID for traceability.
+
+    position_mm is cumulative area used on the sheet (proxy for position).
+    """
+    sorted_pieces = sorted(
+        pieces,
+        key=lambda p: p.length_mm * (p.width_mm or p.length_mm),
+        reverse=True,
+    )
+
+    sheets: List[StockBar] = []
+    current_allocs: List[CutAllocation] = []
+    current_area = 0
+    sheet_idx = 0
+
+    for piece in sorted_pieces:
+        piece_area = piece.length_mm * (piece.width_mm or piece.length_mm)
+
+        if piece_area > sheet_area:
+            # Oversized: own sheet
+            alloc = CutAllocation(
+                item_id=piece.item_id, item_label=piece.item_label,
+                component_id=piece.component_id, component_name=piece.component_name,
+                length_mm=piece.length_mm, offcut_mm=0, position_mm=0,
+            )
+            sheet_idx += 1
+            sheets.append(StockBar(
+                bar_index=sheet_idx,
+                stock_length_mm=sheet_width,
+                allocations=(alloc,),
+                waste_mm=max(0, sheet_area - piece_area),
+            ))
+            continue
+
+        if current_area + piece_area > sheet_area and current_allocs:
+            # Close current sheet
+            sheet_idx += 1
+            sheets.append(StockBar(
+                bar_index=sheet_idx,
+                stock_length_mm=sheet_width,
+                allocations=tuple(current_allocs),
+                waste_mm=sheet_area - current_area,
+            ))
+            current_allocs = []
+            current_area = 0
+
+        alloc = CutAllocation(
+            item_id=piece.item_id, item_label=piece.item_label,
+            component_id=piece.component_id, component_name=piece.component_name,
+            length_mm=piece.length_mm, offcut_mm=0,
+            position_mm=current_area,
+        )
+        current_allocs.append(alloc)
+        current_area += piece_area
+
+    if current_allocs:
+        sheet_idx += 1
+        sheets.append(StockBar(
+            bar_index=sheet_idx,
+            stock_length_mm=sheet_width,
+            allocations=tuple(current_allocs),
+            waste_mm=sheet_area - current_area,
+        ))
+
+    return sheets
+
+
+# ══════════════════════════════════════════════════════════════
+# PROJECT PIECE COMPUTATION
+# ══════════════════════════════════════════════════════════════
+
+def compute_project_pieces(items: List[ProjectItem]) -> List[LabeledPiece]:
+    """
+    Expand all project items into individual LabeledPiece records.
+
+    For each item: runs compute_pieces() and expands each ComputedPiece by
+    its quantity into separate LabeledPiece records (one per physical piece),
+    each tagged with the item's ItemID and label.
+
+    Args:
+        items: Project items in input order (item_id must be 1..N)
+
+    Returns:
+        Flat list of LabeledPiece — one record per physical cut piece.
+    """
+    result: List[LabeledPiece] = []
+    for item in items:
+        computed = compute_pieces(item.style, item.dimensions, item.unit_quantity)
+        for piece in computed:
+            for _ in range(piece.quantity):
+                result.append(LabeledPiece(
+                    item_id=item.item_id,
+                    item_label=item.item_label,
+                    component_id=piece.component_id,
+                    component_name=piece.component_name,
+                    material_id=piece.material_id,
+                    shape_type=piece.shape_type,
+                    length_mm=piece.length_mm,
+                    width_mm=piece.width_mm,
+                    offcut_mm=piece.offcut_mm,
+                ))
+    return result
+
+
+# ══════════════════════════════════════════════════════════════
+# PROJECT CUTTING PLAN GENERATION (BFD)
+# ══════════════════════════════════════════════════════════════
+
+def generate_project_cutting_plan(
+    labeled_pieces: List[LabeledPiece],
+    stock_lengths: Dict[str, int],
+) -> Dict[str, CuttingPlan]:
+    """
+    Generate a cutting plan for the whole project using BFD optimization.
+
+    For CUT_SHAPE: runs Best-Fit Decreasing across ALL items' pieces,
+        producing bars with ItemID-labeled allocations.
+    For FILL_AREA/FILL_CUT: packs pieces into sheets by area (largest-first).
+
+    Args:
+        labeled_pieces: All individual pieces with ItemID labels
+                        (from compute_project_pieces)
+        stock_lengths: {material_id: stock_length_mm}
+
+    Returns:
+        {material_id: CuttingPlan}
+    """
+    by_material: Dict[str, List[LabeledPiece]] = {}
+    for p in labeled_pieces:
+        by_material.setdefault(p.material_id, []).append(p)
+
+    plans: Dict[str, CuttingPlan] = {}
+
+    for mat_id, pieces in by_material.items():
+        shape_type = pieces[0].shape_type
+        stock_len = stock_lengths.get(mat_id, 6000)
+
+        if shape_type == ShapeType.CUT_SHAPE:
+            bars, total_waste = _bfd_pack_1d(pieces, stock_len)
+            total_used = len(bars) * stock_len
+            waste_pct = int(total_waste * 100 // total_used) if total_used > 0 else 0
+            plans[mat_id] = CuttingPlan(
+                material_id=mat_id,
+                shape_type=shape_type,
+                stock_length_mm=stock_len,
+                bars=tuple(bars),
+                total_pieces=len(pieces),
+                total_waste_mm=total_waste,
+                waste_pct=waste_pct,
+            )
+        else:
+            # FILL_AREA / FILL_CUT: area-based sheet packing
+            sheet_area = stock_len * stock_len
+            sheets = _pack_2d_labeled(pieces, sheet_area, stock_len)
+            total_piece_area = sum(
+                p.length_mm * (p.width_mm or p.length_mm) for p in pieces
+            )
+            total_used_area = len(sheets) * sheet_area
+            waste_mm = max(0, total_used_area - total_piece_area)
+            waste_pct = int(waste_mm * 100 // total_used_area) if total_used_area > 0 else 0
+            plans[mat_id] = CuttingPlan(
+                material_id=mat_id,
+                shape_type=shape_type,
+                stock_length_mm=stock_len,
+                bars=tuple(sheets),
+                total_pieces=len(pieces),
+                total_waste_mm=waste_mm,
+                waste_pct=waste_pct,
+            )
+
+    return plans
+
+
+# ══════════════════════════════════════════════════════════════
+# CHARGE COMPUTATION
+# ══════════════════════════════════════════════════════════════
+
+def compute_charge_rate_based(
+    items: List[ProjectItem],
+    style_rates: Dict[str, int],
+) -> int:
+    """
+    Rate-based pricing: sum(rate_per_unit × unit_quantity) for each item.
+
+    Args:
+        items: Project items (each has style.style_id and unit_quantity)
+        style_rates: {style_id: rate in minor currency units per unit}
+                     Items whose style_id is not in style_rates contribute 0.
+
+    Returns:
+        Total cost in minor currency units (e.g. cents or TZS).
+    """
+    total = 0
+    for item in items:
+        rate = style_rates.get(item.style.style_id, 0)
+        total += rate * item.unit_quantity
+    return total
+
+
+def compute_charge_cost_based(
+    cutting_plans: Dict[str, CuttingPlan],
+    material_cost_rates: Dict[str, int],
+    labor_cost: int = 0,
+) -> int:
+    """
+    Cost-based pricing: sum(bars_used × cost_per_bar) for each material
+    plus a flat labor cost.
+
+    The workshop buys whole bars/sheets, so cost is based on the number of
+    bars consumed (not just net piece lengths). Waste is the workshop's cost.
+
+    Args:
+        cutting_plans: Output of generate_project_cutting_plan()
+        material_cost_rates: {material_id: cost_per_bar/sheet in minor units}
+                             Materials not in rates contribute 0.
+        labor_cost: Additional labor cost in minor currency units (default 0).
+
+    Returns:
+        Total cost in minor currency units.
+    """
+    total = labor_cost
+    for mat_id, plan in cutting_plans.items():
+        cost_per_bar = material_cost_rates.get(mat_id, 0)
+        total += len(plan.bars) * cost_per_bar
+    return total

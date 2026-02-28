@@ -13,6 +13,7 @@ from core.feature_flags.evaluator import FeatureFlagEvaluator
 from engines.workshop.commands import (
     WORKSHOP_COMMAND_TYPES,
     WORKSHOP_QUOTE_GENERATE_REQUEST,
+    WORKSHOP_PROJECT_QUOTE_REQUEST,
 )
 from engines.workshop.events import (
     resolve_workshop_event_type, register_workshop_event_types,
@@ -23,12 +24,19 @@ from engines.workshop.events import (
     build_offcut_recorded_payload,
     build_style_registered_payload, build_style_updated_payload,
     build_style_deactivated_payload, build_quote_generated_payload,
+    build_project_quote_payload,
     WORKSHOP_STYLE_REGISTERED_V1, WORKSHOP_STYLE_UPDATED_V1,
     WORKSHOP_STYLE_DEACTIVATED_V1, WORKSHOP_QUOTE_GENERATED_V1,
+    WORKSHOP_PROJECT_QUOTE_GENERATED_V1,
 )
 from engines.workshop.formula_engine import (
     StyleDefinition, StyleComponent, ShapeType, Orientation, EndpointType,
     compute_pieces, generate_cut_list,
+    # Phase 17
+    ProjectItem, LabeledPiece, CuttingPlan,
+    compute_project_pieces, generate_project_cutting_plan,
+    compute_charge_rate_based, compute_charge_cost_based,
+    ChargeMethod,
 )
 from projections.workshop.style_catalog import StyleCatalogProjection
 
@@ -47,6 +55,7 @@ class WorkshopProjectionStore:
         self._cutlists: Dict[str, dict] = {}
         self._offcuts: Dict[str, dict] = {}
         self._quotes: Dict[str, dict] = {}
+        self._project_quotes: Dict[str, dict] = {}
         self._total_revenue: int = 0
 
     def apply(self, event_type: str, payload: dict) -> None:
@@ -117,6 +126,20 @@ class WorkshopProjectionStore:
             jid = payload["job_id"]
             if jid in self._jobs:
                 self._jobs[jid].setdefault("quotes", []).append(qid)
+        elif event_type == WORKSHOP_PROJECT_QUOTE_GENERATED_V1:
+            pqid = payload["project_quote_id"]
+            self._project_quotes[pqid] = {
+                "job_id": payload["job_id"],
+                "items": payload["items"],
+                "charge_method": payload["charge_method"],
+                "currency": payload["currency"],
+                "total_cost": payload["total_cost"],
+                "cutting_plans": payload.get("cutting_plans", {}),
+                "labeled_pieces": payload.get("labeled_pieces", []),
+            }
+            jid = payload["job_id"]
+            if jid in self._jobs:
+                self._jobs[jid].setdefault("project_quotes", []).append(pqid)
 
     def get_job(self, job_id: str) -> Optional[dict]:
         return self._jobs.get(job_id)
@@ -129,6 +152,9 @@ class WorkshopProjectionStore:
 
     def get_quote(self, quote_id: str) -> Optional[dict]:
         return self._quotes.get(quote_id)
+
+    def get_project_quote(self, project_quote_id: str) -> Optional[dict]:
+        return self._project_quotes.get(project_quote_id)
 
     @property
     def total_revenue(self) -> int:
@@ -226,6 +252,58 @@ def _serialize_material_requirements(reqs: dict) -> dict:
     }
 
 
+def _serialize_labeled_pieces(pieces: List[LabeledPiece]) -> list:
+    return [
+        {
+            "item_id": p.item_id,
+            "item_label": p.item_label,
+            "component_id": p.component_id,
+            "component_name": p.component_name,
+            "material_id": p.material_id,
+            "shape_type": p.shape_type.value,
+            "length_mm": p.length_mm,
+            "width_mm": p.width_mm,
+            "offcut_mm": p.offcut_mm,
+        }
+        for p in pieces
+    ]
+
+
+def _serialize_cutting_plans(plans: Dict[str, CuttingPlan]) -> dict:
+    result = {}
+    for mat_id, plan in plans.items():
+        bars_data = []
+        for bar in plan.bars:
+            allocs_data = [
+                {
+                    "item_id": a.item_id,
+                    "item_label": a.item_label,
+                    "component_id": a.component_id,
+                    "component_name": a.component_name,
+                    "length_mm": a.length_mm,
+                    "offcut_mm": a.offcut_mm,
+                    "position_mm": a.position_mm,
+                }
+                for a in bar.allocations
+            ]
+            bars_data.append({
+                "bar_index": bar.bar_index,
+                "stock_length_mm": bar.stock_length_mm,
+                "allocations": allocs_data,
+                "waste_mm": bar.waste_mm,
+            })
+        result[mat_id] = {
+            "material_id": plan.material_id,
+            "shape_type": plan.shape_type.value,
+            "stock_length_mm": plan.stock_length_mm,
+            "bars": bars_data,
+            "total_pieces": plan.total_pieces,
+            "total_waste_mm": plan.total_waste_mm,
+            "waste_pct": plan.waste_pct,
+        }
+    return result
+
+
 class WorkshopService:
     def __init__(self, *, business_context, command_bus,
                  event_factory: EventFactoryProtocol,
@@ -260,9 +338,11 @@ class WorkshopService:
         if not ff.allowed:
             raise ValueError(f"Feature disabled: {ff.message}")
 
-        # Quote generation requires formula computation — handled separately
+        # Quote generation and project quotes require formula computation
         if command.command_type == WORKSHOP_QUOTE_GENERATE_REQUEST:
             return self._execute_quote_generation(command)
+        if command.command_type == WORKSHOP_PROJECT_QUOTE_REQUEST:
+            return self._execute_project_quote(command)
 
         event_type = resolve_workshop_event_type(command.command_type)
         if event_type is None:
@@ -327,6 +407,87 @@ class WorkshopService:
         return WorkshopExecutionResult(
             event_type=WORKSHOP_QUOTE_GENERATED_V1, event_data=event_data,
             persist_result=persist_result, projection_applied=applied)
+
+    def _execute_project_quote(self, command: Command) -> "WorkshopExecutionResult":
+        """
+        Project quote generation path (Phase 17):
+
+        1. For each item (in order), look up its style from the catalog
+           (must be ACTIVE). Assign ItemID = 1..N from input order.
+        2. Build List[ProjectItem].
+        3. compute_project_pieces() → List[LabeledPiece] (one per physical cut).
+        4. generate_project_cutting_plan() → BFD cutting plans per material.
+        5. Compute total charge (RATE_BASED or COST_BASED).
+        6. Build WORKSHOP_PROJECT_QUOTE_GENERATED_V1 event, persist, apply.
+        """
+        raw_items = command.payload["items"]
+        charge_method = command.payload["charge_method"]
+        stock_lengths = dict(command.payload.get("stock_lengths") or {})
+        rates = dict(command.payload.get("rates") or {})
+
+        # Build ProjectItem list, resolving each style from catalog
+        project_items: List[ProjectItem] = []
+        for seq, raw in enumerate(raw_items, start=1):
+            style_id = raw["style_id"]
+            style_record = self._style_catalog.get_active_style(style_id)
+            if style_record is None:
+                raise ValueError(
+                    f"Item {seq}: Style '{style_id}' not found or not active. "
+                    "Register and activate the style before generating a project quote."
+                )
+            style = _rebuild_style_definition(style_record)
+            label = raw.get("label") or f"Item {seq}"
+            project_items.append(ProjectItem(
+                item_id=seq,
+                item_label=label,
+                style=style,
+                dimensions=dict(raw["dimensions"]),
+                unit_quantity=int(raw.get("unit_quantity", 1)),
+            ))
+
+        # Expand all items into individual labeled pieces (one per physical cut)
+        labeled_pieces = compute_project_pieces(project_items)
+
+        # Run BFD cutting plan across the whole project
+        cutting_plans = generate_project_cutting_plan(labeled_pieces, stock_lengths)
+
+        # Compute charge
+        if charge_method == ChargeMethod.RATE_BASED.value:
+            total_cost = compute_charge_rate_based(project_items, rates)
+        else:
+            # COST_BASED: "LABOR" is a special key for flat labor cost
+            labor_cost = int(rates.get("LABOR", 0))
+            material_rates = {k: v for k, v in rates.items() if k != "LABOR"}
+            total_cost = compute_charge_cost_based(cutting_plans, material_rates, labor_cost)
+
+        # Serialize for event payload
+        pieces_data = _serialize_labeled_pieces(labeled_pieces)
+        plans_data = _serialize_cutting_plans(cutting_plans)
+
+        payload = build_project_quote_payload(command, pieces_data, plans_data, total_cost)
+        event_data = self._event_factory(
+            command=command,
+            event_type=WORKSHOP_PROJECT_QUOTE_GENERATED_V1,
+            payload=payload,
+        )
+        persist_result = self._persist_event(
+            event_data=event_data,
+            context=self._business_context,
+            registry=self._event_type_registry,
+            scope_requirement=command.scope_requirement,
+        )
+        applied = False
+        if self._is_persist_accepted(persist_result):
+            self._projection_store.apply(
+                event_type=WORKSHOP_PROJECT_QUOTE_GENERATED_V1, payload=payload
+            )
+            applied = True
+        return WorkshopExecutionResult(
+            event_type=WORKSHOP_PROJECT_QUOTE_GENERATED_V1,
+            event_data=event_data,
+            persist_result=persist_result,
+            projection_applied=applied,
+        )
 
     @property
     def projection_store(self) -> WorkshopProjectionStore:

@@ -23,6 +23,9 @@ WORKSHOP_STYLE_UPDATED_V1 = "workshop.style.updated.v1"
 WORKSHOP_STYLE_DEACTIVATED_V1 = "workshop.style.deactivated.v1"
 WORKSHOP_QUOTE_GENERATED_V1 = "workshop.quote.generated.v1"
 
+# Phase 17 — Multi-Item Project Quotes
+WORKSHOP_PROJECT_QUOTE_GENERATED_V1 = "workshop.project.quote.generated.v1"
+
 WORKSHOP_EVENT_TYPES = (
     WORKSHOP_JOB_CREATED_V1,
     WORKSHOP_JOB_ASSIGNED_V1,
@@ -36,6 +39,7 @@ WORKSHOP_EVENT_TYPES = (
     WORKSHOP_STYLE_UPDATED_V1,
     WORKSHOP_STYLE_DEACTIVATED_V1,
     WORKSHOP_QUOTE_GENERATED_V1,
+    WORKSHOP_PROJECT_QUOTE_GENERATED_V1,
 )
 
 COMMAND_TO_EVENT_TYPE = {
@@ -223,6 +227,38 @@ def build_quote_generated_payload(command: Command, pieces: list, material_requi
         "stock_lengths": command.payload.get("stock_lengths") or {},
         "pieces": pieces,
         "material_requirements": material_requirements,
+        "generated_at": command.issued_at,
+    })
+    return p
+
+
+# ── Phase 17: Multi-Item Project Quotes ──────────────────────────────────────
+
+def build_project_quote_payload(
+    command: Command,
+    labeled_pieces: list,
+    cutting_plans: dict,
+    total_cost: int,
+) -> dict:
+    """
+    Project quote payload builder.
+
+    labeled_pieces: serialised list of LabeledPiece records (with item_id labels)
+    cutting_plans:  serialised dict of {material_id: CuttingPlan data}
+    total_cost:     computed charge in minor currency units
+    """
+    p = _base_payload(command)
+    p.update({
+        "project_quote_id": command.payload["project_quote_id"],
+        "job_id": command.payload["job_id"],
+        "items": command.payload["items"],
+        "charge_method": command.payload["charge_method"],
+        "currency": command.payload["currency"],
+        "stock_lengths": command.payload.get("stock_lengths") or {},
+        "rates": command.payload.get("rates") or {},
+        "labeled_pieces": labeled_pieces,
+        "cutting_plans": cutting_plans,
+        "total_cost": total_cost,
         "generated_at": command.issued_at,
     })
     return p
