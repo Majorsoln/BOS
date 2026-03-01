@@ -5,11 +5,13 @@ Covers:
   - ProjectItem construction and validation
   - LabeledPiece expansion (quantity -> individual pieces with ItemID)
   - BFD packing: correct bar allocation, ItemID labels, positions
+  - BFD offcut: inter-cut waste (not piece dimension), capped at remaining
   - compute_project_pieces: multi-item labeling
   - generate_project_cutting_plan: BFD across whole project
   - compute_charge_rate_based: style rate x unit_qty per item
   - compute_charge_cost_based: bars x cost_per_bar + labor
   - ProjectQuoteRequest: command validation
+  - FundiCuttingSheet: ordered cut instructions, exact dimensions
   - End-to-end project quote via WorkshopService
 """
 
@@ -29,6 +31,9 @@ from engines.workshop.formula_engine import (
     ChargeMethod,
     CuttingPlan,
     EndpointType,
+    FundiBarSheet,
+    FundiCutStep,
+    FundiCuttingSheet,
     LabeledPiece,
     Orientation,
     ProjectItem,
@@ -40,6 +45,7 @@ from engines.workshop.formula_engine import (
     compute_charge_cost_based,
     compute_charge_rate_based,
     compute_project_pieces,
+    format_cutting_sheet,
     generate_project_cutting_plan,
 )
 from engines.workshop.services import WorkshopService, WorkshopProjectionStore
@@ -288,6 +294,7 @@ class TestBFDPacking:
         assert total_waste == sum(b.waste_mm for b in bars)
 
     def test_oversized_piece_gets_own_bar(self):
+        # piece length itself > stock → truly oversized
         bars, _ = _bfd_pack_1d([self._p(1, 7000)], 6000)
         assert len(bars) == 1
         assert bars[0].allocations[0].item_id == 1
@@ -305,6 +312,264 @@ class TestBFDPacking:
         bars, waste = _bfd_pack_1d(pieces, 6000)
         assert len(bars) == 1
         assert waste == 0
+
+    # ─── Offcut semantics ──────────────────────────────────────
+
+    def test_offcut_deducted_from_remaining_not_piece(self):
+        """
+        Offcut is inter-cut overhead on the bar, NOT added to the piece.
+        Piece of 2400 + offcut 5 on bar 3600:
+          remaining = 3600 - 2400 - 5(offcut) = 1195
+          allocation.length_mm == 2400 (exact, not 2405)
+        """
+        bars, _ = _bfd_pack_1d([self._p(1, 2400, offcut_mm=5)], 3600)
+        assert bars[0].allocations[0].length_mm == 2400
+        assert bars[0].waste_mm == 1195   # 3600 - 2400 - 5
+
+    def test_first_piece_starts_at_zero_no_precut(self):
+        """First piece on a fresh bar starts at position 0 (bar is flat)."""
+        bars, _ = _bfd_pack_1d([self._p(1, 1000, offcut_mm=10)], 6000)
+        assert bars[0].allocations[0].position_mm == 0
+
+    def test_second_piece_position_accounts_for_offcut(self):
+        """
+        Second piece starts after piece1.length + offcut1.
+        Bar 6000, p1=2000+offcut=5 → p2 starts at 2005.
+        """
+        p1 = self._p(1, 2000, offcut_mm=5)
+        p2 = self._p(2, 1000, offcut_mm=5)
+        bars, _ = _bfd_pack_1d([p1, p2], 6000)
+        assert len(bars) == 1
+        allocs = sorted(bars[0].allocations, key=lambda a: a.position_mm)
+        assert allocs[0].position_mm == 0
+        assert allocs[0].length_mm == 2000
+        assert allocs[1].position_mm == 2005  # 2000 + offcut 5
+
+    def test_piece_fits_when_length_fits_but_full_offcut_does_not(self):
+        """
+        Key improvement: a piece fits if remaining >= length_mm, even if
+        remaining < length_mm + offcut_mm.  The offcut is capped at
+        whatever remains after the piece.
+
+        Bar=3000, offcut=10, piece=2995:
+          Old approach: 2995+10=3005>3000 → oversized (wrong!)
+          New approach: 2995<3000 → fits. offcut=min(10,5)=5. waste=0.
+        """
+        bars, waste = _bfd_pack_1d([self._p(1, 2995, offcut_mm=10)], 3000)
+        assert len(bars) == 1
+        assert bars[0].allocations[0].length_mm == 2995
+        assert bars[0].allocations[0].offcut_mm == 5   # capped at 3000-2995=5
+        assert waste == 0  # 3000 - 2995 - 5(capped) = 0
+
+    def test_offcut_capped_for_last_piece_on_bar(self):
+        """
+        Last piece on a bar: offcut capped at remaining after piece.
+        Bar=6000, p1=5000+off=5(→rem=995), p2=990+off=5(→remaining=5→offcut=5→waste=0).
+        """
+        p1 = self._p(1, 5000, offcut_mm=5)
+        p2 = self._p(2, 990, offcut_mm=5)
+        bars, waste = _bfd_pack_1d([p1, p2], 6000)
+        assert len(bars) == 1
+        allocs = sorted(bars[0].allocations, key=lambda a: a.position_mm)
+        # p1 at 0, rem after p1 = 6000-5000-5=995
+        assert allocs[0].length_mm == 5000
+        assert allocs[0].offcut_mm == 5
+        # p2 at 5005, rem after p2 = 995-990-5=0
+        assert allocs[1].length_mm == 990
+        assert allocs[1].offcut_mm == 5
+        assert waste == 0
+
+    def test_single_piece_no_post_offcut_waste(self):
+        """
+        Single piece on a bar: the 'post-cut offcut' is consumed as
+        inter-cut prep.  waste_mm = stock - length - offcut.
+        """
+        bars, waste = _bfd_pack_1d([self._p(1, 1000, offcut_mm=5)], 6000)
+        assert waste == 4995  # 6000 - 1000 - 5
+
+    def test_allocation_length_mm_is_always_exact_piece_dimension(self):
+        """
+        CutAllocation.length_mm must always equal the LabeledPiece.length_mm.
+        Fundi reads this number and cuts exactly that dimension.
+        """
+        pieces = [self._p(i, 1200 + i * 100, offcut_mm=5) for i in range(1, 6)]
+        bars, _ = _bfd_pack_1d(pieces, 6000)
+        for bar in bars:
+            for alloc in bar.allocations:
+                # Find the original piece
+                orig = next(p for p in pieces if p.item_id == alloc.item_id)
+                assert alloc.length_mm == orig.length_mm  # exact, no offcut added
+
+    def test_oversized_piece_length_only_not_total(self):
+        """
+        Oversized means piece.length_mm > stock_length.
+        A piece with length=5998 + offcut=10 is NOT oversized for stock=6000
+        (piece fits; only offcut doesn't fully fit → capped at 2).
+        """
+        bars, _ = _bfd_pack_1d([self._p(1, 5998, offcut_mm=10)], 6000)
+        assert not bars[0].allocations[0].offcut_mm == 10  # capped at 2
+        assert bars[0].allocations[0].length_mm == 5998     # exact
+
+
+# ══════════════════════════════════════════════════════════════
+# 3b. FundiCuttingSheet — ordered human-readable cut instructions
+# ══════════════════════════════════════════════════════════════
+
+class TestFundiCuttingSheet:
+    def _plan(self, bars_data):
+        """Build a CuttingPlan from [(item_id, label, length, offcut, pos), ...]"""
+        from engines.workshop.formula_engine import CutAllocation
+        bar_objs = []
+        for idx, cuts in enumerate(bars_data):
+            allocs = tuple(
+                CutAllocation(
+                    item_id=c[0], item_label=c[1], component_id="hf",
+                    component_name="H-Frame", length_mm=c[2],
+                    offcut_mm=c[3], position_mm=c[4],
+                )
+                for c in cuts
+            )
+            used = sum(c[2] + c[3] for c in cuts)
+            waste = 6000 - used
+            bar_objs.append(StockBar(
+                bar_index=idx + 1,
+                stock_length_mm=6000,
+                allocations=allocs,
+                waste_mm=waste,
+            ))
+        return CuttingPlan(
+            material_id="ALU_60x40",
+            shape_type=ShapeType.CUT_SHAPE,
+            stock_length_mm=6000,
+            bars=tuple(bar_objs),
+            total_pieces=sum(len(d) for d in bars_data),
+            total_waste_mm=sum(6000 - sum(c[2]+c[3] for c in d) for d in bars_data),
+            waste_pct=5,
+        )
+
+    def test_returns_fundi_cutting_sheet(self):
+        plan = self._plan([
+            [(1, "Win-A", 2400, 5, 0), (7, "Part-A", 850, 5, 2405)],
+        ])
+        sheet = format_cutting_sheet(plan)
+        assert isinstance(sheet, FundiCuttingSheet)
+
+    def test_profile_and_stock_in_sheet(self):
+        plan = self._plan([[(1, "Win-A", 1200, 5, 0)]])
+        sheet = format_cutting_sheet(plan)
+        assert sheet.profile_id == "ALU_60x40"
+        assert sheet.stock_length_mm == 6000
+        assert sheet.total_bars == 1
+
+    def test_bars_ordered_by_bar_number(self):
+        plan = self._plan([
+            [(1, "Win-A", 2400, 5, 0)],
+            [(2, "Win-B", 800, 5, 0)],
+        ])
+        sheet = format_cutting_sheet(plan)
+        assert sheet.bars[0].bar_number == 1
+        assert sheet.bars[1].bar_number == 2
+
+    def test_cuts_sorted_by_position(self):
+        """Fundi cuts left-to-right; cuts are ordered by position_mm."""
+        plan = self._plan([
+            [(3, "Item3", 260, 5, 2710), (1, "Item1", 2400, 5, 0), (7, "Item7", 850, 5, 2405)],
+        ])
+        sheet = format_cutting_sheet(plan)
+        positions_in_order = [c.cut_mm for c in sheet.bars[0].cuts]
+        # sorted by position: Item1(pos=0)=2400, Item7(pos=2405)=850, Item3(pos=2710)=260
+        assert positions_in_order == [2400, 850, 260]
+
+    def test_cut_mm_is_exact_piece_dimension(self):
+        """FundiCutStep.cut_mm = exact length_mm (offcut not included)."""
+        plan = self._plan([[(1, "Win-A", 2400, 5, 0)]])
+        sheet = format_cutting_sheet(plan)
+        assert sheet.bars[0].cuts[0].cut_mm == 2400   # 2400, never 2405
+
+    def test_last_cut_has_zero_offcut(self):
+        """Last step on a bar: offcut_mm=0 (no next cut to prepare for)."""
+        plan = self._plan([
+            [(1, "Win-A", 2400, 5, 0), (7, "Part-A", 850, 5, 2405)],
+        ])
+        sheet = format_cutting_sheet(plan)
+        cuts = sheet.bars[0].cuts
+        assert cuts[-1].offcut_mm == 0  # last cut, no inter-cut offcut shown
+
+    def test_middle_cuts_show_offcut(self):
+        """Middle cuts (not last) show the inter-cut offcut consumed after them."""
+        plan = self._plan([
+            [(1, "Win-A", 2400, 5, 0), (7, "Part-A", 850, 5, 2405), (12, "Fix", 260, 5, 3260)],
+        ])
+        sheet = format_cutting_sheet(plan)
+        cuts = sheet.bars[0].cuts
+        assert cuts[0].offcut_mm == 5   # inter-cut after first piece
+        assert cuts[1].offcut_mm == 5   # inter-cut after second piece
+        assert cuts[2].offcut_mm == 0   # last piece — no inter-cut
+
+    def test_remaining_mm_shown_per_bar(self):
+        """remaining_mm on each FundiBarSheet = waste at end of bar."""
+        plan = self._plan([
+            [(1, "Win-A", 2400, 5, 0), (7, "Part-A", 850, 5, 2405)],
+        ])
+        sheet = format_cutting_sheet(plan)
+        bar = sheet.bars[0]
+        # waste = 6000 - (2400+5) - (850+5) = 6000 - 3260 = 2740
+        assert bar.remaining_mm == 2740
+
+    def test_step_numbers_sequential_per_bar(self):
+        plan = self._plan([
+            [(1, "Win-A", 2400, 5, 0), (7, "Part-A", 850, 5, 2405), (12, "Fix", 260, 5, 3260)],
+        ])
+        sheet = format_cutting_sheet(plan)
+        steps = [c.step for c in sheet.bars[0].cuts]
+        assert steps == [1, 2, 3]
+
+    def test_item_label_carried_to_cut_step(self):
+        plan = self._plan([
+            [(1, "Win-A", 2400, 5, 0), (7, "Part-A", 850, 5, 2405)],
+        ])
+        sheet = format_cutting_sheet(plan)
+        labels = {c.item_label for c in sheet.bars[0].cuts}
+        assert "Win-A" in labels
+        assert "Part-A" in labels
+
+    def test_multi_bar_sheet(self):
+        plan = self._plan([
+            [(1, "Win-A", 2400, 5, 0)],
+            [(2, "Win-B", 800, 5, 0)],
+            [(3, "Door-A", 900, 5, 0)],
+        ])
+        sheet = format_cutting_sheet(plan)
+        assert sheet.total_bars == 3
+        assert len(sheet.bars) == 3
+
+    def test_end_to_end_fundi_sheet_from_real_plan(self):
+        """
+        Build a real CuttingPlan via generate_project_cutting_plan and
+        format it into a FundiCuttingSheet.  Verify the sheet is sensible.
+        """
+        style = _casement_style()
+        items = [
+            _item(1, "Win-A", style, 1200, 900),
+            _item(2, "Win-B", style, 800, 600),
+        ]
+        labeled = compute_project_pieces(items)
+        alu_pieces = [p for p in labeled if p.material_id == "ALU_60x40"]
+        plans = generate_project_cutting_plan(alu_pieces, {"ALU_60x40": 6000})
+        plan = plans["ALU_60x40"]
+
+        sheet = format_cutting_sheet(plan)
+        assert sheet.profile_id == "ALU_60x40"
+        assert sheet.total_pieces == len(alu_pieces)
+
+        # Every cut has exact dimension matching source pieces
+        all_cut_mms = {c.cut_mm for bar in sheet.bars for c in bar.cuts}
+        assert 1200 in all_cut_mms  # Win-A hframe
+        assert 800 in all_cut_mms   # Win-B hframe
+
+        # Last cut on every bar has offcut=0
+        for bar in sheet.bars:
+            assert bar.cuts[-1].offcut_mm == 0
 
 
 # ══════════════════════════════════════════════════════════════

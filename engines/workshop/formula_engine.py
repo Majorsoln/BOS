@@ -630,7 +630,16 @@ class LabeledPiece:
 
     @property
     def total_length_mm(self) -> int:
-        """Cut length including offcut/kerf allowance."""
+        """
+        INTERNAL USE ONLY — bar-space management, not the fundi's cut dimension.
+
+        Represents the nominal maximum space this piece can consume on a bar
+        (piece length + full inter-cut offcut). Used only for sorting.
+        The actual space consumed may be less when the piece is last on a bar
+        and remaining < offcut_mm (offcut is capped at whatever remains).
+
+        Fundi always receives `length_mm` as the exact cut dimension.
+        """
         return self.length_mm + self.offcut_mm
 
 
@@ -692,52 +701,71 @@ def _bfd_pack_1d(
     """
     Best-Fit Decreasing (BFD) 1D bin-packing for project cutting plans.
 
-    Algorithm:
-        1. Sort pieces by total_length_mm descending (decreasing).
-        2. For each piece, find the open bar with the LEAST remaining space
-           that still fits the piece (best-fit minimises fragmentation).
-        3. If no bar fits, open a new bar.
+    Offcut Rule (physical reality of miter cutting):
+        Offcut is NOT added to the piece dimension — the fundi cuts the exact
+        length_mm. Instead, offcut is an inter-cut overhead: after each cut,
+        the angled bar-end must be squared off (consuming offcut_mm of stock)
+        before the next piece can be started.
+
+        - First piece on a fresh bar: no pre-offcut (bar starts flat).
+          After the cut, offcut is consumed in preparation for the next cut.
+        - Each subsequent piece: already had the previous offcut consumed, so
+          it starts at the correct position.
+        - Last piece on a bar: offcut is capped at whatever stock remains after
+          the piece — the bar end becomes waste, no next cut to prepare for.
+
+    Fit check:
+        A piece fits on a bar when remaining >= piece.length_mm.
+        The offcut is applied AFTER placement (inter-cut prep), capped at
+        what remains, so the last piece never "overspends" the bar.
 
     Difference from FFD (_pack_1d):
         FFD: first bar that fits.
         BFD: bar with minimum remaining space that still fits.
-        BFD wastes less material when piece sizes vary.
+        BFD wastes less material when piece sizes vary across items.
 
-    Oversized pieces (> stock_length) are assigned to a dedicated bar and
-    flagged — the fundi decides whether to join or special-order stock.
+    Oversized pieces (length_mm > stock_length) get a dedicated bar and are
+    flagged for fundi review (join or special-order stock).
 
     Returns: (list of StockBar, total_waste_mm)
     """
     if not labeled_pieces:
         return [], 0
 
-    # Sort largest-first (Decreasing part of BFD)
+    # Sort by actual piece dimension descending (Decreasing part of BFD).
+    # We sort by length_mm because that is the true piece size; offcut is
+    # bar overhead and does not change the piece ordering for packing.
     sorted_pieces = sorted(
-        labeled_pieces, key=lambda p: p.total_length_mm, reverse=True
+        labeled_pieces, key=lambda p: p.length_mm, reverse=True
     )
 
-    # Each slot represents an open bar.
-    # remaining: space left; position_used: next cut starts here; allocations: cuts so far
+    # Each slot represents one open bar:
+    #   remaining:     usable space left on this bar
+    #   position_used: mm position where the next cut starts
+    #   allocations:   cuts placed so far
     slots: List[Dict] = []
 
     for piece in sorted_pieces:
-        piece_len = piece.total_length_mm
+        plen = piece.length_mm
+        nominal_offcut = piece.offcut_mm
 
-        if piece_len > stock_length:
-            # Oversized: own bar, flagged for fundi decision
+        if plen > stock_length:
+            # Truly oversized: the piece itself exceeds the bar.
+            # Flag for fundi decision (join pieces / special-order stock).
             alloc = CutAllocation(
                 item_id=piece.item_id, item_label=piece.item_label,
                 component_id=piece.component_id, component_name=piece.component_name,
-                length_mm=piece.length_mm, offcut_mm=piece.offcut_mm,
+                length_mm=plen, offcut_mm=0,   # no inter-cut offcut on an oversized bar
                 position_mm=0,
             )
             slots.append({
-                "remaining": 0, "position_used": piece_len,
+                "remaining": 0, "position_used": plen,
                 "allocations": [alloc], "oversized": True,
             })
             continue
 
-        # Best-Fit: find bar with minimum remaining space >= piece_len
+        # Best-Fit: minimum remaining >= plen (fit on piece length only —
+        # inter-cut offcut is applied post-placement, capped at remaining).
         best_idx = -1
         best_remaining = stock_length + 1  # sentinel
 
@@ -745,36 +773,43 @@ def _bfd_pack_1d(
             if slot.get("oversized"):
                 continue
             r = slot["remaining"]
-            if r >= piece_len and r < best_remaining:
+            if r >= plen and r < best_remaining:
                 best_remaining = r
                 best_idx = i
 
         if best_idx == -1:
-            # No bar fits — open a new bar
+            # Open a new bar — first piece, bar is flat (no pre-offcut).
+            # After this cut, consume offcut as prep for the next cut.
+            after_piece = stock_length - plen
+            actual_offcut = min(nominal_offcut, after_piece)
             alloc = CutAllocation(
                 item_id=piece.item_id, item_label=piece.item_label,
                 component_id=piece.component_id, component_name=piece.component_name,
-                length_mm=piece.length_mm, offcut_mm=piece.offcut_mm,
+                length_mm=plen, offcut_mm=actual_offcut,
                 position_mm=0,
             )
             slots.append({
-                "remaining": stock_length - piece_len,
-                "position_used": piece_len,
+                "remaining": after_piece - actual_offcut,
+                "position_used": plen + actual_offcut,
                 "allocations": [alloc],
             })
         else:
+            # Place on existing bar.  remaining already has the previous
+            # inter-cut offcut deducted, so piece starts at position_used.
             pos = slots[best_idx]["position_used"]
+            after_piece = slots[best_idx]["remaining"] - plen
+            actual_offcut = min(nominal_offcut, after_piece)
             alloc = CutAllocation(
                 item_id=piece.item_id, item_label=piece.item_label,
                 component_id=piece.component_id, component_name=piece.component_name,
-                length_mm=piece.length_mm, offcut_mm=piece.offcut_mm,
+                length_mm=plen, offcut_mm=actual_offcut,
                 position_mm=pos,
             )
-            slots[best_idx]["remaining"] -= piece_len
-            slots[best_idx]["position_used"] += piece_len
+            slots[best_idx]["remaining"] = after_piece - actual_offcut
+            slots[best_idx]["position_used"] += plen + actual_offcut
             slots[best_idx]["allocations"].append(alloc)
 
-    # Convert to StockBar objects
+    # Build StockBar objects from slots
     bars = [
         StockBar(
             bar_index=i + 1,
@@ -1021,3 +1056,107 @@ def compute_charge_cost_based(
         cost_per_bar = material_cost_rates.get(mat_id, 0)
         total += len(plan.bars) * cost_per_bar
     return total
+
+
+# ══════════════════════════════════════════════════════════════
+# FUNDI CUTTING SHEET — human-facing cut instructions
+# ══════════════════════════════════════════════════════════════
+#
+# The CuttingPlan is the machine-readable record.
+# The FundiCuttingSheet is the shop-floor document: ordered cut
+# instructions per bar, with exact dimensions and remaining shown.
+# Fundi sees ONLY what they need to act on — no algorithm details.
+
+@dataclass(frozen=True)
+class FundiCutStep:
+    """One cut instruction within a bar's cut sequence."""
+    step: int           # 1-based position in the cut sequence for this bar
+    item_label: str     # e.g. "Win-A", "Door-B"
+    component_name: str # e.g. "H-Frame", "Glass"
+    cut_mm: int         # exact dimension to cut (what the fundi marks on bar)
+    offcut_mm: int      # inter-cut offcut consumed AFTER this cut (0 if last)
+
+
+@dataclass(frozen=True)
+class FundiBarSheet:
+    """
+    Cut instructions for one physical bar, in the order the fundi should cut.
+
+    The sequence is sorted by position_mm so the fundi works left-to-right
+    down the bar without repositioning.
+    """
+    bar_number: int         # 1-based bar index
+    profile_id: str         # material / profile identifier (e.g. "ALU_60x40")
+    stock_length_mm: int    # total bar length
+    cuts: Tuple[FundiCutStep, ...]  # ordered cut instructions
+    remaining_mm: int       # waste/remaining at bar end (after all cuts + offcuts)
+
+
+@dataclass(frozen=True)
+class FundiCuttingSheet:
+    """
+    Complete cutting sheet for one profile/material across the project.
+    One sheet per profile type; printed and handed to the fundi.
+    """
+    profile_id: str
+    stock_length_mm: int
+    total_bars: int
+    total_pieces: int
+    waste_pct: int
+    bars: Tuple[FundiBarSheet, ...]
+
+
+def format_cutting_sheet(plan: "CuttingPlan") -> FundiCuttingSheet:
+    """
+    Convert a machine-readable CuttingPlan into a FundiCuttingSheet —
+    ordered, human-readable cut instructions suitable for the shop floor.
+
+    Rules:
+    - Cuts within each bar are sorted by position_mm (left → right).
+    - cut_mm = exact piece dimension (length_mm from CutAllocation).
+    - offcut_mm shown per step = actual inter-cut offcut after this cut.
+      The last cut on a bar has offcut_mm = waste_mm of that bar (end offcut).
+    - remaining_mm = unused stock at bar end (already computed by BFD).
+
+    Args:
+        plan: CuttingPlan produced by generate_project_cutting_plan()
+
+    Returns:
+        FundiCuttingSheet ready for display / printing.
+    """
+    fundi_bars: List[FundiBarSheet] = []
+
+    for bar in plan.bars:
+        # Sort allocations by position so fundi cuts left-to-right
+        ordered = sorted(bar.allocations, key=lambda a: a.position_mm)
+        steps: List[FundiCutStep] = []
+
+        for idx, alloc in enumerate(ordered):
+            is_last = (idx == len(ordered) - 1)
+            # Last step: offcut_mm = 0 (no next cut to prepare for);
+            # the remaining_mm already shows the end waste.
+            step_offcut = 0 if is_last else alloc.offcut_mm
+            steps.append(FundiCutStep(
+                step=idx + 1,
+                item_label=alloc.item_label,
+                component_name=alloc.component_name,
+                cut_mm=alloc.length_mm,
+                offcut_mm=step_offcut,
+            ))
+
+        fundi_bars.append(FundiBarSheet(
+            bar_number=bar.bar_index,
+            profile_id=plan.material_id,
+            stock_length_mm=bar.stock_length_mm,
+            cuts=tuple(steps),
+            remaining_mm=bar.waste_mm,
+        ))
+
+    return FundiCuttingSheet(
+        profile_id=plan.material_id,
+        stock_length_mm=plan.stock_length_mm,
+        total_bars=len(plan.bars),
+        total_pieces=plan.total_pieces,
+        waste_pct=plan.waste_pct,
+        bars=tuple(fundi_bars),
+    )
