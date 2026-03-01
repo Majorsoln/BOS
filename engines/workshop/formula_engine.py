@@ -1160,3 +1160,415 @@ def format_cutting_sheet(plan: "CuttingPlan") -> FundiCuttingSheet:
         waste_pct=plan.waste_pct,
         bars=tuple(fundi_bars),
     )
+
+
+# ══════════════════════════════════════════════════════════════
+# PHASE 18: GLASS / PANEL GUILLOTINE CUTTING
+# ══════════════════════════════════════════════════════════════
+#
+# Strategy: Column Strip Packing + Best-Fit Decreasing
+#
+# Guillotine rule: every cut is a straight line from edge to edge
+# of the current rectangle being cut.  Two cut phases:
+#
+#   PRIMARY   — full-height V-cuts between adjacent strips.
+#               Done FIRST by the fundi so the sheet breaks into
+#               independent columns that can be handled separately.
+#
+#   SECONDARY — H-cuts within each strip, between piece rows.
+#               Done AFTER the strip is isolated.
+#
+# Algorithm:
+#   1. Sort FILL_AREA pieces by width descending (BFD ordering).
+#   2. BFD strip assignment: for each piece, find the strip with
+#      the MINIMUM remaining height that still fits the piece
+#      (piece.w ≤ strip.w AND height fits including kerf).
+#      Open a new strip if none fit; start a new sheet if the new
+#      strip doesn't fit across the current sheet.
+#   3. Within each strip, pieces stack top-to-bottom.
+#
+# Kerf rules:
+#   - Consumed between strips (one kerf per V-cut boundary).
+#   - Consumed between piece rows within a strip (one kerf per
+#     H-cut boundary, NOT before the first piece in a strip).
+#   - NOT at the sheet edges.
+
+
+@dataclass(frozen=True)
+class GlassPlacement:
+    """
+    One piece placed on a glass/panel sheet.
+
+    Coordinates: origin (0,0) is top-left of sheet.
+    x_mm / y_mm = top-left corner of this piece on the sheet.
+    w_mm / h_mm = placed dimensions (may differ from original if rotated).
+    """
+    item_id: int
+    item_label: str
+    component_id: str
+    component_name: str
+    x_mm: int           # left edge from sheet origin
+    y_mm: int           # top edge from sheet origin
+    w_mm: int           # placed width (may be rotated)
+    h_mm: int           # placed height (may be rotated)
+    original_w_mm: int  # original piece width (before any rotation)
+    original_h_mm: int  # original piece height (before any rotation)
+    rotated: bool       # True if piece was rotated 90°
+
+
+@dataclass(frozen=True)
+class GlassCutLine:
+    """
+    One cut instruction for the fundi (guillotine cutting).
+
+    orientation: "V" = vertical guillotine cut (splits sheet into left/right)
+                 "H" = horizontal guillotine cut (splits strip into top/bottom)
+    position_mm: blade position
+                 For V: x-coordinate of cut (from left edge)
+                 For H: y-coordinate of cut (from top edge)
+    from_mm / to_mm: extent of the cut line
+                 For V: y-coordinates (from_mm=0 .. to_mm=sheet_h)
+                 For H: x-coordinates (from_mm=strip_x .. to_mm=strip_x+strip_w)
+    is_primary:  True  = full-height primary V-cut (done before any H-cuts)
+                 False = secondary H-cut within a strip
+    strip_index: 0 for primary cuts; 1-based strip number for secondary cuts
+    description: Human-readable label for shop floor
+    """
+    step: int
+    orientation: str    # "V" or "H"
+    position_mm: int    # where the blade strikes
+    from_mm: int        # start of the cut line
+    to_mm: int          # end of the cut line
+    is_primary: bool    # primary V-cut or secondary H-cut
+    strip_index: int    # 0 = primary cut; 1-based for secondary
+    description: str
+
+
+@dataclass(frozen=True)
+class GlassSheetLayout:
+    """Layout of one glass/panel sheet — placements + ordered cut instructions."""
+    sheet_index: int
+    material_id: str
+    sheet_w_mm: int
+    sheet_h_mm: int
+    kerf_mm: int
+    placements: Tuple[GlassPlacement, ...]
+    primary_cuts: Tuple[GlassCutLine, ...]    # full-height V-cuts (done first)
+    secondary_cuts: Tuple[GlassCutLine, ...]  # within-strip H-cuts
+    piece_count: int
+    piece_area_mm2: int   # sum of all placed piece areas
+    waste_mm2: int        # sheet_area - piece_area
+    waste_pct: int        # 0-100
+
+
+@dataclass(frozen=True)
+class GlassCuttingPlan:
+    """Complete guillotine cutting plan for one glass/panel material."""
+    material_id: str
+    sheet_w_mm: int
+    sheet_h_mm: int
+    kerf_mm: int
+    total_sheets: int
+    total_pieces: int
+    total_piece_area_mm2: int
+    total_waste_mm2: int
+    waste_pct: int        # across all sheets combined
+    sheets: Tuple[GlassSheetLayout, ...]
+
+
+def _build_glass_sheet_layout(
+    strips: List[Dict],
+    sheet_idx: int,
+    material_id: str,
+    sheet_w: int,
+    sheet_h: int,
+    kerf: int,
+) -> GlassSheetLayout:
+    """
+    Build a GlassSheetLayout from packed strips for one sheet.
+
+    Generates:
+    - GlassPlacement for every piece.
+    - Primary V-cuts (full-height, between adjacent strips) — listed first.
+    - Secondary H-cuts (between piece rows within each strip).
+
+    Cut step numbering: primary cuts numbered 1..N_strips-1,
+    then secondary cuts continue from N_strips.
+    """
+    placements: List[GlassPlacement] = []
+    primary_cuts: List[GlassCutLine] = []
+    secondary_cuts: List[GlassCutLine] = []
+    piece_area = 0
+    cut_step = 1
+
+    # ── Primary V-cuts: full-height, between adjacent strips ──────────────
+    for i in range(len(strips) - 1):
+        strip = strips[i]
+        cut_x = strip["x"] + strip["w"]
+        primary_cuts.append(GlassCutLine(
+            step=cut_step,
+            orientation="V",
+            position_mm=cut_x,
+            from_mm=0,
+            to_mm=sheet_h,
+            is_primary=True,
+            strip_index=0,
+            description=f"Primary V-cut: separate strip {i + 1} | strip {i + 2}",
+        ))
+        cut_step += 1
+
+    # ── Placements and secondary H-cuts per strip ──────────────────────────
+    for si, strip in enumerate(strips):
+        sx = strip["x"]
+        sw = strip["w"]
+        strip_pieces = strip["pieces"]
+
+        for pi, slot in enumerate(strip_pieces):
+            lp: LabeledPiece = slot["piece"]
+            y = slot["y"]
+            pw = slot["pw"]
+            ph = slot["ph"]
+            rotated = slot["rotated"]
+
+            placements.append(GlassPlacement(
+                item_id=lp.item_id,
+                item_label=lp.item_label,
+                component_id=lp.component_id,
+                component_name=lp.component_name,
+                x_mm=sx,
+                y_mm=y,
+                w_mm=pw,
+                h_mm=ph,
+                original_w_mm=lp.length_mm,
+                original_h_mm=lp.width_mm if lp.width_mm is not None else lp.length_mm,
+                rotated=rotated,
+            ))
+            piece_area += pw * ph
+
+            # H-cut between this piece and the next piece in this strip
+            if pi < len(strip_pieces) - 1:
+                cut_y = y + ph
+                secondary_cuts.append(GlassCutLine(
+                    step=cut_step,
+                    orientation="H",
+                    position_mm=cut_y,
+                    from_mm=sx,
+                    to_mm=sx + sw,
+                    is_primary=False,
+                    strip_index=si + 1,
+                    description=(
+                        f"Strip {si + 1} H-cut after piece {pi + 1} "
+                        f"({lp.item_label}/{lp.component_name})"
+                    ),
+                ))
+                cut_step += 1
+
+    sheet_area = sheet_w * sheet_h
+    waste = sheet_area - piece_area
+    waste_pct = int((waste * 100) // sheet_area) if sheet_area > 0 else 0
+
+    return GlassSheetLayout(
+        sheet_index=sheet_idx,
+        material_id=material_id,
+        sheet_w_mm=sheet_w,
+        sheet_h_mm=sheet_h,
+        kerf_mm=kerf,
+        placements=tuple(placements),
+        primary_cuts=tuple(primary_cuts),
+        secondary_cuts=tuple(secondary_cuts),
+        piece_count=len(placements),
+        piece_area_mm2=piece_area,
+        waste_mm2=waste,
+        waste_pct=waste_pct,
+    )
+
+
+def _guillotine_strip_pack(
+    labeled_pieces: List[LabeledPiece],
+    sheet_w: int,
+    sheet_h: int,
+    kerf: int,
+    material_id: str,
+    allow_rotation: bool = True,
+) -> List[GlassSheetLayout]:
+    """
+    Column Strip Packing with Best-Fit Decreasing for guillotine glass cutting.
+
+    Pieces are grouped into vertical strips (columns).  Within each strip,
+    pieces stack top-to-bottom separated by kerf.  Strips are separated by
+    full-height V-cuts (kerf consumed between strips).
+
+    BFD rule: for each piece, assign it to the strip with the MINIMUM remaining
+    height that still fits the piece (best fit = least waste per strip).
+
+    Args:
+        labeled_pieces: FILL_AREA pieces to pack.
+        sheet_w / sheet_h: stock sheet dimensions in mm.
+        kerf: blade kerf width in mm.
+        material_id: for output labelling.
+        allow_rotation: if True, try 90° rotation to improve fit.
+
+    Returns:
+        List of GlassSheetLayout, one per stock sheet used.
+    """
+    # Sort by width descending so the widest pieces anchor the widest strips first.
+    remaining: List[LabeledPiece] = sorted(
+        labeled_pieces, key=lambda p: p.length_mm, reverse=True
+    )
+
+    # Pre-filter: remove pieces that cannot physically fit on any sheet.
+    fits: List[LabeledPiece] = []
+    for lp in remaining:
+        pw = lp.length_mm
+        ph = lp.width_mm if lp.width_mm is not None else lp.length_mm
+        fits_normal = pw <= sheet_w and ph <= sheet_h
+        fits_rotated = allow_rotation and ph <= sheet_w and pw <= sheet_h
+        if fits_normal or fits_rotated:
+            fits.append(lp)
+    remaining = fits
+
+    layouts: List[GlassSheetLayout] = []
+    sheet_idx = 1
+
+    while remaining:
+        # ── Pack as many pieces as possible onto the current sheet ──────────
+        strips: List[Dict] = []  # {"x", "w", "used_h", "pieces": [...]}
+        made_progress = False
+        i = 0
+
+        while i < len(remaining):
+            piece = remaining[i]
+            pw_orig = piece.length_mm
+            ph_orig = piece.width_mm if piece.width_mm is not None else piece.length_mm
+
+            # Orientations to try (original first, then rotated)
+            orientations = [(pw_orig, ph_orig, False)]
+            if allow_rotation and pw_orig != ph_orig:
+                orientations.append((ph_orig, pw_orig, True))
+
+            placed = False
+            for pw, ph, rotated in orientations:
+                if pw > sheet_w or ph > sheet_h:
+                    continue  # this orientation exceeds sheet; try next
+
+                # ── BFD: find existing strip with min remaining height ──────
+                best_si = -1
+                best_rem = sheet_h + 1
+                for si, strip in enumerate(strips):
+                    if pw > strip["w"]:
+                        continue  # piece wider than strip
+                    pre_kerf = kerf if strip["used_h"] > 0 else 0
+                    if strip["used_h"] + pre_kerf + ph <= sheet_h:
+                        rem = sheet_h - strip["used_h"] - pre_kerf - ph
+                        if rem < best_rem:
+                            best_rem = rem
+                            best_si = si
+
+                if best_si >= 0:
+                    # Place in the best-fitting existing strip
+                    strip = strips[best_si]
+                    pre_kerf = kerf if strip["used_h"] > 0 else 0
+                    y_pos = strip["used_h"] + pre_kerf
+                    strip["pieces"].append(
+                        {"piece": piece, "y": y_pos, "pw": pw, "ph": ph, "rotated": rotated}
+                    )
+                    strip["used_h"] += pre_kerf + ph
+                    placed = True
+                    break
+
+                # ── Open a new strip ────────────────────────────────────────
+                new_x = (strips[-1]["x"] + strips[-1]["w"] + kerf) if strips else 0
+                if new_x + pw <= sheet_w:
+                    strips.append({
+                        "x": new_x,
+                        "w": pw,
+                        "used_h": ph,
+                        "pieces": [
+                            {"piece": piece, "y": 0, "pw": pw, "ph": ph, "rotated": rotated}
+                        ],
+                    })
+                    placed = True
+                    break
+                # else: no room for a new strip with this orientation — try next
+
+            if placed:
+                remaining.pop(i)
+                made_progress = True
+                # Do NOT increment i: next element has shifted into position i
+            else:
+                i += 1  # skip piece that doesn't fit; try again on next sheet
+
+        if strips:
+            layout = _build_glass_sheet_layout(
+                strips, sheet_idx, material_id, sheet_w, sheet_h, kerf
+            )
+            layouts.append(layout)
+            sheet_idx += 1
+
+        if not made_progress:
+            break  # safety: avoid infinite loop if something can't be placed
+
+    return layouts
+
+
+def generate_glass_cutting_plan(
+    labeled_pieces: List[LabeledPiece],
+    stock_sizes: Dict[str, Tuple[int, int]],
+    kerf_mm: int = 5,
+    allow_rotation: bool = True,
+) -> Dict[str, GlassCuttingPlan]:
+    """
+    Generate optimized guillotine cutting plans for all FILL_AREA materials.
+
+    Filters for FILL_AREA pieces only, groups by material_id, then runs
+    Column Strip Packing (BFD) for each material to minimise sheets used.
+
+    Args:
+        labeled_pieces: All project pieces (CUT_SHAPE and FILL_AREA mixed).
+                        Only FILL_AREA pieces are processed.
+        stock_sizes:    {material_id: (sheet_width_mm, sheet_height_mm)}
+                        Must be provided for every FILL_AREA material.
+        kerf_mm:        Blade kerf in mm consumed at each cut (default 5).
+        allow_rotation: If True, pieces may be rotated 90° to improve yield.
+
+    Returns:
+        Dict[material_id → GlassCuttingPlan]
+        (Materials not in stock_sizes are skipped.)
+    """
+    # Filter FILL_AREA only and group by material
+    by_material: Dict[str, List[LabeledPiece]] = {}
+    for lp in labeled_pieces:
+        if lp.shape_type == ShapeType.FILL_AREA:
+            by_material.setdefault(lp.material_id, []).append(lp)
+
+    plans: Dict[str, GlassCuttingPlan] = {}
+
+    for mat_id, pieces in by_material.items():
+        if mat_id not in stock_sizes:
+            continue  # no stock size defined — skip
+
+        sw, sh = stock_sizes[mat_id]
+        sheets = _guillotine_strip_pack(pieces, sw, sh, kerf_mm, mat_id, allow_rotation)
+
+        total_pieces = sum(s.piece_count for s in sheets)
+        total_piece_area = sum(s.piece_area_mm2 for s in sheets)
+        total_sheet_area = len(sheets) * sw * sh
+        total_waste = total_sheet_area - total_piece_area
+        overall_waste_pct = (
+            int((total_waste * 100) // total_sheet_area) if total_sheet_area > 0 else 0
+        )
+
+        plans[mat_id] = GlassCuttingPlan(
+            material_id=mat_id,
+            sheet_w_mm=sw,
+            sheet_h_mm=sh,
+            kerf_mm=kerf_mm,
+            total_sheets=len(sheets),
+            total_pieces=total_pieces,
+            total_piece_area_mm2=total_piece_area,
+            total_waste_mm2=total_waste,
+            waste_pct=overall_waste_pct,
+            sheets=tuple(sheets),
+        )
+
+    return plans
