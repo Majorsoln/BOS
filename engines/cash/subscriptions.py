@@ -4,8 +4,8 @@ BOS Cash Engine — Event Subscriptions
 Cash reacts to events from other engines (read-only).
 
 Subscriptions:
-- retail.sale.completed → auto-record cash payment to active session
-- restaurant.bill.settled → auto-record cash payment to active session
+- retail.sale.completed.v1    → auto-record cash payment to active session
+- restaurant.bill.settled.v1  → auto-record cash payment to active session
 
 Doctrine: AGENTS.md Rule 4 — Engines communicate ONLY via events.
 Only CASH payment_method triggers recording. Card/Mobile handled elsewhere.
@@ -15,14 +15,14 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Dict, Optional, Set
 
 from engines.cash.commands import PaymentRecordRequest
 
 
 CASH_SUBSCRIPTIONS: Dict[str, str] = {
-    "retail.sale.completed": "handle_retail_sale",
-    "restaurant.bill.settled": "handle_restaurant_bill",
+    "retail.sale.completed.v1": "handle_retail_sale",
+    "restaurant.bill.settled.v1": "handle_restaurant_bill",
 }
 
 
@@ -34,6 +34,7 @@ class CashSubscriptionHandler:
 
     def __init__(self, cash_service=None):
         self._cash_service = cash_service
+        self._processed_payment_ids: Set[str] = set()
 
     def _get_open_session(self) -> Optional[dict]:
         """Look up any open cash session from the projection store."""
@@ -45,6 +46,8 @@ class CashSubscriptionHandler:
         for session_id, session in store._sessions.items():
             if session.get("status") == "OPEN":
                 return {"session_id": session_id, **session}
+        # No open session — cash recording silently skipped.
+        # Cashier must open a session before processing payments.
         return None
 
     def _record_cash_payment(
@@ -69,6 +72,11 @@ class CashSubscriptionHandler:
         amount = payload.get(amount_key, 0)
         currency = str(payload.get("currency", ""))
 
+        # Idempotency guard: skip if this payment was already recorded in this session.
+        payment_id = f"auto:{subject_id}"
+        if payment_id in self._processed_payment_ids:
+            return
+
         if not business_id_raw or not amount or not currency:
             return
 
@@ -84,7 +92,7 @@ class CashSubscriptionHandler:
 
         try:
             request = PaymentRecordRequest(
-                payment_id=f"auto:{subject_id}",
+                payment_id=payment_id,
                 session_id=session_info["session_id"],
                 drawer_id=session_info["drawer_id"],
                 amount=int(amount),
@@ -102,6 +110,7 @@ class CashSubscriptionHandler:
                 issued_at=datetime.now(tz=timezone.utc),
             )
             self._cash_service._execute_command(command)
+            self._processed_payment_ids.add(payment_id)
         except (KeyError, ValueError, TypeError):
             return
 

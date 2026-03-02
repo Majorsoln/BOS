@@ -36,6 +36,9 @@ ACCOUNTING_SUBSCRIPTIONS: Dict[str, str] = {
     "inventory.stock.received.v1": "handle_stock_received",
     "cash.payment.recorded.v1": "handle_payment_recorded",
     "hr.payroll.run.v1": "handle_payroll_run",
+    "retail.sale.completed.v1": "handle_retail_sale",
+    "restaurant.bill.settled.v1": "handle_restaurant_bill",
+    "workshop.job.invoiced.v1": "handle_workshop_invoice",
 }
 
 
@@ -272,6 +275,205 @@ class AccountingSubscriptionHandler:
                 memo=f"Auto-journal: payroll {payroll_id} for {employee_id} ({period_start}-{period_end})",
                 currency=currency,
                 reference_id=payroll_id or None,
+                branch_id=branch_id,
+            )
+            command = request.to_command(
+                business_id=business_id,
+                actor_type="System",
+                actor_id="system:accounting.subscription",
+                command_id=uuid.uuid4(),
+                correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
+                issued_at=datetime.now(tz=timezone.utc),
+            )
+            self._accounting_service._execute_command(command)
+        except (KeyError, ValueError, TypeError):
+            return
+
+    def handle_retail_sale(self, event_data: dict) -> None:
+        """
+        When Retail completes a sale, post a revenue journal entry.
+
+        Management entry (non-statutory):
+          DEBIT  Cash on Hand / AR Trade   (payment received or owed)
+          CREDIT Revenue Sales             (revenue recognized at point of sale)
+
+        Event source: retail.sale.completed.v1
+        Payload fields used: business_id, sale_id, net_amount, currency, payment_method
+        """
+        if self._accounting_service is None:
+            return
+
+        payload = event_data.get("payload", {})
+        business_id_raw = payload.get("business_id")
+        branch_id_raw = payload.get("branch_id")
+        sale_id = str(payload.get("sale_id", ""))
+        net_amount = int(payload.get("net_amount", 0))
+        currency = str(payload.get("currency", ""))
+        payment_method = str(payload.get("payment_method", ""))
+
+        if not business_id_raw or not net_amount or not currency:
+            return
+
+        try:
+            business_id = uuid.UUID(str(business_id_raw))
+            branch_id = uuid.UUID(str(branch_id_raw)) if branch_id_raw else None
+        except (ValueError, AttributeError):
+            return
+
+        debit_account = DEFAULT_CASH_ACCOUNT if payment_method == "CASH" else DEFAULT_AR_ACCOUNT
+
+        try:
+            request = JournalPostRequest(
+                entry_id=f"auto:retail-sale:{sale_id}",
+                lines=tuple([
+                    {
+                        "account_code": debit_account,
+                        "side": "DEBIT",
+                        "amount": net_amount,
+                        "description": f"Retail sale: {sale_id}",
+                    },
+                    {
+                        "account_code": DEFAULT_REVENUE_ACCOUNT,
+                        "side": "CREDIT",
+                        "amount": net_amount,
+                        "description": f"Sales revenue: {sale_id}",
+                    },
+                ]),
+                memo=f"Auto-journal: retail sale {sale_id} via {payment_method}",
+                currency=currency,
+                reference_id=sale_id or None,
+                branch_id=branch_id,
+            )
+            command = request.to_command(
+                business_id=business_id,
+                actor_type="System",
+                actor_id="system:accounting.subscription",
+                command_id=uuid.uuid4(),
+                correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
+                issued_at=datetime.now(tz=timezone.utc),
+            )
+            self._accounting_service._execute_command(command)
+        except (KeyError, ValueError, TypeError):
+            return
+
+    def handle_restaurant_bill(self, event_data: dict) -> None:
+        """
+        When Restaurant settles a bill, post a revenue journal entry.
+
+        Management entry (non-statutory):
+          DEBIT  Cash on Hand / AR Trade   (payment received or owed)
+          CREDIT Revenue Sales             (revenue recognized at settlement)
+
+        Event source: restaurant.bill.settled.v1
+        Payload fields used: business_id, bill_id, total_amount, currency, payment_method
+        """
+        if self._accounting_service is None:
+            return
+
+        payload = event_data.get("payload", {})
+        business_id_raw = payload.get("business_id")
+        branch_id_raw = payload.get("branch_id")
+        bill_id = str(payload.get("bill_id", ""))
+        total_amount = int(payload.get("total_amount", 0))
+        currency = str(payload.get("currency", ""))
+        payment_method = str(payload.get("payment_method", ""))
+
+        if not business_id_raw or not total_amount or not currency:
+            return
+
+        try:
+            business_id = uuid.UUID(str(business_id_raw))
+            branch_id = uuid.UUID(str(branch_id_raw)) if branch_id_raw else None
+        except (ValueError, AttributeError):
+            return
+
+        debit_account = DEFAULT_CASH_ACCOUNT if payment_method == "CASH" else DEFAULT_AR_ACCOUNT
+
+        try:
+            request = JournalPostRequest(
+                entry_id=f"auto:restaurant-bill:{bill_id}",
+                lines=tuple([
+                    {
+                        "account_code": debit_account,
+                        "side": "DEBIT",
+                        "amount": total_amount,
+                        "description": f"Restaurant bill: {bill_id}",
+                    },
+                    {
+                        "account_code": DEFAULT_REVENUE_ACCOUNT,
+                        "side": "CREDIT",
+                        "amount": total_amount,
+                        "description": f"Restaurant revenue: {bill_id}",
+                    },
+                ]),
+                memo=f"Auto-journal: restaurant bill {bill_id} via {payment_method}",
+                currency=currency,
+                reference_id=bill_id or None,
+                branch_id=branch_id,
+            )
+            command = request.to_command(
+                business_id=business_id,
+                actor_type="System",
+                actor_id="system:accounting.subscription",
+                command_id=uuid.uuid4(),
+                correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
+                issued_at=datetime.now(tz=timezone.utc),
+            )
+            self._accounting_service._execute_command(command)
+        except (KeyError, ValueError, TypeError):
+            return
+
+    def handle_workshop_invoice(self, event_data: dict) -> None:
+        """
+        When Workshop invoices a job, post an accounts-receivable journal entry.
+
+        Management entry (non-statutory):
+          DEBIT  AR Trade      (customer owes for the completed job)
+          CREDIT Revenue Sales (revenue recognized at invoicing)
+
+        Event source: workshop.job.invoiced.v1
+        Payload fields used: business_id, invoice_id, job_id, amount, currency
+        """
+        if self._accounting_service is None:
+            return
+
+        payload = event_data.get("payload", {})
+        business_id_raw = payload.get("business_id")
+        branch_id_raw = payload.get("branch_id")
+        invoice_id = str(payload.get("invoice_id", ""))
+        job_id = str(payload.get("job_id", ""))
+        amount = int(payload.get("amount", 0))
+        currency = str(payload.get("currency", ""))
+
+        if not business_id_raw or not amount or not currency:
+            return
+
+        try:
+            business_id = uuid.UUID(str(business_id_raw))
+            branch_id = uuid.UUID(str(branch_id_raw)) if branch_id_raw else None
+        except (ValueError, AttributeError):
+            return
+
+        try:
+            request = JournalPostRequest(
+                entry_id=f"auto:workshop-invoice:{invoice_id}",
+                lines=tuple([
+                    {
+                        "account_code": DEFAULT_AR_ACCOUNT,
+                        "side": "DEBIT",
+                        "amount": amount,
+                        "description": f"Workshop invoice: {invoice_id} (job: {job_id})",
+                    },
+                    {
+                        "account_code": DEFAULT_REVENUE_ACCOUNT,
+                        "side": "CREDIT",
+                        "amount": amount,
+                        "description": f"Workshop service revenue: {job_id}",
+                    },
+                ]),
+                memo=f"Auto-journal: workshop invoice {invoice_id} for job {job_id}",
+                currency=currency,
+                reference_id=invoice_id or None,
                 branch_id=branch_id,
             )
             command = request.to_command(

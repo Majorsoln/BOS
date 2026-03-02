@@ -70,6 +70,7 @@ def _base(cmd):
 PAYLOAD_BUILDERS = {
     "cart_qr.create.request": lambda cmd: {**_base(cmd),
         "cart_qr_id": cmd.payload["cart_qr_id"],
+        "currency": cmd.payload.get("currency", ""),
         "usage_mode": cmd.payload.get("usage_mode", USAGE_SINGLE),
         "expiry_hours": cmd.payload.get("expiry_hours", 24),
         "created_at": cmd.payload.get("issued_at") or str(cmd.issued_at),
@@ -129,6 +130,7 @@ class CreateCartQRRequest:
     cart_qr_id: str
     actor_id: str
     issued_at: datetime
+    currency: str = ""
     usage_mode: str = USAGE_SINGLE
     expiry_hours: int = 24
     source_engine: str = "cart_qr"
@@ -157,6 +159,7 @@ class CreateCartQRRequest:
             "actor_requirement": ACTOR_REQUIRED,
             "payload": {
                 "cart_qr_id": self.cart_qr_id,
+                "currency": self.currency,
                 "usage_mode": self.usage_mode,
                 "expiry_hours": self.expiry_hours,
                 "issued_at": str(self.issued_at),
@@ -331,6 +334,7 @@ class CartQRProjectionStore:
         if event_type == CART_QR_CREATED_V1:
             self._carts[cid] = {
                 "cart_qr_id": cid, "status": STATUS_DRAFT,
+                "currency": payload.get("currency", ""),
                 "usage_mode": payload.get("usage_mode", USAGE_SINGLE),
                 "expiry_hours": payload.get("expiry_hours", 24),
                 "items": [], "qr_token": None, "expires_at": None,
@@ -456,6 +460,19 @@ class CartQRService:
                 policy_name="_execute_command",
             )}
         payload = builder(command)
+
+        # Enrich the transfer-to-POS event with selected_items and currency
+        # so retail subscription can auto-open the sale without cross-engine queries.
+        if event_type == CART_QR_TRANSFERRED_TO_POS_V1:
+            cid = payload.get("cart_qr_id")
+            cart = self._projection.get_cart(cid) if cid else None
+            if cart:
+                payload = {
+                    **payload,
+                    "selected_items": list(cart.get("selected_items", [])),
+                    "currency": cart.get("currency", ""),
+                }
+
         event_data = self._event_factory.create(
             event_type, payload, command.business_id,
             getattr(command, "branch_id", None),
