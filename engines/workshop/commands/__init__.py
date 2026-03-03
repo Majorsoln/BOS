@@ -31,6 +31,10 @@ WORKSHOP_QUOTE_GENERATE_REQUEST = "workshop.quote.generate.request"
 # Phase 17 — Multi-Item Project Quotes
 WORKSHOP_PROJECT_QUOTE_REQUEST = "workshop.project.quote.request"
 
+# Phase 18 — Quote Acceptance / Rejection
+WORKSHOP_QUOTE_ACCEPT_REQUEST = "workshop.quote.accept.request"
+WORKSHOP_QUOTE_REJECT_REQUEST = "workshop.quote.reject.request"
+
 WORKSHOP_COMMAND_TYPES = frozenset({
     WORKSHOP_JOB_CREATE_REQUEST,
     WORKSHOP_JOB_ASSIGN_REQUEST,
@@ -45,6 +49,8 @@ WORKSHOP_COMMAND_TYPES = frozenset({
     WORKSHOP_STYLE_DEACTIVATE_REQUEST,
     WORKSHOP_QUOTE_GENERATE_REQUEST,
     WORKSHOP_PROJECT_QUOTE_REQUEST,
+    WORKSHOP_QUOTE_ACCEPT_REQUEST,
+    WORKSHOP_QUOTE_REJECT_REQUEST,
 })
 
 VALID_MATERIAL_UNITS = frozenset({"MM", "M", "SQM", "SHT", "PC", "KG"})
@@ -485,4 +491,62 @@ class ProjectQuoteRequest:
             "currency": self.currency,
             "stock_lengths": self.stock_lengths or {},
             "rates": self.rates or {},
+        }, branch_id=self.branch_id, **kw)
+
+
+# ── Phase 18: Quote Acceptance / Rejection ────────────────────────────────────
+
+@dataclass(frozen=True)
+class QuoteAcceptRequest:
+    """Customer accepts a quote — triggers Proforma Invoice issuance."""
+    quote_id: str
+    job_id: str
+    customer_id: Optional[str] = None
+    total_price: int = 0
+    currency: str = ""
+    valid_until: str = ""
+    lines: tuple = ()
+    notes: str = ""
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.quote_id:
+            raise ValueError("quote_id must be non-empty.")
+        if not self.job_id:
+            raise ValueError("job_id must be non-empty.")
+
+    def to_command(self, **kw) -> Command:
+        return _cmd(WORKSHOP_QUOTE_ACCEPT_REQUEST, {
+            "quote_id":    self.quote_id,
+            "job_id":      self.job_id,
+            "customer_id": self.customer_id,
+            "total_price": self.total_price,
+            "currency":    self.currency,
+            "valid_until": self.valid_until,
+            "lines":       list(self.lines),
+            "notes":       self.notes,
+        }, branch_id=self.branch_id, **kw)
+
+
+@dataclass(frozen=True)
+class QuoteRejectRequest:
+    """Customer rejects a quote — tracking only, no document issued."""
+    quote_id: str
+    job_id: str
+    customer_id: Optional[str] = None
+    reason: str = ""
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.quote_id:
+            raise ValueError("quote_id must be non-empty.")
+        if not self.job_id:
+            raise ValueError("job_id must be non-empty.")
+
+    def to_command(self, **kw) -> Command:
+        return _cmd(WORKSHOP_QUOTE_REJECT_REQUEST, {
+            "quote_id":    self.quote_id,
+            "job_id":      self.job_id,
+            "customer_id": self.customer_id,
+            "reason":      self.reason,
         }, branch_id=self.branch_id, **kw)

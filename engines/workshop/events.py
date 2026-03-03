@@ -22,6 +22,8 @@ WORKSHOP_STYLE_REGISTERED_V1 = "workshop.style.registered.v1"
 WORKSHOP_STYLE_UPDATED_V1 = "workshop.style.updated.v1"
 WORKSHOP_STYLE_DEACTIVATED_V1 = "workshop.style.deactivated.v1"
 WORKSHOP_QUOTE_GENERATED_V1 = "workshop.quote.generated.v1"
+WORKSHOP_QUOTE_ACCEPTED_V1 = "workshop.quote.accepted.v1"
+WORKSHOP_QUOTE_REJECTED_V1 = "workshop.quote.rejected.v1"
 
 # Phase 17 — Multi-Item Project Quotes
 WORKSHOP_PROJECT_QUOTE_GENERATED_V1 = "workshop.project.quote.generated.v1"
@@ -39,21 +41,25 @@ WORKSHOP_EVENT_TYPES = (
     WORKSHOP_STYLE_UPDATED_V1,
     WORKSHOP_STYLE_DEACTIVATED_V1,
     WORKSHOP_QUOTE_GENERATED_V1,
+    WORKSHOP_QUOTE_ACCEPTED_V1,
+    WORKSHOP_QUOTE_REJECTED_V1,
     WORKSHOP_PROJECT_QUOTE_GENERATED_V1,
 )
 
 COMMAND_TO_EVENT_TYPE = {
-    "workshop.job.create.request": WORKSHOP_JOB_CREATED_V1,
-    "workshop.job.assign.request": WORKSHOP_JOB_ASSIGNED_V1,
-    "workshop.job.start.request": WORKSHOP_JOB_STARTED_V1,
-    "workshop.job.complete.request": WORKSHOP_JOB_COMPLETED_V1,
-    "workshop.job.invoice.request": WORKSHOP_JOB_INVOICED_V1,
+    "workshop.job.create.request":       WORKSHOP_JOB_CREATED_V1,
+    "workshop.job.assign.request":       WORKSHOP_JOB_ASSIGNED_V1,
+    "workshop.job.start.request":        WORKSHOP_JOB_STARTED_V1,
+    "workshop.job.complete.request":     WORKSHOP_JOB_COMPLETED_V1,
+    "workshop.job.invoice.request":      WORKSHOP_JOB_INVOICED_V1,
     "workshop.cutlist.generate.request": WORKSHOP_CUTLIST_GENERATED_V1,
     "workshop.material.consume.request": WORKSHOP_MATERIAL_CONSUMED_V1,
-    "workshop.offcut.record.request": WORKSHOP_OFFCUT_RECORDED_V1,
-    "workshop.style.register.request": WORKSHOP_STYLE_REGISTERED_V1,
-    "workshop.style.update.request": WORKSHOP_STYLE_UPDATED_V1,
+    "workshop.offcut.record.request":    WORKSHOP_OFFCUT_RECORDED_V1,
+    "workshop.style.register.request":   WORKSHOP_STYLE_REGISTERED_V1,
+    "workshop.style.update.request":     WORKSHOP_STYLE_UPDATED_V1,
     "workshop.style.deactivate.request": WORKSHOP_STYLE_DEACTIVATED_V1,
+    "workshop.quote.accept.request":     WORKSHOP_QUOTE_ACCEPTED_V1,
+    "workshop.quote.reject.request":     WORKSHOP_QUOTE_REJECTED_V1,
     # Note: workshop.quote.generate.request is handled specially in service
     # (requires formula computation before event creation)
 }
@@ -92,9 +98,14 @@ def build_job_created_payload(command: Command) -> dict:
 def build_job_assigned_payload(command: Command) -> dict:
     p = _base_payload(command)
     p.update({
-        "job_id": command.payload["job_id"],
-        "technician_id": command.payload["technician_id"],
-        "assigned_at": command.issued_at,
+        "job_id":               command.payload["job_id"],
+        "customer_id":          command.payload.get("customer_id"),
+        "technician_id":        command.payload["technician_id"],
+        "job_description":      command.payload.get("job_description", ""),
+        "priority":             command.payload.get("priority", "NORMAL"),
+        "estimated_completion": command.payload.get("estimated_completion", ""),
+        "parts_required":       command.payload.get("parts_required", []),
+        "assigned_at":          command.issued_at,
     })
     return p
 
@@ -124,11 +135,21 @@ def build_job_completed_payload(command: Command) -> dict:
 def build_job_invoiced_payload(command: Command) -> dict:
     p = _base_payload(command)
     p.update({
-        "job_id": command.payload["job_id"],
-        "invoice_id": command.payload["invoice_id"],
-        "amount": command.payload["amount"],
-        "currency": command.payload["currency"],
-        "invoiced_at": command.issued_at,
+        "job_id":          command.payload["job_id"],
+        "customer_id":     command.payload.get("customer_id"),
+        "invoice_id":      command.payload["invoice_id"],
+        "amount":          command.payload["amount"],
+        "currency":        command.payload["currency"],
+        "labour_hours":    command.payload.get("labour_hours", 0),
+        "labour_rate":     command.payload.get("labour_rate", 0),
+        "labour_total":    command.payload.get("labour_total", 0),
+        "parts_used":      command.payload.get("parts_used", []),
+        "materials_total": command.payload.get("materials_total", 0),
+        "tax_amount":      command.payload.get("tax_amount", 0),
+        "discount_amount": command.payload.get("discount_amount", 0),
+        "payment_terms":   command.payload.get("payment_terms", "DUE_ON_RECEIPT"),
+        "due_date":        command.payload.get("due_date", ""),
+        "invoiced_at":     command.issued_at,
     })
     return p
 
@@ -219,15 +240,23 @@ def build_quote_generated_payload(command: Command, pieces: list, material_requi
     """
     p = _base_payload(command)
     p.update({
-        "quote_id": command.payload["quote_id"],
-        "job_id": command.payload["job_id"],
-        "style_id": command.payload["style_id"],
-        "dimensions": command.payload["dimensions"],
-        "unit_quantity": command.payload.get("unit_quantity", 1),
-        "stock_lengths": command.payload.get("stock_lengths") or {},
-        "pieces": pieces,
+        "quote_id":             command.payload["quote_id"],
+        "job_id":               command.payload["job_id"],
+        "style_id":             command.payload["style_id"],
+        "customer_id":          command.payload.get("customer_id"),
+        "dimensions":           command.payload["dimensions"],
+        "unit_quantity":        command.payload.get("unit_quantity", 1),
+        "stock_lengths":        command.payload.get("stock_lengths") or {},
+        "pieces":               pieces,
         "material_requirements": material_requirements,
-        "generated_at": command.issued_at,
+        "labour_cost":          command.payload.get("labour_cost", 0),
+        "material_cost":        command.payload.get("material_cost", 0),
+        "discount_amount":      command.payload.get("discount_amount", 0),
+        "tax_amount":           command.payload.get("tax_amount", 0),
+        "total_price":          command.payload.get("total_price", 0),
+        "currency":             command.payload.get("currency", ""),
+        "valid_until":          command.payload.get("valid_until", ""),
+        "generated_at":         command.issued_at,
     })
     return p
 
@@ -250,15 +279,49 @@ def build_project_quote_payload(
     p = _base_payload(command)
     p.update({
         "project_quote_id": command.payload["project_quote_id"],
-        "job_id": command.payload["job_id"],
-        "items": command.payload["items"],
-        "charge_method": command.payload["charge_method"],
-        "currency": command.payload["currency"],
-        "stock_lengths": command.payload.get("stock_lengths") or {},
-        "rates": command.payload.get("rates") or {},
-        "labeled_pieces": labeled_pieces,
-        "cutting_plans": cutting_plans,
-        "total_cost": total_cost,
-        "generated_at": command.issued_at,
+        "job_id":           command.payload["job_id"],
+        "customer_id":      command.payload.get("customer_id"),
+        "items":            command.payload["items"],
+        "charge_method":    command.payload["charge_method"],
+        "currency":         command.payload["currency"],
+        "stock_lengths":    command.payload.get("stock_lengths") or {},
+        "rates":            command.payload.get("rates") or {},
+        "labeled_pieces":   labeled_pieces,
+        "cutting_plans":    cutting_plans,
+        "total_cost":       total_cost,
+        "valid_until":      command.payload.get("valid_until", ""),
+        "generated_at":     command.issued_at,
+    })
+    return p
+
+
+# ── Phase 18: Quote Acceptance / Rejection ────────────────────────────────────
+
+def build_quote_accepted_payload(command: Command) -> dict:
+    """Customer has accepted a quote — triggers Proforma Invoice issuance."""
+    p = _base_payload(command)
+    p.update({
+        "quote_id":    command.payload["quote_id"],
+        "job_id":      command.payload["job_id"],
+        "customer_id": command.payload.get("customer_id"),
+        "total_price": command.payload.get("total_price", 0),
+        "currency":    command.payload.get("currency", ""),
+        "valid_until": command.payload.get("valid_until", ""),
+        "lines":       command.payload.get("lines", []),
+        "notes":       command.payload.get("notes", ""),
+        "accepted_at": command.issued_at,
+    })
+    return p
+
+
+def build_quote_rejected_payload(command: Command) -> dict:
+    """Customer has rejected a quote — tracking only, no document issued."""
+    p = _base_payload(command)
+    p.update({
+        "quote_id":    command.payload["quote_id"],
+        "job_id":      command.payload["job_id"],
+        "customer_id": command.payload.get("customer_id"),
+        "reason":      command.payload.get("reason", ""),
+        "rejected_at": command.issued_at,
     })
     return p

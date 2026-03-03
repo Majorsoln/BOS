@@ -13,7 +13,7 @@ from core.commands.rejection import ReasonCode, RejectionReason
 from core.documents.builder import DocumentBuilder, DocumentBuilderError
 from core.documents.registry import resolve_document_type
 from core.feature_flags.evaluator import FeatureFlagEvaluator
-from core.feature_flags.registry import FLAG_ENABLE_DOCUMENT_DESIGNER
+from core.feature_flags.registry import FLAG_ENABLE_DOCUMENT_ENGINE
 from core.identity.requirements import SYSTEM_ALLOWED
 
 
@@ -64,7 +64,7 @@ def document_authorization_guard(
     )
     try:
         feature_result = FeatureFlagEvaluator.evaluate_for_flag_key(
-            flag_key=FLAG_ENABLE_DOCUMENT_DESIGNER,
+            flag_key=FLAG_ENABLE_DOCUMENT_ENGINE,
             command=command,
             provider=resolved_feature_provider,
         )
@@ -75,7 +75,7 @@ def document_authorization_guard(
     if not feature_result.allowed:
         return RejectionReason(
             code=ReasonCode.DOCUMENT_FEATURE_DISABLED,
-            message=feature_result.message or "Document feature is disabled.",
+            message=feature_result.message or "Document engine is disabled. Enable ENABLE_DOCUMENT_ENGINE flag.",
             policy_name="document_authorization_guard",
         )
 

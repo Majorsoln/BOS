@@ -13,9 +13,31 @@ from typing import Any, Optional, Protocol
 from core.commands.base import Command
 from core.context.actor_context import ActorContext
 from core.document_issuance.commands import (
+    CancellationNoteIssueRequest,
+    CompletionCertificateIssueRequest,
+    CreditNoteIssueRequest,
+    CuttingListIssueRequest,
+    DebitNoteIssueRequest,
+    DeliveryNoteIssueRequest,
+    FolioIssueRequest,
+    GoodsReceiptNoteIssueRequest,
     InvoiceIssueRequest,
+    KitchenOrderTicketIssueRequest,
+    MaterialRequisitionIssueRequest,
+    PaymentVoucherIssueRequest,
+    PettyCashVoucherIssueRequest,
+    ProformaInvoiceIssueRequest,
+    PurchaseOrderIssueRequest,
     QuoteIssueRequest,
     ReceiptIssueRequest,
+    RefundNoteIssueRequest,
+    RegistrationCardIssueRequest,
+    ReservationConfirmationIssueRequest,
+    SalesOrderIssueRequest,
+    StatementIssueRequest,
+    StockAdjustmentNoteIssueRequest,
+    StockTransferNoteIssueRequest,
+    WorkOrderIssueRequest,
 )
 from core.document_issuance.events import build_document_issued_payload
 from core.document_issuance.projections import DocumentIssuanceProjectionStore
@@ -259,6 +281,194 @@ class DocumentIssuanceService:
             actor_context=actor_context,
         )
         return self._command_bus.handle(command)
+
+    def _issue(
+        self,
+        request_cls,
+        *,
+        business_id: uuid.UUID,
+        branch_id: uuid.UUID | None,
+        document_id: uuid.UUID,
+        payload: dict,
+        actor_context: ActorContext,
+        command_id: uuid.UUID,
+        correlation_id: uuid.UUID,
+        issued_at: datetime,
+    ):
+        """Generic issue helper — reduces boilerplate for all document types."""
+        request = request_cls(
+            business_id=business_id,
+            branch_id=branch_id,
+            document_id=document_id,
+            payload=payload,
+        )
+        command = request.to_command(
+            command_id=command_id,
+            correlation_id=correlation_id,
+            issued_at=issued_at,
+            actor_context=actor_context,
+        )
+        return self._command_bus.handle(command)
+
+    def _issue_kwargs(self, request_cls, **kw):
+        """Thin wrapper: unpack common kwargs and delegate to _issue."""
+        return self._issue(request_cls, **kw)
+
+    # ── Public issue_* surface (one per document type) ────────────
+
+    def issue_proforma_invoice(self, *, business_id, branch_id, document_id, payload,
+                               actor_context, command_id, correlation_id, issued_at):
+        return self._issue(ProformaInvoiceIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_delivery_note(self, *, business_id, branch_id, document_id, payload,
+                            actor_context, command_id, correlation_id, issued_at):
+        return self._issue(DeliveryNoteIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_credit_note(self, *, business_id, branch_id, document_id, payload,
+                          actor_context, command_id, correlation_id, issued_at):
+        return self._issue(CreditNoteIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_debit_note(self, *, business_id, branch_id, document_id, payload,
+                         actor_context, command_id, correlation_id, issued_at):
+        return self._issue(DebitNoteIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_purchase_order(self, *, business_id, branch_id, document_id, payload,
+                             actor_context, command_id, correlation_id, issued_at):
+        return self._issue(PurchaseOrderIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_goods_receipt_note(self, *, business_id, branch_id, document_id, payload,
+                                 actor_context, command_id, correlation_id, issued_at):
+        return self._issue(GoodsReceiptNoteIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_sales_order(self, *, business_id, branch_id, document_id, payload,
+                          actor_context, command_id, correlation_id, issued_at):
+        return self._issue(SalesOrderIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_refund_note(self, *, business_id, branch_id, document_id, payload,
+                          actor_context, command_id, correlation_id, issued_at):
+        return self._issue(RefundNoteIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_work_order(self, *, business_id, branch_id, document_id, payload,
+                         actor_context, command_id, correlation_id, issued_at):
+        return self._issue(WorkOrderIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_material_requisition(self, *, business_id, branch_id, document_id, payload,
+                                   actor_context, command_id, correlation_id, issued_at):
+        return self._issue(MaterialRequisitionIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_cutting_list(self, *, business_id, branch_id, document_id, payload,
+                           actor_context, command_id, correlation_id, issued_at):
+        return self._issue(CuttingListIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_completion_certificate(self, *, business_id, branch_id, document_id, payload,
+                                     actor_context, command_id, correlation_id, issued_at):
+        return self._issue(CompletionCertificateIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_kitchen_order_ticket(self, *, business_id, branch_id, document_id, payload,
+                                   actor_context, command_id, correlation_id, issued_at):
+        return self._issue(KitchenOrderTicketIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_folio(self, *, business_id, branch_id, document_id, payload,
+                    actor_context, command_id, correlation_id, issued_at):
+        return self._issue(FolioIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_reservation_confirmation(self, *, business_id, branch_id, document_id, payload,
+                                       actor_context, command_id, correlation_id, issued_at):
+        return self._issue(ReservationConfirmationIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_registration_card(self, *, business_id, branch_id, document_id, payload,
+                                actor_context, command_id, correlation_id, issued_at):
+        return self._issue(RegistrationCardIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_cancellation_note(self, *, business_id, branch_id, document_id, payload,
+                                actor_context, command_id, correlation_id, issued_at):
+        return self._issue(CancellationNoteIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_payment_voucher(self, *, business_id, branch_id, document_id, payload,
+                              actor_context, command_id, correlation_id, issued_at):
+        return self._issue(PaymentVoucherIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_petty_cash_voucher(self, *, business_id, branch_id, document_id, payload,
+                                 actor_context, command_id, correlation_id, issued_at):
+        return self._issue(PettyCashVoucherIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_stock_transfer_note(self, *, business_id, branch_id, document_id, payload,
+                                  actor_context, command_id, correlation_id, issued_at):
+        return self._issue(StockTransferNoteIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_stock_adjustment_note(self, *, business_id, branch_id, document_id, payload,
+                                    actor_context, command_id, correlation_id, issued_at):
+        return self._issue(StockAdjustmentNoteIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_statement(self, *, business_id, branch_id, document_id, payload,
+                        actor_context, command_id, correlation_id, issued_at):
+        return self._issue(StatementIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
 
     @property
     def projection_store(self) -> DocumentIssuanceProjectionStore:

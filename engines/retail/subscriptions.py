@@ -67,7 +67,7 @@ class RetailSubscriptionHandler:
         correlation_id = uuid.UUID(str(payload.get("correlation_id", uuid.uuid4())))
         actor_kwargs = dict(
             business_id=business_id,
-            actor_type="System",
+            actor_type="SYSTEM",
             actor_id="system:retail.subscription",
             command_id=uuid.uuid4(),
             correlation_id=correlation_id,

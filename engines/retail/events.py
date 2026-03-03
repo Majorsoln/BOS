@@ -133,15 +133,18 @@ def build_sale_discount_applied_payload(command: Command) -> dict:
 def build_sale_completed_payload(command: Command) -> dict:
     payload = _base_payload(command)
     payload.update({
-        "sale_id": command.payload["sale_id"],
-        "total_amount": command.payload["total_amount"],
-        "tax_amount": command.payload.get("tax_amount", 0),
+        "sale_id":         command.payload["sale_id"],
+        "customer_id":     command.payload.get("customer_id"),
+        "total_amount":    command.payload["total_amount"],
+        "tax_amount":      command.payload.get("tax_amount", 0),
         "discount_amount": command.payload.get("discount_amount", 0),
-        "net_amount": command.payload["net_amount"],
-        "currency": command.payload["currency"],
-        "payment_method": command.payload["payment_method"],
-        "lines": command.payload["lines"],
-        "completed_at": command.issued_at,
+        "net_amount":      command.payload["net_amount"],
+        "currency":        command.payload["currency"],
+        "payment_method":  command.payload["payment_method"],
+        "lines":           command.payload["lines"],
+        "on_account":      command.payload.get("on_account", False),
+        "requires_delivery": command.payload.get("requires_delivery", False),
+        "completed_at":    command.issued_at,
     })
     return payload
 
@@ -149,9 +152,14 @@ def build_sale_completed_payload(command: Command) -> dict:
 def build_sale_voided_payload(command: Command) -> dict:
     payload = _base_payload(command)
     payload.update({
-        "sale_id": command.payload["sale_id"],
-        "reason": command.payload["reason"],
-        "voided_at": command.issued_at,
+        "sale_id":              command.payload["sale_id"],
+        "customer_id":          command.payload.get("customer_id"),
+        "reason":               command.payload["reason"],
+        "lines":                command.payload.get("lines", []),
+        "total_amount":         command.payload.get("total_amount", 0),
+        "currency":             command.payload.get("currency", ""),
+        "original_receipt_id":  command.payload.get("original_receipt_id"),
+        "voided_at":            command.issued_at,
     })
     return payload
 

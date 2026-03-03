@@ -116,13 +116,20 @@ def build_order_cancelled_payload(command: Command) -> dict:
 def build_bill_settled_payload(command: Command) -> dict:
     payload = _base_payload(command)
     payload.update({
-        "bill_id": command.payload["bill_id"],
-        "table_id": command.payload["table_id"],
-        "total_amount": command.payload["total_amount"],
-        "tip_amount": command.payload.get("tip_amount", 0),
-        "currency": command.payload["currency"],
+        "bill_id":        command.payload["bill_id"],
+        "table_id":       command.payload["table_id"],
+        "table_name":     command.payload.get("table_name", ""),
+        "covers":         command.payload.get("covers", 0),
+        "server_id":      command.payload.get("server_id", command.actor_id),
+        "order_lines":    command.payload.get("order_lines", []),
+        "total_amount":   command.payload["total_amount"],
+        "tax_amount":     command.payload.get("tax_amount", 0),
+        "discount_amount": command.payload.get("discount_amount", 0),
+        "tip_amount":     command.payload.get("tip_amount", 0),
+        "currency":       command.payload["currency"],
         "payment_method": command.payload["payment_method"],
-        "settled_at": command.issued_at,
+        "on_account":     command.payload.get("on_account", False),
+        "settled_at":     command.issued_at,
     })
     return payload
 

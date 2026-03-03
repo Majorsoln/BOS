@@ -41,6 +41,8 @@ def wire_all_subscriptions(
     inventory_service: Optional[Any] = None,
     accounting_service: Optional[Any] = None,
     reporting_service: Optional[Any] = None,
+    retail_service: Optional[Any] = None,
+    document_service: Optional[Any] = None,
 ) -> dict[str, int]:
     """
     Instantiate all subscription handlers and register them to the
@@ -52,6 +54,8 @@ def wire_all_subscriptions(
         inventory_service:   Initialized InventoryService instance (optional).
         accounting_service:  Initialized AccountingService instance (optional).
         reporting_service:   Initialized ReportingService instance (optional).
+        retail_service:      Initialized RetailService instance (optional).
+        document_service:    Initialized DocumentIssuanceService instance (optional).
 
     Returns:
         dict mapping engine name → number of subscriptions registered.
@@ -128,6 +132,38 @@ def wire_all_subscriptions(
         )
         registered["reporting"] = count
         logger.info(f"Wired {count} reporting subscription(s)")
+
+    # ── Retail subscriptions ──────────────────────────────────────
+    if retail_service is not None:
+        from engines.retail.subscriptions import (
+            RetailSubscriptionHandler,
+            RETAIL_SUBSCRIPTIONS,
+        )
+        retail_handler = RetailSubscriptionHandler(retail_service=retail_service)
+        count = _register_handlers(
+            subscriber_registry=subscriber_registry,
+            handler_instance=retail_handler,
+            subscriptions=RETAIL_SUBSCRIPTIONS,
+            subscriber_engine="retail",
+        )
+        registered["retail"] = count
+        logger.info(f"Wired {count} retail subscription(s)")
+
+    # ── Document subscriptions ────────────────────────────────────
+    if document_service is not None:
+        from engines.documents.subscriptions import (
+            DocumentSubscriptionHandler,
+            DOCUMENT_SUBSCRIPTIONS,
+        )
+        doc_handler = DocumentSubscriptionHandler(document_service=document_service)
+        count = _register_handlers(
+            subscriber_registry=subscriber_registry,
+            handler_instance=doc_handler,
+            subscriptions=DOCUMENT_SUBSCRIPTIONS,
+            subscriber_engine="documents",
+        )
+        registered["documents"] = count
+        logger.info(f"Wired {count} document subscription(s)")
 
     total = sum(registered.values())
     logger.info(

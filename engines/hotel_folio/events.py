@@ -151,14 +151,24 @@ def build_folio_split_payload(cmd) -> dict:
 def build_folio_settled_payload(cmd) -> dict:
     p = cmd.payload
     return {
-        "folio_id":       p["folio_id"],
-        "total_charges":  p["total_charges"],
-        "total_payments": p["total_payments"],
-        "balance_due":    p["balance_due"],
-        "payment_method": p.get("payment_method", "CARD"),
-        "currency":       p["currency"],
-        "settled_by":     cmd.actor_id,
-        "settled_at":     cmd.issued_at,
+        "folio_id":           p["folio_id"],
+        "reservation_id":     p.get("reservation_id"),
+        "guest_name":         p.get("guest_name", ""),
+        "room_number":        p.get("room_number", ""),
+        "arrival_date":       p.get("arrival_date", ""),
+        "departure_date":     p.get("departure_date", ""),
+        "nights":             p.get("nights", 0),
+        "charge_lines":       p.get("charge_lines", []),
+        "total_charges":      p["total_charges"],
+        "total_payments":     p["total_payments"],
+        "balance_due":        p["balance_due"],
+        "tax_amount":         p.get("tax_amount", 0),
+        "payment_method":     p.get("payment_method", "CARD"),
+        "currency":           p["currency"],
+        "is_company_billing": p.get("is_company_billing", False),
+        "company_id":         p.get("company_id"),
+        "settled_by":         cmd.actor_id,
+        "settled_at":         cmd.issued_at,
     }
 
 
