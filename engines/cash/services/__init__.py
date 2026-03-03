@@ -64,6 +64,7 @@ class CashProjectionStore:
                 "drawer_id": payload["drawer_id"],
                 "opening_balance": payload["opening_balance"],
                 "currency": payload["currency"],
+                "branch_id": payload.get("branch_id"),
                 "status": "OPEN",
                 "total_payments": 0,
                 "total_deposits": 0,

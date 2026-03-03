@@ -30,6 +30,21 @@ DEFAULT_REVENUE_ACCOUNT = "REVENUE_SALES"
 DEFAULT_WAGES_EXPENSE_ACCOUNT = "WAGES_EXPENSE"
 DEFAULT_WAGES_PAYABLE_ACCOUNT = "WAGES_PAYABLE"
 DEFAULT_TAX_PAYABLE_ACCOUNT = "TAX_PAYABLE"
+DEFAULT_CARD_ACCOUNT = "CARD_CLEARING"
+DEFAULT_MOBILE_ACCOUNT = "MOBILE_CLEARING"
+DEFAULT_BANK_ACCOUNT = "BANK_CLEARING"
+
+# Map payment method → debit account for revenue journal entries.
+# SPLIT has no breakdown available in the event payload; the cash account
+# is used as a fallback and requires manual reconciliation.
+PAYMENT_DEBIT_ACCOUNT_MAP = {
+    "CASH": DEFAULT_CASH_ACCOUNT,
+    "CARD": DEFAULT_CARD_ACCOUNT,
+    "MOBILE": DEFAULT_MOBILE_ACCOUNT,
+    "BANK_TRANSFER": DEFAULT_BANK_ACCOUNT,
+    "CREDIT": DEFAULT_AR_ACCOUNT,
+    "SPLIT": DEFAULT_CASH_ACCOUNT,
+}
 
 
 ACCOUNTING_SUBSCRIPTIONS: Dict[str, str] = {
@@ -123,7 +138,7 @@ class AccountingSubscriptionHandler:
             )
             command = request.to_command(
                 business_id=business_id,
-                actor_type="System",
+                actor_type="SYSTEM",
                 actor_id="system:accounting.subscription",
                 command_id=uuid.uuid4(),
                 correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
@@ -198,7 +213,7 @@ class AccountingSubscriptionHandler:
             )
             command = request.to_command(
                 business_id=business_id,
-                actor_type="System",
+                actor_type="SYSTEM",
                 actor_id="system:accounting.subscription",
                 command_id=uuid.uuid4(),
                 correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
@@ -279,7 +294,7 @@ class AccountingSubscriptionHandler:
             )
             command = request.to_command(
                 business_id=business_id,
-                actor_type="System",
+                actor_type="SYSTEM",
                 actor_id="system:accounting.subscription",
                 command_id=uuid.uuid4(),
                 correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
@@ -294,11 +309,20 @@ class AccountingSubscriptionHandler:
         When Retail completes a sale, post a revenue journal entry.
 
         Management entry (non-statutory):
-          DEBIT  Cash on Hand / AR Trade   (payment received or owed)
-          CREDIT Revenue Sales             (revenue recognized at point of sale)
+          DEBIT  <payment_account>   (cash/card/mobile/AR received)
+          CREDIT Revenue Sales       (revenue earned)
+
+        Payment account is selected by payment_method:
+          CASH         → CASH_ON_HAND
+          CARD         → CARD_CLEARING
+          MOBILE       → MOBILE_CLEARING
+          BANK_TRANSFER→ BANK_CLEARING
+          CREDIT       → AR_TRADE
+          SPLIT        → CASH_ON_HAND (fallback — requires manual reconciliation)
 
         Event source: retail.sale.completed.v1
-        Payload fields used: business_id, sale_id, net_amount, currency, payment_method
+        Payload fields used: business_id, branch_id, sale_id,
+                             net_amount, currency, payment_method
         """
         if self._accounting_service is None:
             return
@@ -309,7 +333,7 @@ class AccountingSubscriptionHandler:
         sale_id = str(payload.get("sale_id", ""))
         net_amount = int(payload.get("net_amount", 0))
         currency = str(payload.get("currency", ""))
-        payment_method = str(payload.get("payment_method", ""))
+        payment_method = str(payload.get("payment_method", "CASH"))
 
         if not business_id_raw or not net_amount or not currency:
             return
@@ -320,100 +344,33 @@ class AccountingSubscriptionHandler:
         except (ValueError, AttributeError):
             return
 
-        debit_account = DEFAULT_CASH_ACCOUNT if payment_method == "CASH" else DEFAULT_AR_ACCOUNT
+        debit_account = PAYMENT_DEBIT_ACCOUNT_MAP.get(payment_method, DEFAULT_CASH_ACCOUNT)
 
         try:
             request = JournalPostRequest(
-                entry_id=f"auto:retail-sale:{sale_id}",
+                entry_id=f"auto:sale:{sale_id}",
                 lines=tuple([
                     {
                         "account_code": debit_account,
                         "side": "DEBIT",
                         "amount": net_amount,
-                        "description": f"Retail sale: {sale_id}",
+                        "description": f"Sale payment ({payment_method}): {sale_id}",
                     },
                     {
                         "account_code": DEFAULT_REVENUE_ACCOUNT,
                         "side": "CREDIT",
                         "amount": net_amount,
-                        "description": f"Sales revenue: {sale_id}",
+                        "description": f"Revenue: retail sale {sale_id}",
                     },
                 ]),
-                memo=f"Auto-journal: retail sale {sale_id} via {payment_method}",
+                memo=f"Auto-journal: retail sale {sale_id} via {payment_method} — {net_amount} {currency}",
                 currency=currency,
                 reference_id=sale_id or None,
                 branch_id=branch_id,
             )
             command = request.to_command(
                 business_id=business_id,
-                actor_type="System",
-                actor_id="system:accounting.subscription",
-                command_id=uuid.uuid4(),
-                correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
-                issued_at=datetime.now(tz=timezone.utc),
-            )
-            self._accounting_service._execute_command(command)
-        except (KeyError, ValueError, TypeError):
-            return
-
-    def handle_restaurant_bill(self, event_data: dict) -> None:
-        """
-        When Restaurant settles a bill, post a revenue journal entry.
-
-        Management entry (non-statutory):
-          DEBIT  Cash on Hand / AR Trade   (payment received or owed)
-          CREDIT Revenue Sales             (revenue recognized at settlement)
-
-        Event source: restaurant.bill.settled.v1
-        Payload fields used: business_id, bill_id, total_amount, currency, payment_method
-        """
-        if self._accounting_service is None:
-            return
-
-        payload = event_data.get("payload", {})
-        business_id_raw = payload.get("business_id")
-        branch_id_raw = payload.get("branch_id")
-        bill_id = str(payload.get("bill_id", ""))
-        total_amount = int(payload.get("total_amount", 0))
-        currency = str(payload.get("currency", ""))
-        payment_method = str(payload.get("payment_method", ""))
-
-        if not business_id_raw or not total_amount or not currency:
-            return
-
-        try:
-            business_id = uuid.UUID(str(business_id_raw))
-            branch_id = uuid.UUID(str(branch_id_raw)) if branch_id_raw else None
-        except (ValueError, AttributeError):
-            return
-
-        debit_account = DEFAULT_CASH_ACCOUNT if payment_method == "CASH" else DEFAULT_AR_ACCOUNT
-
-        try:
-            request = JournalPostRequest(
-                entry_id=f"auto:restaurant-bill:{bill_id}",
-                lines=tuple([
-                    {
-                        "account_code": debit_account,
-                        "side": "DEBIT",
-                        "amount": total_amount,
-                        "description": f"Restaurant bill: {bill_id}",
-                    },
-                    {
-                        "account_code": DEFAULT_REVENUE_ACCOUNT,
-                        "side": "CREDIT",
-                        "amount": total_amount,
-                        "description": f"Restaurant revenue: {bill_id}",
-                    },
-                ]),
-                memo=f"Auto-journal: restaurant bill {bill_id} via {payment_method}",
-                currency=currency,
-                reference_id=bill_id or None,
-                branch_id=branch_id,
-            )
-            command = request.to_command(
-                business_id=business_id,
-                actor_type="System",
+                actor_type="SYSTEM",
                 actor_id="system:accounting.subscription",
                 command_id=uuid.uuid4(),
                 correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
@@ -432,7 +389,7 @@ class AccountingSubscriptionHandler:
           CREDIT Revenue Sales (revenue recognized at invoicing)
 
         Event source: workshop.job.invoiced.v1
-        Payload fields used: business_id, invoice_id, job_id, amount, currency
+        Payload fields used: business_id, branch_id, invoice_id, job_id, amount, currency
         """
         if self._accounting_service is None:
             return
@@ -478,7 +435,75 @@ class AccountingSubscriptionHandler:
             )
             command = request.to_command(
                 business_id=business_id,
-                actor_type="System",
+                actor_type="SYSTEM",
+                actor_id="system:accounting.subscription",
+                command_id=uuid.uuid4(),
+                correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
+                issued_at=datetime.now(tz=timezone.utc),
+            )
+            self._accounting_service._execute_command(command)
+        except (KeyError, ValueError, TypeError):
+            return
+
+    def handle_restaurant_bill(self, event_data: dict) -> None:
+        """
+        When Restaurant settles a bill, post a revenue journal entry.
+
+        Management entry (non-statutory):
+          DEBIT  <payment_account>   (cash/card/mobile received)
+          CREDIT Revenue Sales       (revenue earned)
+
+        Event source: restaurant.bill.settled.v1
+        Payload fields used: business_id, branch_id, bill_id,
+                             total_amount, currency, payment_method
+        """
+        if self._accounting_service is None:
+            return
+
+        payload = event_data.get("payload", {})
+        business_id_raw = payload.get("business_id")
+        branch_id_raw = payload.get("branch_id")
+        bill_id = str(payload.get("bill_id", ""))
+        total_amount = int(payload.get("total_amount", 0))
+        currency = str(payload.get("currency", ""))
+        payment_method = str(payload.get("payment_method", "CASH"))
+
+        if not business_id_raw or not total_amount or not currency:
+            return
+
+        try:
+            business_id = uuid.UUID(str(business_id_raw))
+            branch_id = uuid.UUID(str(branch_id_raw)) if branch_id_raw else None
+        except (ValueError, AttributeError):
+            return
+
+        debit_account = PAYMENT_DEBIT_ACCOUNT_MAP.get(payment_method, DEFAULT_CASH_ACCOUNT)
+
+        try:
+            request = JournalPostRequest(
+                entry_id=f"auto:bill:{bill_id}",
+                lines=tuple([
+                    {
+                        "account_code": debit_account,
+                        "side": "DEBIT",
+                        "amount": total_amount,
+                        "description": f"Bill payment ({payment_method}): {bill_id}",
+                    },
+                    {
+                        "account_code": DEFAULT_REVENUE_ACCOUNT,
+                        "side": "CREDIT",
+                        "amount": total_amount,
+                        "description": f"Revenue: restaurant bill {bill_id}",
+                    },
+                ]),
+                memo=f"Auto-journal: restaurant bill {bill_id} via {payment_method} — {total_amount} {currency}",
+                currency=currency,
+                reference_id=bill_id or None,
+                branch_id=branch_id,
+            )
+            command = request.to_command(
+                business_id=business_id,
+                actor_type="SYSTEM",
                 actor_id="system:accounting.subscription",
                 command_id=uuid.uuid4(),
                 correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),

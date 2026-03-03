@@ -36,16 +36,25 @@ class CashSubscriptionHandler:
         self._cash_service = cash_service
         self._processed_payment_ids: Set[str] = set()
 
-    def _get_open_session(self) -> Optional[dict]:
-        """Look up any open cash session from the projection store."""
+    def _get_open_session(self, branch_id=None) -> Optional[dict]:
+        """Look up an open cash session, filtered by branch_id when provided.
+
+        For multi-branch businesses, always pass branch_id to avoid recording
+        a payment to the wrong branch's session.
+        """
         if self._cash_service is None:
             return None
         store = getattr(self._cash_service, "projection_store", None)
         if store is None:
             return None
         for session_id, session in store._sessions.items():
-            if session.get("status") == "OPEN":
-                return {"session_id": session_id, **session}
+            if session.get("status") != "OPEN":
+                continue
+            if branch_id is not None:
+                session_branch = session.get("branch_id")
+                if str(session_branch) != str(branch_id):
+                    continue
+            return {"session_id": session_id, **session}
         # No open session — cash recording silently skipped.
         # Cashier must open a session before processing payments.
         return None
@@ -86,7 +95,7 @@ class CashSubscriptionHandler:
         except (ValueError, AttributeError):
             return
 
-        session_info = self._get_open_session()
+        session_info = self._get_open_session(branch_id=branch_id)
         if session_info is None:
             return
 
@@ -103,7 +112,7 @@ class CashSubscriptionHandler:
             )
             command = request.to_command(
                 business_id=business_id,
-                actor_type="System",
+                actor_type="SYSTEM",
                 actor_id="system:cash.subscription",
                 command_id=uuid.uuid4(),
                 correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),

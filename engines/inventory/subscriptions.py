@@ -85,7 +85,7 @@ class InventorySubscriptionHandler:
                 )
                 command = request.to_command(
                     business_id=business_id,
-                    actor_type="System",
+                    actor_type="SYSTEM",
                     actor_id="system:inventory.subscription",
                     command_id=uuid.uuid4(),
                     correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
@@ -136,7 +136,7 @@ class InventorySubscriptionHandler:
                 )
                 command = request.to_command(
                     business_id=business_id,
-                    actor_type="System",
+                    actor_type="SYSTEM",
                     actor_id="system:inventory.subscription",
                     command_id=uuid.uuid4(),
                     correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
@@ -187,7 +187,7 @@ class InventorySubscriptionHandler:
                 )
                 command = request.to_command(
                     business_id=business_id,
-                    actor_type="System",
+                    actor_type="SYSTEM",
                     actor_id="system:inventory.subscription",
                     command_id=uuid.uuid4(),
                     correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
