@@ -541,13 +541,62 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | X-07 | No document delivery (email/SMS/WhatsApp) | Docs generated but never sent to customer | MEDIUM |
 | X-08 | No per-engine document template differentiation | Same receipt template for all contexts | MEDIUM |
 
+### GAP SET 8: Accounting Engine Gaps
+**Session:** 2026-03-04 Deep Dive
+| ID | Gap | File | Severity | Status |
+|----|-----|------|----------|--------|
+| AC-01 | `handle_retail_sale` used `net_amount` only — no VAT split journal | `engines/accounting/subscriptions.py` | HIGH | **FIXED** — now posts DR payment / CR Revenue + CR VAT_PAYABLE |
+| AC-02 | `handle_restaurant_bill` had no tax split | `engines/accounting/subscriptions.py` | HIGH | **FIXED** — same 3-line pattern with VAT_PAYABLE |
+| AC-03 | `handle_workshop_invoice` has no tax/labour/materials breakdown | `engines/accounting/subscriptions.py` | HIGH | OPEN — workshop payload needs `tax_amount` first (WS-09) |
+| AC-04 | No handler for `hotel.folio.settled.v1` | Missing | HIGH | **FIXED** — `handle_hotel_folio_settled` added; supports company billing → AR |
+| AC-05 | No handler for `procurement.payment.released.v1` | Missing | HIGH | **FIXED** — `handle_procurement_payment_released` added; DR AP / CR Bank |
+| AC-06 | No PAYMENT_VOUCHER document trigger from accounting | Missing | HIGH | OPEN — needs DocumentSubscriptionHandler (W-03) |
+| AC-07 | No STATEMENT_OF_ACCOUNT auto-generation | Missing | MEDIUM | OPEN — needs scheduler or on-demand command |
+| AC-08 | No `ObligationCreateRequest` document trigger | Missing | MEDIUM | OPEN |
+| AC-09 | No handler for `cash.session.closed.v1` | Missing | MEDIUM | OPEN |
+| AC-10 | No handler for `retail.refund.issued.v1` | Missing | HIGH | **FIXED** — `handle_retail_refund` added; DR Revenue / CR Cash |
+| AC-11 | No handler for `restaurant.order.cancelled.v1` | Missing | MEDIUM | OPEN |
+| AC-12 | `handle_payroll_run` deductions lumped into single TAX_PAYABLE | `engines/accounting/subscriptions.py` | MEDIUM | OPEN — PAYE/NSSF/NHIF split needs HR payload breakdown |
+| AC-13 | No AR aging snapshot | Missing | MEDIUM | OPEN |
+
+### GAP SET 9: Cash Engine Gaps
+**Session:** 2026-03-04 Deep Dive
+| ID | Gap | File | Severity | Status |
+|----|-----|------|----------|--------|
+| CS-01 | Workshop and hotel cash payments not recorded in drawer | Missing handlers | HIGH | **FIXED** — `handle_workshop_invoice` + `handle_hotel_folio` added |
+| CS-02 | Hotel folio cash not going into drawer | Missing | HIGH | **FIXED** — covered by `handle_hotel_folio` |
+| CS-03 | No PETTY_CASH_VOUCHER document trigger on expense_payout withdrawal | Missing | HIGH | OPEN — needs DocumentSubscriptionHandler (W-03) |
+| CS-04 | No PAYMENT_VOUCHER trigger on bank/safe withdrawal | Missing | MEDIUM | OPEN — needs DocumentSubscriptionHandler (W-03) |
+| CS-05 | No cash session closing reconciliation document | Missing | MEDIUM | OPEN |
+| CS-06 | CARD and MOBILE payments have no float tracking | `engines/cash/subscriptions.py` | MEDIUM | OPEN — by design; card settled via bank reconciliation |
+| CS-07 | `cash.session.closed.v1` payload missing `variance` field | `engines/cash/events.py` | MEDIUM | OPEN |
+| CS-08 | Supplier cash payments (procurement) not going out of drawer | Missing | HIGH | **FIXED** — `handle_procurement_payment` added; uses WithdrawalRecordRequest |
+
+### GAP SET 10: Reporting Engine Gaps
+**Session:** 2026-03-04 Deep Dive
+| ID | Gap | File | Severity | Status |
+|----|-----|------|----------|--------|
+| RP-01 | No hotel events subscribed — zero hotel KPIs recorded | Missing | HIGH | **FIXED** — hotel.folio.settled, reservation.confirmed, guest.checked_in/out added |
+| RP-02 | No `cash.session.closed.v1` handler for cash KPIs | Missing | MEDIUM | OPEN |
+| RP-03 | No accounting journal handler (audit trail KPI) | Missing | LOW | OPEN |
+| RP-04 | `handle_bill_settled` had no tax/covers KPIs | `engines/reporting/subscriptions.py` | MEDIUM | PARTIAL — payment_method dimension added; covers/tax still needs payload update (RE-06) |
+| RP-05 | `handle_sale_completed` used `net_amount` only | `engines/reporting/subscriptions.py` | MEDIUM | **FIXED** — now uses `total_amount` (gross) with payment_method dimension |
+| RP-06 | No payment method breakdown dimension on KPIs | Missing | HIGH | **FIXED** — `dimension={"payment_method": ...}` added to retail + restaurant + hotel revenue KPIs |
+| RP-07 | No inventory KPIs (stock adjusted/transferred) | Missing | MEDIUM | OPEN |
+| RP-08 | No daily revenue snapshot auto-generation | Missing | HIGH | OPEN — needs scheduler |
+| RP-09 | `retail.refund.issued.v1` not subscribed | Missing | HIGH | **FIXED** — `handle_retail_refund` added; records REFUNDS_ISSUED + REFUND_COUNT |
+| RP-10 | `restaurant.order.cancelled.v1` not subscribed | Missing | MEDIUM | **FIXED** — `handle_order_cancelled` added; records ORDERS_CANCELLED |
+| RP-11 | Workshop quote pipeline not tracked | Missing | MEDIUM | OPEN — needs `workshop.quote.generated.v1` handler |
+| RP-12 | KPI `dimension` field unused in subscriptions | `engines/reporting/subscriptions.py` | MEDIUM | **FIXED** — payment_method dimension now passed for revenue KPIs |
+| RP-13 | No hotel KPIs: ADR, RevPAR, occupancy | Missing | HIGH | **FIXED (ADR only)** — HOTEL_REVENUE_TOTAL, HOTEL_ROOM_NIGHTS, HOTEL_ADR, HOTEL_CHECKOUTS added; RevPAR needs room inventory |
+
 ---
 
 ## IMPLEMENTATION PRIORITY ORDER
 
 ### Phase 1 — Foundation (Unblock Everything)
-1. **W-05** — Expand `VALID_DOCUMENT_TYPES` to include all 22 new types
-2. **W-06** — Expand issuance registry with all new command/event pairs
+1. ✅ **W-05** — Expand `VALID_DOCUMENT_TYPES` to include all 25 types — **DONE**
+2. ✅ **W-06** — Expand issuance registry with all 25 command/event pairs — **DONE**
 3. **W-01 + W-02** — Fix retail bootstrap wiring + actor_type bug
 4. **X-04** — Separate standard-receipts flag from document-designer flag
 5. **X-01/X-02** — Add business info + customer resolver stubs
@@ -566,6 +615,26 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 14. **RE-03 to RE-05** — Restaurant: bill.presented, split receipts, KOT document
 15. **P-01 to P-03** — Procurement: PO, GRN, Payment Voucher
 16. **H-04 to H-08** — Hotel: Registration Card, Cancellation Note, Credit/Debit Notes
+
+### Phase 3B — Accounting / Cash / Reporting Completeness (2026-03-04 session)
+- ✅ **AC-01/AC-02** — VAT split journals for retail + restaurant revenue — **DONE**
+- ✅ **AC-04** — Hotel folio accounting journal (incl. company billing → AR) — **DONE**
+- ✅ **AC-05** — Procurement payment released → DR AP / CR Bank — **DONE**
+- ✅ **AC-10** — Retail refund reversal journal — **DONE**
+- **AC-03** — Workshop invoice tax split (blocked by WS-09 payload gap)
+- **AC-07** — STATEMENT_OF_ACCOUNT scheduler / on-demand command
+- **AC-09** — Cash session closed → ledger reconciliation entry
+- ✅ **CS-01/CS-02** — Workshop + hotel cash payments into drawer — **DONE**
+- ✅ **CS-08** — Procurement cash supplier payment → drawer withdrawal — **DONE**
+- **CS-03** — PETTY_CASH_VOUCHER document on expense_payout (needs W-03 first)
+- **CS-07** — Add `variance` field to `cash.session.closed.v1` payload
+- ✅ **RP-01** — Hotel events subscribed: folio, reservation, check-in/out — **DONE**
+- ✅ **RP-05/RP-06** — Total amount + payment method dimension on revenue KPIs — **DONE**
+- ✅ **RP-09** — Retail refund KPI (REFUNDS_ISSUED, REFUND_COUNT) — **DONE**
+- ✅ **RP-10** — Restaurant order cancelled KPI — **DONE**
+- ✅ **RP-12/RP-13** — Hotel ADR, room nights, checkout KPIs — **DONE**
+- **RP-08** — Daily revenue snapshot auto-generation (needs scheduler)
+- **RP-07** — Inventory stock adjusted/transferred KPIs
 
 ### Phase 4 — Delivery & Rendering
 17. **X-05** — Expose `GET /docs/{id}/pdf` and `GET /docs/{id}/html` endpoints
