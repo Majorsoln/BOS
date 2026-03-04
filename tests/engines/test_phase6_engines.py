@@ -238,7 +238,7 @@ class TestRetailService:
         # Open
         service._execute_command(
             SaleOpenRequest(
-                sale_id="s1", currency="KES",
+                sale_id="s1", currency="KES", branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
         sale = service.projection_store.get_sale("s1")
@@ -249,7 +249,7 @@ class TestRetailService:
             SaleAddLineRequest(
                 sale_id="s1", line_id="l1",
                 item_id="i1", sku="SKU-1", item_name="Widget A",
-                quantity=2, unit_price=1000,
+                quantity=2, unit_price=1000, branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
 
@@ -258,7 +258,7 @@ class TestRetailService:
             SaleAddLineRequest(
                 sale_id="s1", line_id="l2",
                 item_id="i2", sku="SKU-2", item_name="Widget B",
-                quantity=1, unit_price=3000,
+                quantity=1, unit_price=3000, branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
 
@@ -276,6 +276,7 @@ class TestRetailService:
                     {"item_id": "i1", "quantity": 2, "unit_price": 1000},
                     {"item_id": "i2", "quantity": 1, "unit_price": 3000},
                 ),
+                branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
 
@@ -291,13 +292,13 @@ class TestRetailService:
         service = self._make_service()
 
         service._execute_command(
-            SaleOpenRequest(sale_id="s1", currency="KES").to_command(**make_command_args())
+            SaleOpenRequest(sale_id="s1", currency="KES", branch_id=BRANCH).to_command(**make_command_args())
         )
         service._execute_command(
             SaleAddLineRequest(
                 sale_id="s1", line_id="l1",
                 item_id="i1", sku="S", item_name="A",
-                quantity=5, unit_price=200,
+                quantity=5, unit_price=200, branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
         sale = service.projection_store.get_sale("s1")
@@ -305,7 +306,7 @@ class TestRetailService:
 
         service._execute_command(
             SaleRemoveLineRequest(
-                sale_id="s1", line_id="l1",
+                sale_id="s1", line_id="l1", branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
         sale = service.projection_store.get_sale("s1")
@@ -320,13 +321,13 @@ class TestRetailService:
         service = self._make_service()
 
         service._execute_command(
-            SaleOpenRequest(sale_id="s1", currency="KES").to_command(**make_command_args())
+            SaleOpenRequest(sale_id="s1", currency="KES", branch_id=BRANCH).to_command(**make_command_args())
         )
         service._execute_command(
             SaleAddLineRequest(
                 sale_id="s1", line_id="l1",
                 item_id="i1", sku="S", item_name="A",
-                quantity=1, unit_price=5000,
+                quantity=1, unit_price=5000, branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
         service._execute_command(
@@ -334,13 +335,14 @@ class TestRetailService:
                 sale_id="s1", total_amount=5000, net_amount=5000,
                 currency="KES", payment_method="CASH",
                 lines=({"item_id": "i1", "quantity": 1, "unit_price": 5000},),
+                branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
         assert service.projection_store.total_revenue == 5000
 
         service._execute_command(
             SaleVoidRequest(
-                sale_id="s1", reason="CASHIER_ERROR",
+                sale_id="s1", reason="CASHIER_ERROR", branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
         assert service.projection_store.total_revenue == 0
@@ -354,7 +356,7 @@ class TestRetailService:
             RefundIssueRequest(
                 refund_id="r1", original_sale_id="s1",
                 amount=2000, currency="KES",
-                reason="DEFECTIVE_PRODUCT",
+                reason="DEFECTIVE_PRODUCT", branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
         assert service.projection_store.total_refunds == 2000
@@ -567,6 +569,7 @@ class TestProcurementService:
                 order_id="po-1",
                 received_lines=({"item_id": "i1", "quantity_received": 100},),
                 location_id="loc-1", location_name="Main",
+                branch_id=BRANCH,
             ).to_command(**make_command_args())
         )
         order = service.projection_store.get_order("po-1")
@@ -705,14 +708,14 @@ class TestPhase6Determinism:
                 event_type_registry=StubEventTypeRegistry(),
             )
             svc._execute_command(
-                SaleOpenRequest(sale_id="s1", currency="KES")
+                SaleOpenRequest(sale_id="s1", currency="KES", branch_id=BRANCH)
                 .to_command(**make_command_args())
             )
             svc._execute_command(
                 SaleAddLineRequest(
                     sale_id="s1", line_id="l1",
                     item_id="i1", sku="S", item_name="A",
-                    quantity=5, unit_price=200,
+                    quantity=5, unit_price=200, branch_id=BRANCH,
                 ).to_command(**make_command_args())
             )
             svc._execute_command(
@@ -720,6 +723,7 @@ class TestPhase6Determinism:
                     sale_id="s1", total_amount=1000, net_amount=1000,
                     currency="KES", payment_method="CASH",
                     lines=({"item_id": "i1", "quantity": 5, "unit_price": 200},),
+                    branch_id=BRANCH,
                 ).to_command(**make_command_args())
             )
             return svc.projection_store.total_revenue

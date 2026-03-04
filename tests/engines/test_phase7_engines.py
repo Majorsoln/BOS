@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import pytest
 
 BIZ = uuid.uuid4()
+BRANCH = uuid.uuid4()
 NOW = datetime(2026, 2, 19, 16, 0, 0, tzinfo=timezone.utc)
 
 
@@ -73,31 +74,31 @@ class TestRestaurant:
         )
         s = self._svc()
         s._execute_command(TableOpenRequest(
-            table_id="t1", table_name="Table 1", covers=4,
+            table_id="t1", table_name="Table 1", covers=4, branch_id=BRANCH,
         ).to_command(**kw()))
         assert s.projection_store.get_table("t1")["status"] == "OPEN"
 
         s._execute_command(OrderPlaceRequest(
             order_id="o1", table_id="t1",
             items=({"item_id": "m1", "name": "Pizza", "price": 1500},),
-            currency="KES",
+            currency="KES", branch_id=BRANCH,
         ).to_command(**kw()))
         assert s.projection_store.get_order("o1")["status"] == "PLACED"
 
         s._execute_command(OrderServeItemRequest(
-            order_id="o1", item_id="m1",
+            order_id="o1", item_id="m1", branch_id=BRANCH,
         ).to_command(**kw()))
         assert s.projection_store.get_order("o1")["status"] == "FULLY_SERVED"
 
         s._execute_command(BillSettleRequest(
             bill_id="b1", table_id="t1",
             total_amount=1500, currency="KES",
-            payment_method="CASH", tip_amount=200,
+            payment_method="CASH", tip_amount=200, branch_id=BRANCH,
         ).to_command(**kw()))
         assert s.projection_store.total_revenue == 1500
         assert s.projection_store.total_tips == 200
 
-        s._execute_command(TableCloseRequest(table_id="t1").to_command(**kw()))
+        s._execute_command(TableCloseRequest(table_id="t1", branch_id=BRANCH).to_command(**kw()))
         assert s.projection_store.get_table("t1")["status"] == "CLOSED"
 
     def test_order_cancel(self):
@@ -106,14 +107,14 @@ class TestRestaurant:
         )
         s = self._svc()
         s._execute_command(TableOpenRequest(
-            table_id="t1", table_name="T1", covers=2).to_command(**kw()))
+            table_id="t1", table_name="T1", covers=2, branch_id=BRANCH).to_command(**kw()))
         s._execute_command(OrderPlaceRequest(
             order_id="o1", table_id="t1",
             items=({"item_id": "m1", "name": "Soup", "price": 500},),
-            currency="KES",
+            currency="KES", branch_id=BRANCH,
         ).to_command(**kw()))
         s._execute_command(OrderCancelRequest(
-            order_id="o1", reason="CUSTOMER_REQUEST",
+            order_id="o1", reason="CUSTOMER_REQUEST", branch_id=BRANCH,
         ).to_command(**kw()))
         assert s.projection_store.get_order("o1")["status"] == "CANCELLED"
 
@@ -171,12 +172,12 @@ class TestWorkshop:
         ).to_command(**kw()))
         assert s.projection_store.get_job("j1")["status"] == "ASSIGNED"
 
-        s._execute_command(JobStartRequest(job_id="j1").to_command(**kw()))
+        s._execute_command(JobStartRequest(job_id="j1", branch_id=BRANCH).to_command(**kw()))
         assert s.projection_store.get_job("j1")["status"] == "IN_PROGRESS"
 
         s._execute_command(JobCompleteRequest(
             job_id="j1", final_cost=4500, currency="KES",
-            labor_hours=3,
+            labor_hours=3, branch_id=BRANCH,
         ).to_command(**kw()))
         assert s.projection_store.get_job("j1")["status"] == "COMPLETED"
 
@@ -385,10 +386,10 @@ class TestPhase7Determinism:
                 event_factory=StubFactory(), persist_event=StubPersist(),
                 event_type_registry=StubReg())
             rs._execute_command(TableOpenRequest(
-                table_id="t1", table_name="T1", covers=2).to_command(**kw()))
+                table_id="t1", table_name="T1", covers=2, branch_id=BRANCH).to_command(**kw()))
             rs._execute_command(BillSettleRequest(
                 bill_id="b1", table_id="t1", total_amount=3000,
-                currency="KES", payment_method="CASH").to_command(**kw()))
+                currency="KES", payment_method="CASH", branch_id=BRANCH).to_command(**kw()))
             results["restaurant_revenue"] = rs.projection_store.total_revenue
 
             # Workshop
@@ -401,9 +402,9 @@ class TestPhase7Determinism:
                 currency="KES").to_command(**kw()))
             ws._execute_command(JobAssignRequest(
                 job_id="j1", technician_id="t1").to_command(**kw()))
-            ws._execute_command(JobStartRequest(job_id="j1").to_command(**kw()))
+            ws._execute_command(JobStartRequest(job_id="j1", branch_id=BRANCH).to_command(**kw()))
             ws._execute_command(JobCompleteRequest(
-                job_id="j1", final_cost=2000, currency="KES").to_command(**kw()))
+                job_id="j1", final_cost=2000, currency="KES", branch_id=BRANCH).to_command(**kw()))
             ws._execute_command(JobInvoiceRequest(
                 job_id="j1", invoice_id="i1", amount=2000,
                 currency="KES").to_command(**kw()))

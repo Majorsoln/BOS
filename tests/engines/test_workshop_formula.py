@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import pytest
 
 BIZ = uuid.uuid4()
+BRANCH = uuid.uuid4()
 NOW = datetime(2026, 2, 20, 10, 0, 0, tzinfo=timezone.utc)
 
 
@@ -522,7 +523,7 @@ class TestWorkshopServiceNewCommands:
         s = self._svc()
         req = MaterialConsumeRequest(
             consumption_id="cons-1", job_id="j1",
-            material_id="ALU_60", quantity_used=2, unit="PC",
+            material_id="ALU_60", quantity_used=2, unit="PC", branch_id=BRANCH,
         )
         result = s._execute_command(req.to_command(**kw()))
         assert result.event_type == "workshop.material.consumed.v1"
@@ -533,7 +534,7 @@ class TestWorkshopServiceNewCommands:
         s = self._svc()
         req = OffcutRecordRequest(
             offcut_id="oc-1", job_id="j1",
-            material_id="ALU_60", length_mm=850,
+            material_id="ALU_60", length_mm=850, branch_id=BRANCH,
         )
         result = s._execute_command(req.to_command(**kw()))
         assert result.event_type == "workshop.offcut.recorded.v1"
@@ -544,7 +545,7 @@ class TestWorkshopServiceNewCommands:
         s = self._svc()
         s._execute_command(OffcutRecordRequest(
             offcut_id="oc-1", job_id="j1",
-            material_id="ALU_60", length_mm=850, location_id="storeroom-A",
+            material_id="ALU_60", length_mm=850, location_id="storeroom-A", branch_id=BRANCH,
         ).to_command(**kw()))
         offcut = s.projection_store.get_offcut("oc-1")
         assert offcut is not None
