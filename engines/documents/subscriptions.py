@@ -87,20 +87,39 @@ DOCUMENT_SUBSCRIPTIONS: Dict[str, str] = {
 
 def _resolve_business_info(business_id: str) -> dict:
     """
-    Resolve business name, address, TIN/VAT from business profile.
-    Returns empty dict until BusinessProfileService is implemented.
+    Default stub: resolve business name, address, TIN/VAT from business profile.
+    Returns empty dict until a real BusinessInfoResolver is injected via
+    DocumentSubscriptionHandler(business_info_resolver=...).
+
+    A real resolver should return:
+        {
+            "business_name":    str,
+            "business_address": str,
+            "tax_id":           str,   # TIN / VAT registration number
+            "phone":            str,
+            "email":            str,
+        }
     """
     return {}
 
 
 def _resolve_customer_info(customer_id: str | None) -> dict:
     """
-    Resolve customer name and address from customer profile.
-    Returns empty dict until CustomerService lookup is implemented.
+    Default stub: resolve customer name and address from customer profile.
+    Returns minimal dict until a real CustomerInfoResolver is injected via
+    DocumentSubscriptionHandler(customer_info_resolver=...).
+
+    A real resolver should return:
+        {
+            "customer_name":    str,
+            "customer_address": str,
+            "customer_phone":   str,
+            "customer_email":   str,
+        }
     """
     if not customer_id:
         return {"customer_name": "Walk-in Customer"}
-    return {"customer_id": customer_id}
+    return {"customer_name": "Customer", "customer_id": customer_id}
 
 
 def _system_actor_context() -> ActorContext:
@@ -121,10 +140,36 @@ class DocumentSubscriptionHandler:
 
     Injected with DocumentIssuanceService at startup via
     wire_all_subscriptions().
+
+    Optional resolver callables can be injected to enrich documents with
+    real business and customer data:
+
+        handler = DocumentSubscriptionHandler(
+            document_service=svc,
+            business_info_resolver=lambda biz_id: {...},
+            customer_info_resolver=lambda cust_id: {...},
+        )
+
+    Resolver signature:
+        business_info_resolver(business_id: str) -> dict
+            Returns: {business_name, business_address, tax_id, phone, email}
+
+        customer_info_resolver(customer_id: str | None) -> dict
+            Returns: {customer_name, customer_address, customer_phone, customer_email}
+
+    If not provided, module-level stubs are used (returning empty/minimal dicts).
     """
 
-    def __init__(self, document_service: Any):
+    def __init__(
+        self,
+        document_service: Any,
+        *,
+        business_info_resolver=None,
+        customer_info_resolver=None,
+    ):
         self._svc = document_service
+        self._resolve_biz = business_info_resolver or _resolve_business_info
+        self._resolve_cust = customer_info_resolver or _resolve_customer_info
 
     # ── helpers ──────────────────────────────────────────────────
 
@@ -206,8 +251,8 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        biz = _resolve_business_info(str(business_id))
-        customer = _resolve_customer_info(p.get("customer_id"))
+        biz = self._resolve_biz(str(business_id))
+        customer = self._resolve_cust(p.get("customer_id"))
 
         receipt_payload = {
             **biz,
@@ -250,8 +295,8 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        biz = _resolve_business_info(str(business_id))
-        customer = _resolve_customer_info(p.get("customer_id"))
+        biz = self._resolve_biz(str(business_id))
+        customer = self._resolve_cust(p.get("customer_id"))
 
         payload = {
             **biz,
@@ -279,8 +324,8 @@ class DocumentSubscriptionHandler:
         if not lines and not total:
             return  # insufficient data for a credit note
 
-        biz = _resolve_business_info(str(business_id))
-        customer = _resolve_customer_info(p.get("customer_id"))
+        biz = self._resolve_biz(str(business_id))
+        customer = self._resolve_cust(p.get("customer_id"))
 
         payload = {
             **biz,
@@ -305,7 +350,7 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        biz = _resolve_business_info(str(business_id))
+        biz = self._resolve_biz(str(business_id))
 
         payload = {
             **biz,
@@ -333,7 +378,7 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        biz = _resolve_business_info(str(business_id))
+        biz = self._resolve_biz(str(business_id))
         splits = p.get("splits", [])
 
         for split in splits:
@@ -380,8 +425,8 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        biz = _resolve_business_info(str(business_id))
-        customer = _resolve_customer_info(p.get("customer_id"))
+        biz = self._resolve_biz(str(business_id))
+        customer = self._resolve_cust(p.get("customer_id"))
 
         payload = {
             **biz,
@@ -409,8 +454,8 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        biz = _resolve_business_info(str(business_id))
-        customer = _resolve_customer_info(p.get("customer_id"))
+        biz = self._resolve_biz(str(business_id))
+        customer = self._resolve_cust(p.get("customer_id"))
 
         items = p.get("items", [])
         line_items = [
@@ -444,8 +489,8 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        biz = _resolve_business_info(str(business_id))
-        customer = _resolve_customer_info(p.get("customer_id"))
+        biz = self._resolve_biz(str(business_id))
+        customer = self._resolve_cust(p.get("customer_id"))
 
         payload = {
             **biz,
@@ -468,7 +513,7 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        customer = _resolve_customer_info(p.get("customer_id"))
+        customer = self._resolve_cust(p.get("customer_id"))
 
         payload = {
             **customer,
@@ -507,7 +552,7 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        customer = _resolve_customer_info(p.get("customer_id"))
+        customer = self._resolve_cust(p.get("customer_id"))
 
         payload = {
             **customer,
@@ -525,8 +570,8 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        biz = _resolve_business_info(str(business_id))
-        customer = _resolve_customer_info(p.get("customer_id"))
+        biz = self._resolve_biz(str(business_id))
+        customer = self._resolve_cust(p.get("customer_id"))
 
         parts = p.get("parts_used", [])
         line_items = []
@@ -567,22 +612,47 @@ class DocumentSubscriptionHandler:
     def handle_hotel_reservation_confirmed(self, event_data: dict) -> None:
         """hotel.reservation.confirmed.v1 → RESERVATION_CONFIRMATION"""
         p = event_data.get("payload", {})
-        # Reservation confirmed event has minimal data — enrich from created payload
-        # stored in projection. For now use available fields.
         business_id = p.get("business_id")
         branch_id = p.get("branch_id")
         if not business_id:
             return
 
-        biz = _resolve_business_info(str(business_id))
+        biz = self._resolve_biz(str(business_id))
+        # Resolve guest from guest_id if name not directly in payload
+        guest_id = p.get("guest_id")
+        guest_info = self._resolve_cust(guest_id) if guest_id else {}
+        guest_name = p.get("guest_name", "") or guest_info.get("customer_name", "")
+
+        nights = p.get("nights", 0)
+        nightly_rate = p.get("nightly_rate", 0)
+        total_amount = p.get("total_amount", 0) or (nights * nightly_rate)
+
+        line_items = []
+        if nights and nightly_rate:
+            line_items.append({
+                "room_type":    p.get("room_type", "Room"),
+                "rate_plan":    p.get("rate_plan", ""),
+                "nightly_rate": nightly_rate,
+                "nights":       nights,
+                "total":        total_amount,
+            })
 
         payload = {
             **biz,
             "reservation_id":  p.get("reservation_id"),
-            "confirmed_by":    p.get("confirmed_by"),
+            "guest_name":      guest_name,
+            "guest_email":     p.get("guest_email", ""),
+            "guest_phone":     p.get("guest_phone", ""),
+            "arrival_date":    p.get("arrival_date", ""),
+            "departure_date":  p.get("departure_date", ""),
+            "nights":          nights,
+            "line_items":      line_items,
+            "total_amount":    total_amount,
             "deposit_paid":    p.get("deposit_paid", 0),
+            "deposit_due":     p.get("deposit_due", 0),
+            "currency":        p.get("currency", ""),
+            "confirmed_by":    p.get("confirmed_by"),
             "issued_at":       p.get("confirmed_at"),
-            "line_items":      [],
         }
         self._issue_doc("issue_reservation_confirmation", business_id=business_id, branch_id=branch_id, payload=payload)
 
@@ -634,7 +704,7 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        biz = _resolve_business_info(str(business_id))
+        biz = self._resolve_biz(str(business_id))
 
         payload = {
             **biz,
@@ -648,15 +718,51 @@ class DocumentSubscriptionHandler:
         self._issue_doc("issue_registration_card", business_id=business_id, branch_id=branch_id, payload=payload)
 
     def handle_hotel_guest_checked_out(self, event_data: dict) -> None:
-        """hotel.guest.checked_out.v1 → INVOICE (if company billing)"""
+        """
+        hotel.guest.checked_out.v1 → INVOICE (company/corporate billing only)
+
+        Standard individual checkout bill is generated by handle_hotel_folio_settled.
+        This handler only fires an INVOICE when company_id is present in the payload,
+        indicating the stay should be invoiced to a corporate account rather than
+        settled by the guest directly.
+        """
         p = event_data.get("payload", {})
         business_id = p.get("business_id")
         branch_id = p.get("branch_id")
         if not business_id:
             return
-        # Folio settled event handles the actual bill document.
-        # Checkout only triggers an invoice for company/corporate billing.
-        # Standard individual checkout receipt is covered by folio.settled.
+
+        # Only issue invoice for company/corporate billing
+        company_id = p.get("company_id")
+        if not company_id:
+            return
+
+        biz = self._resolve_biz(str(business_id))
+        company_info = self._resolve_cust(company_id)
+
+        folio_total = p.get("folio_total", 0)
+        line_items = []
+        if folio_total:
+            line_items.append({
+                "description": f"Hotel stay — Folio {p.get('folio_id', '')}",
+                "qty":         1,
+                "unit_price":  folio_total,
+                "line_total":  folio_total,
+            })
+
+        payload = {
+            **biz,
+            **company_info,
+            "reservation_id": p.get("reservation_id"),
+            "folio_id":       p.get("folio_id"),
+            "line_items":     line_items,
+            "subtotal":       folio_total,
+            "tax_total":      0,
+            "grand_total":    folio_total,
+            "payment_terms":  "NET_30",
+            "issued_at":      p.get("checked_out_at"),
+        }
+        self._issue_invoice(business_id=business_id, branch_id=branch_id, payload=payload)
 
     # ── HOTEL — FOLIO ─────────────────────────────────────────────
 
@@ -668,7 +774,7 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        biz = _resolve_business_info(str(business_id))
+        biz = self._resolve_biz(str(business_id))
 
         payload = {
             **biz,
@@ -721,7 +827,7 @@ class DocumentSubscriptionHandler:
         if not business_id:
             return
 
-        biz = _resolve_business_info(str(business_id))
+        biz = self._resolve_biz(str(business_id))
 
         payload = {
             **biz,

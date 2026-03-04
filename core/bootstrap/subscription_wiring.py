@@ -43,19 +43,29 @@ def wire_all_subscriptions(
     reporting_service: Optional[Any] = None,
     retail_service: Optional[Any] = None,
     document_service: Optional[Any] = None,
+    business_info_resolver: Optional[Any] = None,
+    customer_info_resolver: Optional[Any] = None,
 ) -> dict[str, int]:
     """
     Instantiate all subscription handlers and register them to the
     SubscriberRegistry.
 
     Args:
-        subscriber_registry: The SubscriberRegistry to register handlers into.
-        cash_service:        Initialized CashService instance (optional).
-        inventory_service:   Initialized InventoryService instance (optional).
-        accounting_service:  Initialized AccountingService instance (optional).
-        reporting_service:   Initialized ReportingService instance (optional).
-        retail_service:      Initialized RetailService instance (optional).
-        document_service:    Initialized DocumentIssuanceService instance (optional).
+        subscriber_registry:     The SubscriberRegistry to register handlers into.
+        cash_service:            Initialized CashService instance (optional).
+        inventory_service:       Initialized InventoryService instance (optional).
+        accounting_service:      Initialized AccountingService instance (optional).
+        reporting_service:       Initialized ReportingService instance (optional).
+        retail_service:          Initialized RetailService instance (optional).
+        document_service:        Initialized DocumentIssuanceService instance (optional).
+        business_info_resolver:  Optional callable(business_id: str) -> dict.
+                                 Returns {business_name, business_address, tax_id, ...}.
+                                 Injected into DocumentSubscriptionHandler to enrich
+                                 all auto-issued documents with issuer details.
+        customer_info_resolver:  Optional callable(customer_id: str | None) -> dict.
+                                 Returns {customer_name, customer_address, ...}.
+                                 Injected into DocumentSubscriptionHandler for
+                                 customer-addressed documents.
 
     Returns:
         dict mapping engine name → number of subscriptions registered.
@@ -155,7 +165,11 @@ def wire_all_subscriptions(
             DocumentSubscriptionHandler,
             DOCUMENT_SUBSCRIPTIONS,
         )
-        doc_handler = DocumentSubscriptionHandler(document_service=document_service)
+        doc_handler = DocumentSubscriptionHandler(
+            document_service=document_service,
+            business_info_resolver=business_info_resolver,
+            customer_info_resolver=customer_info_resolver,
+        )
         count = _register_handlers(
             subscriber_registry=subscriber_registry,
             handler_instance=doc_handler,

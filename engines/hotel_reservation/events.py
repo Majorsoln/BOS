@@ -88,11 +88,28 @@ def build_reservation_created_payload(cmd) -> dict:
 def build_reservation_confirmed_payload(cmd) -> dict:
     p = cmd.payload
     return {
-        "reservation_id": p["reservation_id"],
-        "deposit_paid":   p.get("deposit_paid", 0),
-        "payment_ref":    p.get("payment_ref", ""),
-        "confirmed_by":   cmd.actor_id,
-        "confirmed_at":   cmd.issued_at,
+        "reservation_id":  p["reservation_id"],
+        # Guest identity — present if passed through from booking flow
+        "guest_id":        p.get("guest_id"),
+        "guest_name":      p.get("guest_name", ""),
+        "guest_email":     p.get("guest_email", ""),
+        "guest_phone":     p.get("guest_phone", ""),
+        # Stay details — required for RESERVATION_CONFIRMATION document
+        "arrival_date":    p.get("arrival_date", ""),
+        "departure_date":  p.get("departure_date", ""),
+        "nights":          p.get("nights", 0),
+        "room_type":       p.get("room_type", ""),
+        "rate_plan":       p.get("rate_plan", ""),
+        "nightly_rate":    p.get("nightly_rate", 0),
+        "total_amount":    p.get("total_amount", 0),
+        "currency":        p.get("currency", ""),
+        # Payment
+        "deposit_paid":    p.get("deposit_paid", 0),
+        "deposit_due":     p.get("deposit_due", 0),
+        "payment_ref":     p.get("payment_ref", ""),
+        # Metadata
+        "confirmed_by":    cmd.actor_id,
+        "confirmed_at":    cmd.issued_at,
     }
 
 

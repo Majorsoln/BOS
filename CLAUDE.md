@@ -67,10 +67,11 @@ Only: `doc.receipt.issue.request`, `doc.quote.issue.request`, `doc.invoice.issue
 Every new document type needs its own command + event registered here.
 **Severity:** CRITICAL — new doc types cannot be issued at all.
 
-### INFRA-03 — No DocumentSubscriptionHandler exists anywhere
-No class listens to engine events and calls DocumentIssuanceService automatically.
-Documents can ONLY be issued via HTTP API (manual call required every time).
-**Severity:** CRITICAL — entire auto-document pipeline is missing.
+### INFRA-03 — ~~No DocumentSubscriptionHandler~~ **RESOLVED (2026-03-04)**
+`engines/documents/subscriptions.py` — 29-event handler, fully wired in bootstrap.
+`business_info_resolver` + `customer_info_resolver` now injectable callables.
+Stubs return `{}` / `"Walk-in Customer"` until real resolvers are provided at startup.
+**Severity:** ~~CRITICAL~~ → MEDIUM (resolver stubs are the remaining gap for legal compliance)
 
 ### INFRA-04 — PDF/HTML renderers exist but are NOT exposed
 `pdf_renderer.py` and `html_renderer.py` are implemented but:
@@ -462,8 +463,8 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 |----|-----|------|----------|
 | W-01 | `RetailSubscriptionHandler` not registered in bootstrap | `core/bootstrap/subscription_wiring.py` | CRITICAL |
 | W-02 | `actor_type="System"` wrong case in retail subscriptions | `engines/retail/subscriptions.py:70` | CRITICAL |
-| W-03 | No `DocumentSubscriptionHandler` class anywhere | Missing file | CRITICAL |
-| W-04 | `DocumentIssuanceService` HTTP-only, no event path | `adapters/django_api/wiring.py:308` | CRITICAL |
+| W-03 | ~~No `DocumentSubscriptionHandler` class anywhere~~ | **RESOLVED** — `engines/documents/subscriptions.py` 29 handlers wired | ~~CRITICAL~~ |
+| W-04 | ~~`DocumentIssuanceService` HTTP-only, no event path~~ | **RESOLVED** — DocumentSubscriptionHandler calls service; `document_service` passed in bootstrap | ~~CRITICAL~~ |
 | W-05 | `VALID_DOCUMENT_TYPES` only allows RECEIPT/QUOTE/INVOICE | `core/documents/models.py:22` | CRITICAL |
 | W-06 | Issuance registry has only 3 command/event pairs | `core/document_issuance/registry.py` | CRITICAL |
 
@@ -599,14 +600,14 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 2. ✅ **W-06** — Expand issuance registry with all 25 command/event pairs — **DONE**
 3. **W-01 + W-02** — Fix retail bootstrap wiring + actor_type bug
 4. **X-04** — Separate standard-receipts flag from document-designer flag
-5. **X-01/X-02** — Add business info + customer resolver stubs
+5. ✅ **X-01/X-02** — Resolver stubs + injectable callables in DocumentSubscriptionHandler — **DONE** (real resolvers pending BusinessProfileService)
 
 ### Phase 2 — Core Document Auto-Generation
-6. **W-03/W-04** — Create `DocumentSubscriptionHandler` + wire to event bus
-7. **R-01 to R-04** — Retail: auto-receipt, customer_id in payload, numbering
-8. **RE-01 to RE-02** — Restaurant: auto-receipt, line items in bill_settled
-9. **H-01 to H-03** — Hotel: reservation confirmation + folio with charge lines
-10. **WS-01 to WS-04** — Workshop: auto-quote doc, price in payload, customer_id
+6. ✅ **W-03/W-04** — `DocumentSubscriptionHandler` exists + is wired — **DONE**
+7. ✅ **R-01 to R-04** — Retail: auto-receipt wired; `customer_id`, `tax_amount`, `lines` all in payload — **DONE**
+8. ✅ **RE-01 to RE-02** — Restaurant: auto-receipt wired; `order_lines`, `table_name`, `covers` in payload — **DONE**
+9. ✅ **H-01 to H-03** — Hotel: reservation confirmation handler implemented with full guest/stay data — **DONE**
+10. ✅ **WS-01 to WS-04** — Workshop: auto-quote, invoice, work order all wired — **DONE**
 
 ### Phase 3 — Document Completeness
 11. **WS-06/WS-07** — Add `workshop.quote.accepted.v1` + `quote.rejected.v1` events
@@ -626,7 +627,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 - **AC-09** — Cash session closed → ledger reconciliation entry
 - ✅ **CS-01/CS-02** — Workshop + hotel cash payments into drawer — **DONE**
 - ✅ **CS-08** — Procurement cash supplier payment → drawer withdrawal — **DONE**
-- **CS-03** — PETTY_CASH_VOUCHER document on expense_payout (needs W-03 first)
+- **CS-03** — PETTY_CASH_VOUCHER document on expense_payout (W-03 resolved; needs cash withdrawal event subscription in DocumentSubscriptionHandler)
 - **CS-07** — Add `variance` field to `cash.session.closed.v1` payload
 - ✅ **RP-01** — Hotel events subscribed: folio, reservation, check-in/out — **DONE**
 - ✅ **RP-05/RP-06** — Total amount + payment method dimension on revenue KPIs — **DONE**
@@ -635,6 +636,17 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 - ✅ **RP-12/RP-13** — Hotel ADR, room nights, checkout KPIs — **DONE**
 - **RP-08** — Daily revenue snapshot auto-generation (needs scheduler)
 - **RP-07** — Inventory stock adjusted/transferred KPIs
+
+### Phase 3C — Document Subscription Completeness (2026-03-04 session)
+- ✅ **Resolvers injectable** — `business_info_resolver` + `customer_info_resolver` in `DocumentSubscriptionHandler.__init__` — **DONE**
+- ✅ **Bootstrap accepts resolvers** — `wire_all_subscriptions(business_info_resolver=..., customer_info_resolver=...)` — **DONE**
+- ✅ **`handle_hotel_reservation_confirmed`** enriched with guest_name, arrival/departure, line_items, deposit — **DONE**
+- ✅ **`handle_hotel_guest_checked_out`** implemented — INVOICE for company/corporate billing — **DONE**
+- ✅ **Procurement `build_payment_released_payload`** — added `supplier_name`, `supplier_id`, `approved_by` — **DONE**
+- ✅ **Hotel `build_reservation_confirmed_payload`** — added guest info, stay dates, room type, rate, currency — **DONE**
+- **NEXT: Real BusinessInfoResolver** — query business profile projection; inject at startup
+- **NEXT: Real CustomerInfoResolver** — query customer projection; inject at startup
+- **NEXT: `cash.withdrawal.recorded.v1`** — add to DOCUMENT_SUBSCRIPTIONS for PETTY_CASH_VOUCHER
 
 ### Phase 4 — Delivery & Rendering
 17. **X-05** — Expose `GET /docs/{id}/pdf` and `GET /docs/{id}/html` endpoints

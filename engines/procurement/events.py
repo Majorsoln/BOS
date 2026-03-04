@@ -168,12 +168,15 @@ def build_requisition_approved_payload(command: Command) -> dict:
 def build_payment_released_payload(command: Command) -> dict:
     payload = _base_payload(command)
     payload.update({
-        "payment_id": command.payload["payment_id"],
-        "order_id": command.payload["order_id"],
-        "amount": command.payload["amount"],
-        "currency": command.payload["currency"],
+        "payment_id":    command.payload["payment_id"],
+        "order_id":      command.payload["order_id"],
+        "supplier_id":   command.payload.get("supplier_id"),
+        "supplier_name": command.payload.get("supplier_name", ""),
+        "amount":        command.payload["amount"],
+        "currency":      command.payload["currency"],
         "payment_method": command.payload["payment_method"],
-        "reference_id": command.payload.get("reference_id"),
-        "released_at": command.issued_at,
+        "reference_id":  command.payload.get("reference_id"),
+        "approved_by":   command.payload.get("approved_by", command.actor_id),
+        "released_at":   command.issued_at,
     })
     return payload
