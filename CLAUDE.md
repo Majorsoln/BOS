@@ -566,7 +566,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 |----|-----|------|----------|--------|
 | CS-01 | Workshop and hotel cash payments not recorded in drawer | Missing handlers | HIGH | **FIXED** — `handle_workshop_invoice` + `handle_hotel_folio` added |
 | CS-02 | Hotel folio cash not going into drawer | Missing | HIGH | **FIXED** — covered by `handle_hotel_folio` |
-| CS-03 | No PETTY_CASH_VOUCHER document trigger on expense_payout withdrawal | Missing | HIGH | OPEN — needs DocumentSubscriptionHandler (W-03) |
+| CS-03 | No PETTY_CASH_VOUCHER document trigger on expense_payout withdrawal | Missing | HIGH | **FIXED** — `handle_cash_withdrawal_recorded` added; subscribes `cash.withdrawal.recorded.v1` → PETTY_CASH_VOUCHER |
 | CS-04 | No PAYMENT_VOUCHER trigger on bank/safe withdrawal | Missing | MEDIUM | OPEN — needs DocumentSubscriptionHandler (W-03) |
 | CS-05 | No cash session closing reconciliation document | Missing | MEDIUM | OPEN |
 | CS-06 | CARD and MOBILE payments have no float tracking | `engines/cash/subscriptions.py` | MEDIUM | OPEN — by design; card settled via bank reconciliation |
@@ -627,7 +627,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 - **AC-09** — Cash session closed → ledger reconciliation entry
 - ✅ **CS-01/CS-02** — Workshop + hotel cash payments into drawer — **DONE**
 - ✅ **CS-08** — Procurement cash supplier payment → drawer withdrawal — **DONE**
-- **CS-03** — PETTY_CASH_VOUCHER document on expense_payout (W-03 resolved; needs cash withdrawal event subscription in DocumentSubscriptionHandler)
+- ✅ **CS-03** — PETTY_CASH_VOUCHER document on expense_payout — **DONE** (`cash.withdrawal.recorded.v1` subscribed)
 - **CS-07** — Add `variance` field to `cash.session.closed.v1` payload
 - ✅ **RP-01** — Hotel events subscribed: folio, reservation, check-in/out — **DONE**
 - ✅ **RP-05/RP-06** — Total amount + payment method dimension on revenue KPIs — **DONE**
@@ -644,9 +644,11 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 - ✅ **`handle_hotel_guest_checked_out`** implemented — INVOICE for company/corporate billing — **DONE**
 - ✅ **Procurement `build_payment_released_payload`** — added `supplier_name`, `supplier_id`, `approved_by` — **DONE**
 - ✅ **Hotel `build_reservation_confirmed_payload`** — added guest info, stay dates, room type, rate, currency — **DONE**
-- **NEXT: Real BusinessInfoResolver** — query business profile projection; inject at startup
-- **NEXT: Real CustomerInfoResolver** — query customer projection; inject at startup
-- **NEXT: `cash.withdrawal.recorded.v1`** — add to DOCUMENT_SUBSCRIPTIONS for PETTY_CASH_VOUCHER
+- ✅ **Real BusinessInfoResolver** — queries `Business` Django ORM in `adapters/django_api/wiring.py`; returns `{business_name, default_currency}` — **DONE** (address/TIN pending Business model extension)
+- ✅ **Real CustomerInfoResolver** — wired in `adapters/django_api/wiring.py`; returns `display_name` stub until persistent customer profile DB is built — **DONE**
+- ✅ **`cash.withdrawal.recorded.v1`** — added to DOCUMENT_SUBSCRIPTIONS → `handle_cash_withdrawal_recorded` → PETTY_CASH_VOUCHER — **DONE**
+- **REMAINING: Extend Business model** — add `address`, `tax_id` (TIN/VAT), `phone`, `email` fields so documents are tax-compliant
+- **REMAINING: Persistent CustomerProfile DB** — currently only in-memory; add Django ORM table so `customer_info_resolver` can look up display_name by UUID
 
 ### Phase 4 — Delivery & Rendering
 17. **X-05** — Expose `GET /docs/{id}/pdf` and `GET /docs/{id}/html` endpoints

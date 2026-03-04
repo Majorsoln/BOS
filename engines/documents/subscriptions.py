@@ -76,6 +76,9 @@ DOCUMENT_SUBSCRIPTIONS: Dict[str, str] = {
     # Inventory
     "inventory.stock.transfer.v1":       "handle_inventory_stock_transfer",
     "inventory.stock.adjusted.v1":       "handle_inventory_stock_adjusted",
+
+    # Cash
+    "cash.withdrawal.recorded.v1":       "handle_cash_withdrawal_recorded",
 }
 
 
@@ -922,3 +925,39 @@ class DocumentSubscriptionHandler:
             "issued_at":       p.get("adjusted_at"),
         }
         self._issue_doc("issue_stock_adjustment_note", business_id=business_id, branch_id=branch_id, payload=payload)
+
+    # ── CASH ──────────────────────────────────────────────────────
+
+    def handle_cash_withdrawal_recorded(self, event_data: dict) -> None:
+        """
+        cash.withdrawal.recorded.v1 → PETTY_CASH_VOUCHER
+
+        Fires whenever a cash withdrawal is recorded against a drawer session.
+        Covers both petty cash disbursements (expense_payout) and authorised
+        withdrawals (bank/safe transfers).
+
+        The document type is PETTY_CASH_VOUCHER for both cases — the admin
+        can configure separate templates per reason code if needed.
+        """
+        p = event_data.get("payload", {})
+        business_id = p.get("business_id")
+        branch_id = p.get("branch_id")
+        if not business_id:
+            return
+
+        biz = self._resolve_biz(str(business_id))
+
+        payload = {
+            **biz,
+            "withdrawal_id": p.get("withdrawal_id"),
+            "session_id":    p.get("session_id"),
+            "drawer_id":     p.get("drawer_id"),
+            "amount":        p.get("amount", 0),
+            "currency":      p.get("currency", ""),
+            "reason":        p.get("reason", ""),
+            "approved_by":   p.get("actor_id", ""),
+            "line_items":    [],
+            "grand_total":   p.get("amount", 0),
+            "issued_at":     p.get("recorded_at"),
+        }
+        self._issue_doc("issue_petty_cash_voucher", business_id=business_id, branch_id=branch_id, payload=payload)

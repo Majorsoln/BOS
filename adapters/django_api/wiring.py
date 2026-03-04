@@ -41,6 +41,7 @@ from core.event_store.persistence import (
 )
 from core.event_store.validators.registry import EventTypeRegistry
 from core.http_api.dependencies import HttpApiDependencies, UtcClock, UuidIdProvider
+from core.identity_store.models import Business as _BusinessModel
 from core.identity_store.service import (
     DEFAULT_CASHIER_ROLE,
     assign_role as assign_identity_role,
@@ -383,12 +384,36 @@ def _create_dependencies() -> HttpApiDependencies:
         numbering_provider=numbering_provider,
     )
 
+    # Build resolvers that enrich auto-generated documents with issuer and
+    # customer details. Business name comes from the identity store Django ORM.
+    # Customer name will be extended once a persistent customer profile DB exists.
+    def _business_info_resolver(business_id: str) -> dict:
+        try:
+            biz = _BusinessModel.objects.filter(business_id=business_id).first()
+            if biz:
+                return {
+                    "business_name":     biz.name,
+                    "default_currency":  biz.default_currency,
+                }
+        except Exception:
+            pass
+        return {}
+
+    def _customer_info_resolver(customer_id: str | None) -> dict:
+        if not customer_id:
+            return {"customer_name": "Walk-in Customer"}
+        # Persistent customer profile DB not yet implemented.
+        # Returns minimal dict; extend when CustomerProfileService is available.
+        return {"customer_name": "Customer", "customer_id": str(customer_id)}
+
     # Wire document subscription handler into the shared subscriber registry.
     # When engine events fire (e.g. retail.sale.completed.v1), the handler
     # will automatically issue the appropriate documents.
     wire_all_subscriptions(
         subscriber_registry,
         document_service=document_issuance_service,
+        business_info_resolver=_business_info_resolver,
+        customer_info_resolver=_customer_info_resolver,
     )
 
     return HttpApiDependencies(
