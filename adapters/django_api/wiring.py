@@ -24,6 +24,7 @@ from core.admin.repository import (
     RepositoryFeatureFlagProvider,
 )
 from core.admin.service import AdminDataService
+from core.bootstrap.subscription_wiring import wire_all_subscriptions
 from core.commands.bus import CommandBus
 from core.commands.dispatcher import CommandDispatcher
 from core.context.business_context import BusinessContext
@@ -31,6 +32,9 @@ from core.document_issuance.projections import DocumentIssuanceProjectionStore
 from core.document_issuance.registry import is_document_issuance_event_type
 from core.document_issuance.repository import DocumentIssuanceRepository
 from core.document_issuance.service import DocumentIssuanceService
+from core.documents.numbering.models import NumberingPolicy
+from core.documents.numbering.provider import InMemoryNumberingProvider
+from core.events import SubscriberRegistry
 from core.event_store.persistence import (
     load_events_for_business,
     persist_event,
@@ -256,6 +260,54 @@ def _build_event_factory():
     return _event_factory
 
 
+def _build_default_numbering_provider(business_id: uuid.UUID) -> InMemoryNumberingProvider:
+    """
+    Register default sequential numbering policies for all document types.
+    Each business production deployment should override these with DB-backed policies.
+    """
+    provider = InMemoryNumberingProvider()
+    bid = str(business_id)
+    default_policies = [
+        ("RECEIPT",                 "RCP-",  "YEARLY"),
+        ("INVOICE",                 "INV-",  "YEARLY"),
+        ("QUOTE",                   "QT-",   "YEARLY"),
+        ("PROFORMA_INVOICE",        "PRO-",  "YEARLY"),
+        ("CREDIT_NOTE",             "CN-",   "YEARLY"),
+        ("DEBIT_NOTE",              "DBN-",  "YEARLY"),
+        ("PURCHASE_ORDER",          "PO-",   "YEARLY"),
+        ("GOODS_RECEIPT_NOTE",      "GRN-",  "YEARLY"),
+        ("DELIVERY_NOTE",           "DN-",   "YEARLY"),
+        ("SALES_ORDER",             "SO-",   "YEARLY"),
+        ("REFUND_NOTE",             "REF-",  "YEARLY"),
+        ("WORK_ORDER",              "WO-",   "YEARLY"),
+        ("CUTTING_LIST",            "CL-",   "YEARLY"),
+        ("COMPLETION_CERTIFICATE",  "CC-",   "YEARLY"),
+        ("KITCHEN_ORDER_TICKET",    "KOT-",  "DAILY"),
+        ("FOLIO",                   "FOL-",  "YEARLY"),
+        ("RESERVATION_CONFIRMATION","RESV-", "YEARLY"),
+        ("REGISTRATION_CARD",       "REG-",  "YEARLY"),
+        ("CANCELLATION_NOTE",       "CXL-",  "YEARLY"),
+        ("PAYMENT_VOUCHER",         "PV-",   "YEARLY"),
+        ("PETTY_CASH_VOUCHER",      "PCV-",  "MONTHLY"),
+        ("STOCK_TRANSFER_NOTE",     "STN-",  "MONTHLY"),
+        ("STOCK_ADJUSTMENT_NOTE",   "SAN-",  "MONTHLY"),
+        ("STATEMENT",               "STMT-", "MONTHLY"),
+        ("MATERIAL_REQUISITION",    "MRN-",  "MONTHLY"),
+        ("JOB_SHEET",               "JS-",   "YEARLY"),
+    ]
+    for doc_type, prefix, reset_period in default_policies:
+        policy_id = f"default-{doc_type.lower().replace('_', '-')}"
+        provider.register_policy(NumberingPolicy(
+            policy_id=policy_id,
+            business_id_str=bid,
+            doc_type=doc_type,
+            prefix=prefix,
+            padding=5,
+            reset_period=reset_period,
+        ))
+    return provider
+
+
 def _create_dependencies() -> HttpApiDependencies:
     _ensure_dev_identity_records()
     _ensure_dev_api_key_credentials()
@@ -281,6 +333,19 @@ def _create_dependencies() -> HttpApiDependencies:
     compliance_provider = RepositoryComplianceProvider(repository)
     document_provider = RepositoryDocumentProvider(repository)
 
+    # --- Event subscriber registry ---
+    # Populated below via wire_all_subscriptions().
+    # Captured by _subscribed_persist_event so all services share one registry.
+    subscriber_registry = SubscriberRegistry()
+
+    def _subscribed_persist_event(event_data, context, registry, **kwargs):
+        """Thin wrapper that always passes subscriber_registry to persist_event."""
+        return persist_event(
+            event_data, context, registry,
+            subscriber_registry=subscriber_registry,
+            **kwargs,
+        )
+
     dispatcher = CommandDispatcher(
         context=business_context,
         permission_provider=permission_provider,
@@ -292,7 +357,7 @@ def _create_dependencies() -> HttpApiDependencies:
     event_factory = _build_event_factory()
     command_bus = CommandBus(
         dispatcher=dispatcher,
-        persist_event=persist_event,
+        persist_event=_subscribed_persist_event,
         context=business_context,
         event_type_registry=event_type_registry,
     )
@@ -301,19 +366,29 @@ def _create_dependencies() -> HttpApiDependencies:
         dispatcher=dispatcher,
         command_bus=command_bus,
         event_factory=event_factory,
-        persist_event=persist_event,
+        persist_event=_subscribed_persist_event,
         event_type_registry=event_type_registry,
         projection_store=admin_projection_store,
     )
+    numbering_provider = _build_default_numbering_provider(DEV_BUSINESS_ID)
     document_issuance_service = DocumentIssuanceService(
         business_context=business_context,
         dispatcher=dispatcher,
         command_bus=command_bus,
         event_factory=event_factory,
-        persist_event=persist_event,
+        persist_event=_subscribed_persist_event,
         event_type_registry=event_type_registry,
         projection_store=document_issuance_projection_store,
         document_provider=document_provider,
+        numbering_provider=numbering_provider,
+    )
+
+    # Wire document subscription handler into the shared subscriber registry.
+    # When engine events fire (e.g. retail.sale.completed.v1), the handler
+    # will automatically issue the appropriate documents.
+    wire_all_subscriptions(
+        subscriber_registry,
+        document_service=document_issuance_service,
     )
 
     return HttpApiDependencies(

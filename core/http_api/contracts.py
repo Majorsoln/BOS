@@ -113,6 +113,31 @@ class IssueInvoiceHttpRequest:
 
 
 @dataclass(frozen=True)
+class IssueDocumentHttpRequest:
+    """
+    Generic document issue request — supports all 25 document types.
+    doc_type comes from the URL path (e.g. "proforma_invoice", "work_order").
+    """
+    business_id: uuid.UUID
+    actor: ActorMetadata | None
+    payload: dict
+    doc_type: str
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not isinstance(self.business_id, uuid.UUID):
+            raise ValueError("business_id must be UUID.")
+        if self.actor is not None and not isinstance(self.actor, ActorMetadata):
+            raise ValueError("actor must be ActorMetadata.")
+        if not isinstance(self.payload, dict):
+            raise ValueError("payload must be dict.")
+        if not isinstance(self.doc_type, str) or not self.doc_type:
+            raise ValueError("doc_type must be a non-empty string.")
+        if self.branch_id is not None and not isinstance(self.branch_id, uuid.UUID):
+            raise ValueError("branch_id must be UUID or None.")
+
+
+@dataclass(frozen=True)
 class FeatureFlagSetHttpRequest:
     business_id: uuid.UUID
     actor: ActorMetadata | None

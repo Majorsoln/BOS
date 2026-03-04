@@ -29,7 +29,9 @@ from core.document_issuance.registry import (
     DOC_INVOICE_ISSUE_REQUEST,
     DOC_QUOTE_ISSUE_REQUEST,
     DOC_RECEIPT_ISSUE_REQUEST,
+    resolve_command_type_for_doc_type,
     resolve_doc_type_for_issue_command,
+    resolve_issue_method_name_for_doc_type,
 )
 from core.document_issuance.repository import DocumentCursorError
 from core.http_api.auth.middleware import resolve_request_context
@@ -48,6 +50,7 @@ from core.http_api.contracts import (
     FeatureFlagClearHttpRequest,
     FeatureFlagSetHttpRequest,
     IdentityBootstrapHttpRequest,
+    IssueDocumentHttpRequest,
     IssueInvoiceHttpRequest,
     IssueQuoteHttpRequest,
     IssueReceiptHttpRequest,
@@ -1484,6 +1487,39 @@ def post_issue_invoice(
         headers=headers,
         command_type=DOC_INVOICE_ISSUE_REQUEST,
         issue_method_name="issue_invoice",
+    )
+
+
+def post_issue_document_by_type(
+    request: IssueDocumentHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Generic document issuance handler.
+
+    Accepts any VALID_DOCUMENT_TYPES value as doc_type (case-insensitive).
+    Maps doc_type → command_type + issue_method_name automatically.
+
+    URL: POST /docs/<doc_type>/issue
+    Body: {"business_id": "...", "payload": {...}, ...}
+    """
+    doc_type = request.doc_type.upper()
+    command_type = resolve_command_type_for_doc_type(doc_type)
+    if command_type is None:
+        return error_response(
+            code="INVALID_DOCUMENT_TYPE",
+            message=f"Unsupported document type: '{doc_type}'. "
+                    f"Check VALID_DOCUMENT_TYPES for the list of supported types.",
+            details={"doc_type": doc_type},
+        )
+    issue_method_name = resolve_issue_method_name_for_doc_type(doc_type)
+    return _post_issue_document(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        command_type=command_type,
+        issue_method_name=issue_method_name,
     )
 
 

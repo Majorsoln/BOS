@@ -29,6 +29,7 @@ from core.http_api.contracts import (
     FeatureFlagClearHttpRequest,
     FeatureFlagSetHttpRequest,
     IdentityBootstrapHttpRequest,
+    IssueDocumentHttpRequest,
     IssueInvoiceHttpRequest,
     IssueQuoteHttpRequest,
     IssueReceiptHttpRequest,
@@ -59,6 +60,7 @@ from core.http_api.handlers import (
     post_feature_flag_clear,
     post_feature_flag_set,
     post_identity_bootstrap,
+    post_issue_document_by_type,
     post_issue_invoice,
     post_issue_quote,
     post_issue_receipt,
@@ -355,6 +357,19 @@ def _issue_invoice_contract_factory(*, body, actor, business_id, branch_id):
     )
 
 
+def _make_issue_document_contract_factory(doc_type: str):
+    """Return a contract factory bound to a specific doc_type from the URL."""
+    def _factory(*, body, actor, business_id, branch_id):
+        return IssueDocumentHttpRequest(
+            business_id=business_id,
+            branch_id=branch_id,
+            actor=actor,
+            payload=_parse_payload_object(body.get("payload", {})),
+            doc_type=doc_type,
+        )
+    return _factory
+
+
 def _api_key_create_contract_factory(*, body, actor, business_id, branch_id):
     return ApiKeyCreateHttpRequest(
         business_id=business_id,
@@ -575,6 +590,22 @@ def issue_invoice_view(request: HttpRequest) -> JsonResponse:
     return _dispatch_write(
         post_issue_invoice,
         _issue_invoice_contract_factory,
+        request,
+    )
+
+
+@csrf_exempt
+def issue_document_type_view(request: HttpRequest, doc_type: str) -> JsonResponse:
+    """
+    Generic document issue endpoint for all 25 document types.
+    URL: POST /docs/<doc_type>/issue
+    e.g. /docs/proforma_invoice/issue, /docs/work_order/issue, /docs/folio/issue
+    """
+    if request.method != "POST":
+        return _method_not_allowed()
+    return _dispatch_write(
+        post_issue_document_by_type,
+        _make_issue_document_contract_factory(doc_type),
         request,
     )
 

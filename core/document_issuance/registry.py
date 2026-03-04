@@ -216,6 +216,28 @@ def resolve_event_type_for_issue_command(command_type: str) -> str | None:
     return _COMMAND_EVENT_TYPE_MAP.get(command_type)
 
 
+def resolve_command_type_for_doc_type(doc_type: str) -> str | None:
+    """
+    Compute the issue command type from a doc_type string.
+    e.g. "RECEIPT" → "doc.receipt.issue.request"
+         "PROFORMA_INVOICE" → "doc.proforma_invoice.issue.request"
+    Returns None if the derived command type is not registered.
+    """
+    command_type = f"doc.{doc_type.lower()}.issue.request"
+    if command_type in DOCUMENT_ISSUANCE_COMMAND_TYPES:
+        return command_type
+    return None
+
+
+def resolve_issue_method_name_for_doc_type(doc_type: str) -> str:
+    """
+    Compute the DocumentIssuanceService method name for a doc_type.
+    e.g. "RECEIPT" → "issue_receipt"
+         "PROFORMA_INVOICE" → "issue_proforma_invoice"
+    """
+    return f"issue_{doc_type.lower()}"
+
+
 def register_document_issuance_event_types(event_type_registry) -> None:
     for event_type in sorted(DOCUMENT_ISSUANCE_EVENT_TYPES):
         event_type_registry.register(event_type)

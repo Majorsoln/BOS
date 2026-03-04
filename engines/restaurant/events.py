@@ -14,6 +14,7 @@ RESTAURANT_ORDER_PLACED_V1 = "restaurant.order.placed.v1"
 RESTAURANT_ORDER_ITEM_SERVED_V1 = "restaurant.order.item_served.v1"
 RESTAURANT_ORDER_CANCELLED_V1 = "restaurant.order.cancelled.v1"
 RESTAURANT_BILL_SETTLED_V1 = "restaurant.bill.settled.v1"
+RESTAURANT_BILL_PRESENTED_V1 = "restaurant.bill.presented.v1"
 RESTAURANT_KITCHEN_TICKET_SENT_V1 = "restaurant.kitchen.ticket.sent.v1"
 RESTAURANT_BILL_SPLIT_V1 = "restaurant.bill.split.v1"
 
@@ -24,6 +25,7 @@ RESTAURANT_EVENT_TYPES = (
     RESTAURANT_ORDER_ITEM_SERVED_V1,
     RESTAURANT_ORDER_CANCELLED_V1,
     RESTAURANT_BILL_SETTLED_V1,
+    RESTAURANT_BILL_PRESENTED_V1,
     RESTAURANT_KITCHEN_TICKET_SENT_V1,
     RESTAURANT_BILL_SPLIT_V1,
 )
@@ -35,6 +37,7 @@ COMMAND_TO_EVENT_TYPE = {
     "restaurant.order.serve_item.request": RESTAURANT_ORDER_ITEM_SERVED_V1,
     "restaurant.order.cancel.request": RESTAURANT_ORDER_CANCELLED_V1,
     "restaurant.bill.settle.request": RESTAURANT_BILL_SETTLED_V1,
+    "restaurant.bill.present.request": RESTAURANT_BILL_PRESENTED_V1,
     "restaurant.kitchen.ticket.send.request": RESTAURANT_KITCHEN_TICKET_SENT_V1,
     "restaurant.bill.split.request": RESTAURANT_BILL_SPLIT_V1,
 }
@@ -144,6 +147,26 @@ def build_kitchen_ticket_sent_payload(command: Command) -> dict:
         "items": command.payload["items"],
         "sent_at": command.issued_at,
         "priority": command.payload.get("priority", "NORMAL"),
+    })
+    return payload
+
+
+def build_bill_presented_payload(command: Command) -> dict:
+    """
+    Fired when the waiter presents the bill to the table.
+    Provides the timing audit gap between 'check please' and settlement.
+    No document is generated — used for timing / service audit trail.
+    """
+    payload = _base_payload(command)
+    payload.update({
+        "bill_id":        command.payload["bill_id"],
+        "table_id":       command.payload["table_id"],
+        "table_name":     command.payload.get("table_name", ""),
+        "covers":         command.payload.get("covers", 0),
+        "server_id":      command.payload.get("server_id", command.actor_id),
+        "total_amount":   command.payload["total_amount"],
+        "currency":       command.payload["currency"],
+        "presented_at":   command.issued_at,
     })
     return payload
 
