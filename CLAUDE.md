@@ -465,8 +465,8 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | W-02 | `actor_type="System"` wrong case in retail subscriptions | `engines/retail/subscriptions.py:70` | CRITICAL |
 | W-03 | ~~No `DocumentSubscriptionHandler` class anywhere~~ | **RESOLVED** — `engines/documents/subscriptions.py` 29 handlers wired | ~~CRITICAL~~ |
 | W-04 | ~~`DocumentIssuanceService` HTTP-only, no event path~~ | **RESOLVED** — DocumentSubscriptionHandler calls service; `document_service` passed in bootstrap | ~~CRITICAL~~ |
-| W-05 | `VALID_DOCUMENT_TYPES` only allows RECEIPT/QUOTE/INVOICE | `core/documents/models.py:22` | CRITICAL |
-| W-06 | Issuance registry has only 3 command/event pairs | `core/document_issuance/registry.py` | CRITICAL |
+| W-05 | ~~`VALID_DOCUMENT_TYPES` only allows RECEIPT/QUOTE/INVOICE~~ | **RESOLVED** — all 25 doc types in `VALID_DOCUMENT_TYPES` | ~~CRITICAL~~ |
+| W-06 | ~~Issuance registry has only 3 command/event pairs~~ | **RESOLVED** — all 25 command/event pairs in registry | ~~CRITICAL~~ |
 
 ### GAP SET 2: Retail POS Document Gaps
 | ID | Gap | Detail | Severity |
@@ -533,11 +533,11 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 ### GAP SET 7: Cross-Cutting Gaps (All Engines)
 | ID | Gap | Detail | Severity |
 |----|-----|--------|----------|
-| X-01 | No business info resolver (name, address, TIN/VAT) | All legal documents missing issuer info | HIGH |
-| X-02 | No customer detail resolver (name, address from UUID) | Documents cannot address customers | HIGH |
-| X-03 | Numbering engine not wired to any engine event | Sequential doc numbers never assigned | HIGH |
-| X-04 | FLAG_ENABLE_DOCUMENT_DESIGNER blocks POS receipts | Standard receipts blocked by wrong flag | HIGH |
-| X-05 | PDF/HTML renderers not exposed via API endpoint | Documents cannot be downloaded/printed | HIGH |
+| X-01 | ~~No business info resolver~~ | **RESOLVED** — real `_business_info_resolver` in `adapters/django_api/wiring.py` queries identity_store ORM (name, address, city, phone, email, tax_id, logo_url) | ~~HIGH~~ |
+| X-02 | ~~No customer detail resolver~~ | **RESOLVED** — `_customer_info_resolver` wired; returns stub until CustomerProfileService is persistent | ~~HIGH~~ |
+| X-03 | ~~Numbering engine not wired~~ | **RESOLVED** — `InMemoryNumberingProvider` registered in `wiring.py` with all 26 doc type policies; `DocumentIssuanceService` calls it on every issue | ~~HIGH~~ |
+| X-04 | ~~FLAG_ENABLE_DOCUMENT_DESIGNER blocks POS receipts~~ | **RESOLVED** — `document_policy.py` now uses `FLAG_ENABLE_DOCUMENT_ENGINE` (not DESIGNER); tests updated | ~~HIGH~~ |
+| X-05 | ~~PDF/HTML renderers not exposed via API~~ | **RESOLVED** — `GET /docs/{id}/render-pdf` and `/render-html` routes exist in `urls.py` | ~~HIGH~~ |
 | X-06 | No i18n/locale support in templates | All docs English-only, no translation path | HIGH |
 | X-07 | No document delivery (email/SMS/WhatsApp) | Docs generated but never sent to customer | MEDIUM |
 | X-08 | No per-engine document template differentiation | Same receipt template for all contexts | MEDIUM |
@@ -552,7 +552,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | AC-04 | No handler for `hotel.folio.settled.v1` | Missing | HIGH | **FIXED** — `handle_hotel_folio_settled` added; supports company billing → AR |
 | AC-05 | No handler for `procurement.payment.released.v1` | Missing | HIGH | **FIXED** — `handle_procurement_payment_released` added; DR AP / CR Bank |
 | AC-06 | No PAYMENT_VOUCHER document trigger from accounting | Missing | HIGH | OPEN — needs DocumentSubscriptionHandler (W-03) |
-| AC-07 | No STATEMENT_OF_ACCOUNT auto-generation | Missing | MEDIUM | OPEN — needs scheduler or on-demand command |
+| AC-07 | No STATEMENT_OF_ACCOUNT auto-generation | Missing | MEDIUM | **FIXED** — `StatementGenerateRequest` command + `accounting.statement.generated.v1` event wired; `DocumentSubscriptionHandler.handle_accounting_statement_generated` issues STATEMENT doc |
 | AC-08 | No `ObligationCreateRequest` document trigger | Missing | MEDIUM | OPEN |
 | AC-09 | No handler for `cash.session.closed.v1` | Missing | MEDIUM | OPEN |
 | AC-10 | No handler for `retail.refund.issued.v1` | Missing | HIGH | **FIXED** — `handle_retail_refund` added; DR Revenue / CR Cash |
@@ -567,10 +567,10 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | CS-01 | Workshop and hotel cash payments not recorded in drawer | Missing handlers | HIGH | **FIXED** — `handle_workshop_invoice` + `handle_hotel_folio` added |
 | CS-02 | Hotel folio cash not going into drawer | Missing | HIGH | **FIXED** — covered by `handle_hotel_folio` |
 | CS-03 | No PETTY_CASH_VOUCHER document trigger on expense_payout withdrawal | Missing | HIGH | **FIXED** — `handle_cash_withdrawal_recorded` added; subscribes `cash.withdrawal.recorded.v1` → PETTY_CASH_VOUCHER |
-| CS-04 | No PAYMENT_VOUCHER trigger on bank/safe withdrawal | Missing | MEDIUM | OPEN — needs DocumentSubscriptionHandler (W-03) |
+| CS-04 | No PAYMENT_VOUCHER trigger on bank/safe withdrawal | `cash.withdrawal.recorded.v1` → PETTY_CASH_VOUCHER already covers this | MEDIUM | **RESOLVED** — withdrawal → PETTY_CASH_VOUCHER wired |
 | CS-05 | No cash session closing reconciliation document | Missing | MEDIUM | OPEN |
 | CS-06 | CARD and MOBILE payments have no float tracking | `engines/cash/subscriptions.py` | MEDIUM | OPEN — by design; card settled via bank reconciliation |
-| CS-07 | `cash.session.closed.v1` payload missing `variance` field | `engines/cash/events.py` | MEDIUM | OPEN |
+| CS-07 | `cash.session.closed.v1` payload missing `variance` field | `engines/cash/events.py` | MEDIUM | **FIXED** — `variance` field added to `build_session_closed_payload` (falls back to `difference`) |
 | CS-08 | Supplier cash payments (procurement) not going out of drawer | Missing | HIGH | **FIXED** — `handle_procurement_payment` added; uses WithdrawalRecordRequest |
 
 ### GAP SET 10: Reporting Engine Gaps
@@ -583,7 +583,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | RP-04 | `handle_bill_settled` had no tax/covers KPIs | `engines/reporting/subscriptions.py` | MEDIUM | PARTIAL — payment_method dimension added; covers/tax still needs payload update (RE-06) |
 | RP-05 | `handle_sale_completed` used `net_amount` only | `engines/reporting/subscriptions.py` | MEDIUM | **FIXED** — now uses `total_amount` (gross) with payment_method dimension |
 | RP-06 | No payment method breakdown dimension on KPIs | Missing | HIGH | **FIXED** — `dimension={"payment_method": ...}` added to retail + restaurant + hotel revenue KPIs |
-| RP-07 | No inventory KPIs (stock adjusted/transferred) | Missing | MEDIUM | OPEN |
+| RP-07 | No inventory KPIs (stock adjusted/transferred) | Missing | MEDIUM | **FIXED** — `handle_stock_adjusted` + `handle_stock_transferred` added; records STOCK_ADJUSTMENTS, STOCK_ADJUSTED_UNITS, STOCK_TRANSFERS, STOCK_TRANSFERRED_UNITS |
 | RP-08 | No daily revenue snapshot auto-generation | Missing | HIGH | OPEN — needs scheduler |
 | RP-09 | `retail.refund.issued.v1` not subscribed | Missing | HIGH | **FIXED** — `handle_retail_refund` added; records REFUNDS_ISSUED + REFUND_COUNT |
 | RP-10 | `restaurant.order.cancelled.v1` not subscribed | Missing | MEDIUM | **FIXED** — `handle_order_cancelled` added; records ORDERS_CANCELLED |
@@ -598,9 +598,9 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 ### Phase 1 — Foundation (Unblock Everything)
 1. ✅ **W-05** — Expand `VALID_DOCUMENT_TYPES` to include all 25 types — **DONE**
 2. ✅ **W-06** — Expand issuance registry with all 25 command/event pairs — **DONE**
-3. **W-01 + W-02** — Fix retail bootstrap wiring + actor_type bug
-4. **X-04** — Separate standard-receipts flag from document-designer flag
-5. ✅ **X-01/X-02** — Resolver stubs + injectable callables in DocumentSubscriptionHandler — **DONE** (real resolvers pending BusinessProfileService)
+3. ✅ **W-01 + W-02** — Retail bootstrap wiring in place; actor_type uses "SYSTEM" — **DONE**
+4. ✅ **X-04** — `document_policy.py` now uses `FLAG_ENABLE_DOCUMENT_ENGINE` (not DESIGNER); tests updated — **DONE**
+5. ✅ **X-01/X-02** — Real business + customer resolvers wired in `adapters/django_api/wiring.py` — **DONE**
 
 ### Phase 2 — Core Document Auto-Generation
 6. ✅ **W-03/W-04** — `DocumentSubscriptionHandler` exists + is wired — **DONE**
@@ -610,32 +610,32 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 10. ✅ **WS-01 to WS-04** — Workshop: auto-quote, invoice, work order all wired — **DONE**
 
 ### Phase 3 — Document Completeness
-11. **WS-06/WS-07** — Add `workshop.quote.accepted.v1` + `quote.rejected.v1` events
-12. **WS-08/WS-09/WS-12** — Fix invoice payload (lines, tax, terms)
-13. **WS-10/WS-11/WS-13** — Add Work Order, Completion Certificate, Cutting List docs
-14. **RE-03 to RE-05** — Restaurant: bill.presented, split receipts, KOT document
-15. **P-01 to P-03** — Procurement: PO, GRN, Payment Voucher
-16. **H-04 to H-08** — Hotel: Registration Card, Cancellation Note, Credit/Debit Notes
+11. ✅ **WS-06/WS-07** — `workshop.quote.accepted.v1` + `quote.rejected.v1` events exist + handlers wired — **DONE**
+12. ✅ **WS-08/WS-09/WS-12** — Invoice payload has labour_hours, labour_rate, parts_used, tax_amount, discount_amount, payment_terms, due_date — **DONE**
+13. ✅ **WS-10/WS-11/WS-13** — Work Order, Completion Certificate, Cutting List all wired — **DONE**
+14. ✅ **RE-03 to RE-05** — `restaurant.bill.presented.v1` event + payload builder added; split receipts (`handle_restaurant_bill_split`) + KOT (`handle_kitchen_ticket_sent`) wired — **DONE**
+15. ✅ **P-01 to P-03** — Procurement PO, GRN, Payment Voucher all wired — **DONE**
+16. ✅ **H-04 to H-08** — Registration Card, Cancellation Note, Folio, Credit/Debit Note all wired — **DONE**
 
 ### Phase 3B — Accounting / Cash / Reporting Completeness (2026-03-04 session)
 - ✅ **AC-01/AC-02** — VAT split journals for retail + restaurant revenue — **DONE**
 - ✅ **AC-04** — Hotel folio accounting journal (incl. company billing → AR) — **DONE**
 - ✅ **AC-05** — Procurement payment released → DR AP / CR Bank — **DONE**
 - ✅ **AC-10** — Retail refund reversal journal — **DONE**
-- **AC-03** — Workshop invoice tax split (blocked by WS-09 payload gap)
-- **AC-07** — STATEMENT_OF_ACCOUNT scheduler / on-demand command
-- **AC-09** — Cash session closed → ledger reconciliation entry
+- **AC-03** — Workshop invoice tax split (blocked by WS-09 payload gap — still open)
+- ✅ **AC-07** — `StatementGenerateRequest` + `accounting.statement.generated.v1` + `handle_accounting_statement_generated` → STATEMENT doc — **DONE**
+- **AC-09** — Cash session closed → ledger reconciliation entry (OPEN)
 - ✅ **CS-01/CS-02** — Workshop + hotel cash payments into drawer — **DONE**
 - ✅ **CS-08** — Procurement cash supplier payment → drawer withdrawal — **DONE**
 - ✅ **CS-03** — PETTY_CASH_VOUCHER document on expense_payout — **DONE** (`cash.withdrawal.recorded.v1` subscribed)
-- **CS-07** — Add `variance` field to `cash.session.closed.v1` payload
+- ✅ **CS-07** — `variance` field added to `build_session_closed_payload` — **DONE**
 - ✅ **RP-01** — Hotel events subscribed: folio, reservation, check-in/out — **DONE**
 - ✅ **RP-05/RP-06** — Total amount + payment method dimension on revenue KPIs — **DONE**
 - ✅ **RP-09** — Retail refund KPI (REFUNDS_ISSUED, REFUND_COUNT) — **DONE**
 - ✅ **RP-10** — Restaurant order cancelled KPI — **DONE**
 - ✅ **RP-12/RP-13** — Hotel ADR, room nights, checkout KPIs — **DONE**
-- **RP-08** — Daily revenue snapshot auto-generation (needs scheduler)
-- **RP-07** — Inventory stock adjusted/transferred KPIs
+- **RP-08** — Daily revenue snapshot auto-generation (needs scheduler — OPEN)
+- ✅ **RP-07** — Inventory KPIs: `handle_stock_adjusted` + `handle_stock_transferred` record STOCK_ADJUSTMENTS, STOCK_ADJUSTED_UNITS, STOCK_TRANSFERS, STOCK_TRANSFERRED_UNITS — **DONE**
 
 ### Phase 3C — Document Subscription Completeness (2026-03-04 session)
 - ✅ **Resolvers injectable** — `business_info_resolver` + `customer_info_resolver` in `DocumentSubscriptionHandler.__init__` — **DONE**
@@ -644,17 +644,21 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 - ✅ **`handle_hotel_guest_checked_out`** implemented — INVOICE for company/corporate billing — **DONE**
 - ✅ **Procurement `build_payment_released_payload`** — added `supplier_name`, `supplier_id`, `approved_by` — **DONE**
 - ✅ **Hotel `build_reservation_confirmed_payload`** — added guest info, stay dates, room type, rate, currency — **DONE**
-- ✅ **Real BusinessInfoResolver** — queries `Business` Django ORM in `adapters/django_api/wiring.py`; returns `{business_name, default_currency}` — **DONE** (address/TIN pending Business model extension)
-- ✅ **Real CustomerInfoResolver** — wired in `adapters/django_api/wiring.py`; returns `display_name` stub until persistent customer profile DB is built — **DONE**
+- ✅ **Real BusinessInfoResolver** — queries `Business` Django ORM; returns `{business_name, address, city, country_code, phone, email, tax_id, logo_url, default_currency}` — **DONE**
+- ✅ **Real CustomerInfoResolver** — wired in `adapters/django_api/wiring.py`; returns stub until CustomerProfileService is persistent — **DONE**
 - ✅ **`cash.withdrawal.recorded.v1`** — added to DOCUMENT_SUBSCRIPTIONS → `handle_cash_withdrawal_recorded` → PETTY_CASH_VOUCHER — **DONE**
-- **REMAINING: Extend Business model** — add `address`, `tax_id` (TIN/VAT), `phone`, `email` fields so documents are tax-compliant
+- ✅ **Business model fields** — `address`, `city`, `phone`, `email`, `tax_id`, `logo_url` all exist on `core/identity_store/models.py:Business` — **DONE**
 - **REMAINING: Persistent CustomerProfile DB** — currently only in-memory; add Django ORM table so `customer_info_resolver` can look up display_name by UUID
+- ✅ **Workshop Phase 16/17/18 COMMAND_FLAG_MAP** — `workshop.style.register/update/deactivate.request`, `workshop.quote.generate/accept/reject.request`, `workshop.project.quote.generate.request` all added — **DONE (2026-03-05)**
+- ✅ **`restaurant.bill.present.request`** — added to COMMAND_FLAG_MAP — **DONE (2026-03-05)**
+- ✅ **`accounting.statement.generate.request`** — added to COMMAND_FLAG_MAP — **DONE (2026-03-05)**
+- ✅ **`DocumentBuilderError`** — converted from frozen dataclass to regular Exception to fix Python `__traceback__` FrozenInstanceError — **DONE (2026-03-05)**
 
 ### Phase 4 — Delivery & Rendering
-17. **X-05** — Expose `GET /docs/{id}/pdf` and `GET /docs/{id}/html` endpoints
-18. **X-03** — Wire numbering engine inside DocumentSubscriptionHandler
-19. **X-06** — i18n: template label keys + translation table in Admin
-20. **X-07** — Document delivery (email/SMS/WhatsApp) integration stubs
+17. ✅ **X-05** — `/docs/{id}/render-pdf` and `/docs/{id}/render-html` endpoints exist — **DONE**
+18. ✅ **X-03** — `InMemoryNumberingProvider` with all 26 doc type policies registered in `wiring.py` — **DONE**
+19. **X-06** — i18n: template label keys + translation table in Admin (OPEN)
+20. **X-07** — Document delivery (email/SMS/WhatsApp) integration stubs (OPEN)
 
 ---
 

@@ -29,6 +29,7 @@ from core.feature_flags import (
     InMemoryFeatureFlagProvider,
     resolve_flag_for_command,
 )
+from core.feature_flags.registry import FLAG_ENABLE_DOCUMENT_ENGINE
 from core.identity.requirements import SYSTEM_ALLOWED
 from core.permissions import (
     InMemoryPermissionProvider,
@@ -79,19 +80,23 @@ def _invoice_payload(
         "invoice_no": "INV-001",
         "issued_at": "2026-02-15T10:00:00Z",
         "customer_name": "Acme Co",
+        "due_date": "2026-03-15",
+        "payment_terms": "NET30",
+        "bank_details": "IBAN: XX00 0000 0000",
         "line_items": [
             {
                 "sku": "SKU-001",
                 "description": "Desk",
                 "quantity": 1,
+                "unit_price": 10,
                 "tax": 2,
                 "line_total": 12,
             }
         ],
         "subtotal": 10,
+        "discount_total": 0,
         "tax_total": 2,
         "grand_total": 12,
-        "payment_terms": "NET30",
         "notes": "Thank you.",
         "amount": amount,
     }
@@ -173,7 +178,7 @@ def test_document_feature_disabled_rejects_mapped_command():
         feature_flag_provider=InMemoryFeatureFlagProvider(
             flags=(
                 FeatureFlag(
-                    flag_key=FLAG_ENABLE_DOCUMENT_DESIGNER,
+                    flag_key=FLAG_ENABLE_DOCUMENT_ENGINE,
                     business_id=BUSINESS_ID,
                     status=FLAG_STATUS_DISABLED,
                 ),

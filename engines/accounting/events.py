@@ -22,6 +22,7 @@ ACCOUNTING_JOURNAL_REVERSED_V1 = "accounting.journal.reversed.v1"
 ACCOUNTING_ACCOUNT_CREATED_V1 = "accounting.account.created.v1"
 ACCOUNTING_OBLIGATION_CREATED_V1 = "accounting.obligation.created.v1"
 ACCOUNTING_OBLIGATION_FULFILLED_V1 = "accounting.obligation.fulfilled.v1"
+ACCOUNTING_STATEMENT_GENERATED_V1 = "accounting.statement.generated.v1"
 
 ACCOUNTING_EVENT_TYPES = (
     ACCOUNTING_JOURNAL_POSTED_V1,
@@ -29,6 +30,7 @@ ACCOUNTING_EVENT_TYPES = (
     ACCOUNTING_ACCOUNT_CREATED_V1,
     ACCOUNTING_OBLIGATION_CREATED_V1,
     ACCOUNTING_OBLIGATION_FULFILLED_V1,
+    ACCOUNTING_STATEMENT_GENERATED_V1,
 )
 
 
@@ -42,6 +44,7 @@ COMMAND_TO_EVENT_TYPE = {
     "accounting.account.create.request": ACCOUNTING_ACCOUNT_CREATED_V1,
     "accounting.obligation.create.request": ACCOUNTING_OBLIGATION_CREATED_V1,
     "accounting.obligation.fulfill.request": ACCOUNTING_OBLIGATION_FULFILLED_V1,
+    "accounting.statement.generate.request": ACCOUNTING_STATEMENT_GENERATED_V1,
 }
 
 
@@ -131,5 +134,28 @@ def build_obligation_fulfilled_payload(command: Command) -> dict:
         "currency": command.payload["currency"],
         "reference_id": command.payload.get("reference_id"),
         "fulfilled_at": command.issued_at,
+    })
+    return payload
+
+
+def build_statement_generated_payload(command: Command) -> dict:
+    """
+    Payload for on-demand statement-of-account generation.
+    line_items are pre-built by the caller (service or admin action) from
+    the customer's transaction history over the specified period.
+    """
+    payload = _base_payload(command)
+    payload.update({
+        "statement_id":    command.payload["statement_id"],
+        "customer_id":     command.payload.get("customer_id"),
+        "period_from":     command.payload["period_from"],
+        "period_to":       command.payload["period_to"],
+        "line_items":      command.payload.get("line_items", []),
+        "opening_balance": command.payload.get("opening_balance", 0),
+        "total_debit":     command.payload.get("total_debit", 0),
+        "total_credit":    command.payload.get("total_credit", 0),
+        "closing_balance": command.payload.get("closing_balance", 0),
+        "currency":        command.payload.get("currency", ""),
+        "generated_at":    command.issued_at,
     })
     return payload

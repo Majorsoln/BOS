@@ -6,7 +6,6 @@ BOS Documents - Deterministic Template Resolver and Render Plan Builder
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
 from typing import Any, Optional
 
 from core.commands.rejection import ReasonCode
@@ -19,10 +18,11 @@ from core.documents.models import (
 from core.documents.provider import DocumentProvider
 
 
-@dataclass(frozen=True)
 class DocumentBuilderError(Exception):
-    code: str
-    message: str
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"[{code}] {message}")
+        self.code = code
+        self.message = message
 
     def __str__(self) -> str:
         return f"[{self.code}] {self.message}"

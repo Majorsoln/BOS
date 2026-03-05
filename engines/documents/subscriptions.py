@@ -79,6 +79,9 @@ DOCUMENT_SUBSCRIPTIONS: Dict[str, str] = {
 
     # Cash
     "cash.withdrawal.recorded.v1":       "handle_cash_withdrawal_recorded",
+
+    # Accounting — on-demand statement of account
+    "accounting.statement.generated.v1": "handle_accounting_statement_generated",
 }
 
 
@@ -961,3 +964,38 @@ class DocumentSubscriptionHandler:
             "issued_at":     p.get("recorded_at"),
         }
         self._issue_doc("issue_petty_cash_voucher", business_id=business_id, branch_id=branch_id, payload=payload)
+
+    # ── ACCOUNTING ────────────────────────────────────────────────
+
+    def handle_accounting_statement_generated(self, event_data: dict) -> None:
+        """
+        accounting.statement.generated.v1 → STATEMENT
+
+        Triggered when an admin or scheduled job calls
+        accounting.statement.generate.request for a customer account.
+        Converts the pre-computed ledger snapshot into a STATEMENT document.
+        """
+        p = event_data.get("payload", {})
+        business_id = p.get("business_id")
+        branch_id = p.get("branch_id")
+        if not business_id:
+            return
+
+        biz = self._resolve_biz(str(business_id))
+        customer = self._resolve_cust(p.get("customer_id"))
+
+        payload = {
+            **biz,
+            **customer,
+            "statement_id":    p.get("statement_id"),
+            "period_from":     p.get("period_from", ""),
+            "period_to":       p.get("period_to", ""),
+            "line_items":      p.get("line_items", []),
+            "opening_balance": p.get("opening_balance", 0),
+            "total_debit":     p.get("total_debit", 0),
+            "total_credit":    p.get("total_credit", 0),
+            "closing_balance": p.get("closing_balance", 0),
+            "currency":        p.get("currency", ""),
+            "issued_at":       p.get("generated_at"),
+        }
+        self._issue_doc("issue_statement", business_id=business_id, branch_id=branch_id, payload=payload)

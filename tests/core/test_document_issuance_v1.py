@@ -28,6 +28,7 @@ from core.feature_flags import (
 from core.feature_flags.registry import (
     FLAG_ENABLE_COMPLIANCE_ENGINE,
     FLAG_ENABLE_DOCUMENT_DESIGNER,
+    FLAG_ENABLE_DOCUMENT_ENGINE,
 )
 from core.http_api.auth.provider import AuthPrincipal, InMemoryAuthProvider
 from core.http_api.contracts import ActorMetadata, IssueReceiptHttpRequest
@@ -158,6 +159,8 @@ def _receipt_render_inputs() -> dict:
         "receipt_no": "RCT-001",
         "issued_at": "2026-02-18T10:00:00Z",
         "cashier": "Alice",
+        "customer_name": "Walk-in Customer",
+        "payment_method": "CASH",
         "line_items": (
             {
                 "name": "Item A",
@@ -167,6 +170,7 @@ def _receipt_render_inputs() -> dict:
             },
         ),
         "subtotal": 10,
+        "discount_total": 0,
         "tax_total": 1,
         "grand_total": 11,
         "notes": "Paid",
@@ -300,7 +304,7 @@ def test_feature_disabled_rejects_with_document_feature_code():
         feature_flag_provider=InMemoryFeatureFlagProvider(
             flags=(
                 FeatureFlag(
-                    flag_key=FLAG_ENABLE_DOCUMENT_DESIGNER,
+                    flag_key=FLAG_ENABLE_DOCUMENT_ENGINE,
                     business_id=BUSINESS_ID,
                     status=FEATURE_DISABLED,
                 ),

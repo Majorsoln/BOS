@@ -25,6 +25,7 @@ ACCOUNTING_JOURNAL_REVERSE_REQUEST = "accounting.journal.reverse.request"
 ACCOUNTING_ACCOUNT_CREATE_REQUEST = "accounting.account.create.request"
 ACCOUNTING_OBLIGATION_CREATE_REQUEST = "accounting.obligation.create.request"
 ACCOUNTING_OBLIGATION_FULFILL_REQUEST = "accounting.obligation.fulfill.request"
+ACCOUNTING_STATEMENT_GENERATE_REQUEST = "accounting.statement.generate.request"
 
 ACCOUNTING_COMMAND_TYPES = frozenset({
     ACCOUNTING_JOURNAL_POST_REQUEST,
@@ -32,6 +33,7 @@ ACCOUNTING_COMMAND_TYPES = frozenset({
     ACCOUNTING_ACCOUNT_CREATE_REQUEST,
     ACCOUNTING_OBLIGATION_CREATE_REQUEST,
     ACCOUNTING_OBLIGATION_FULFILL_REQUEST,
+    ACCOUNTING_STATEMENT_GENERATE_REQUEST,
 })
 
 VALID_ACCOUNT_TYPES = frozenset({
@@ -316,6 +318,75 @@ class ObligationFulfillRequest:
                 "amount": self.amount,
                 "currency": self.currency,
                 "reference_id": self.reference_id,
+            },
+            issued_at=issued_at,
+            correlation_id=correlation_id,
+            source_engine="accounting",
+            scope_requirement=SCOPE_BUSINESS_ALLOWED,
+            actor_requirement=ACTOR_REQUIRED,
+        )
+
+
+@dataclass(frozen=True)
+class StatementGenerateRequest:
+    """
+    On-demand request to generate a Statement of Account for a customer.
+
+    The caller is responsible for pre-computing the line_items from the
+    customer's transaction history for the given period.
+    On success the accounting engine emits accounting.statement.generated.v1
+    which the DocumentSubscriptionHandler converts into a STATEMENT document.
+    """
+    statement_id: str
+    period_from: str          # ISO date string e.g. "2026-01-01"
+    period_to: str            # ISO date string e.g. "2026-01-31"
+    currency: str
+    customer_id: Optional[str] = None
+    line_items: tuple = ()    # list of {date, description, debit, credit, balance}
+    opening_balance: int = 0
+    total_debit: int = 0
+    total_credit: int = 0
+    closing_balance: int = 0
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.statement_id:
+            raise ValueError("statement_id must be non-empty.")
+        if not self.period_from:
+            raise ValueError("period_from must be non-empty.")
+        if not self.period_to:
+            raise ValueError("period_to must be non-empty.")
+        if not self.currency or len(self.currency) != 3:
+            raise ValueError("currency must be 3-letter ISO 4217 code.")
+
+    def to_command(
+        self,
+        *,
+        business_id: uuid.UUID,
+        actor_type: str,
+        actor_id: str,
+        command_id: uuid.UUID,
+        correlation_id: uuid.UUID,
+        issued_at: datetime,
+    ) -> Command:
+        return Command(
+            command_id=command_id,
+            command_type=ACCOUNTING_STATEMENT_GENERATE_REQUEST,
+            business_id=business_id,
+            branch_id=self.branch_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            payload={
+                "statement_id":    self.statement_id,
+                "customer_id":     self.customer_id,
+                "period_from":     self.period_from,
+                "period_to":       self.period_to,
+                "line_items":      list(self.line_items),
+                "opening_balance": self.opening_balance,
+                "total_debit":     self.total_debit,
+                "total_credit":    self.total_credit,
+                "closing_balance": self.closing_balance,
+                "currency":        self.currency,
             },
             issued_at=issued_at,
             correlation_id=correlation_id,

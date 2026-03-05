@@ -22,6 +22,7 @@ from engines.accounting.events import (
     build_account_created_payload,
     build_obligation_created_payload,
     build_obligation_fulfilled_payload,
+    build_statement_generated_payload,
 )
 
 
@@ -123,6 +124,7 @@ PAYLOAD_BUILDERS = {
     "accounting.account.create.request": build_account_created_payload,
     "accounting.obligation.create.request": build_obligation_created_payload,
     "accounting.obligation.fulfill.request": build_obligation_fulfilled_payload,
+    "accounting.statement.generate.request": build_statement_generated_payload,
 }
 
 

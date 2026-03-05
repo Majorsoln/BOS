@@ -86,6 +86,7 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "accounting.account.create.request": FLAG_ENABLE_ACCOUNTING_ENGINE,
     "accounting.obligation.create.request": FLAG_ENABLE_ACCOUNTING_ENGINE,
     "accounting.obligation.fulfill.request": FLAG_ENABLE_ACCOUNTING_ENGINE,
+    "accounting.statement.generate.request": FLAG_ENABLE_ACCOUNTING_ENGINE,
 
     # ── Cash Engine ───────────────────────────────────────────
     "cash.session.open.request": FLAG_ENABLE_CASH_ENGINE,
@@ -141,6 +142,19 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "workshop.cutlist.generate.request": FLAG_ENABLE_WORKSHOP_ENGINE,
     "workshop.material.consume.request": FLAG_ENABLE_WORKSHOP_ENGINE,
     "workshop.offcut.record.request": FLAG_ENABLE_WORKSHOP_ENGINE,
+    # Phase 16 — Style Registry & Quote Engine
+    "workshop.style.register.request": FLAG_ENABLE_WORKSHOP_ENGINE,
+    "workshop.style.update.request": FLAG_ENABLE_WORKSHOP_ENGINE,
+    "workshop.style.deactivate.request": FLAG_ENABLE_WORKSHOP_ENGINE,
+    "workshop.quote.generate.request": FLAG_ENABLE_WORKSHOP_ENGINE,
+    # Phase 17 — Multi-Item Project Quotes
+    "workshop.project.quote.generate.request": FLAG_ENABLE_WORKSHOP_ENGINE,
+    # Phase 18 — Quote Acceptance / Rejection
+    "workshop.quote.accept.request": FLAG_ENABLE_WORKSHOP_ENGINE,
+    "workshop.quote.reject.request": FLAG_ENABLE_WORKSHOP_ENGINE,
+
+    # ── Restaurant Engine (additional) ───────────────────────
+    "restaurant.bill.present.request": FLAG_ENABLE_RESTAURANT_ENGINE,
 
     # ── Promotion Engine ──────────────────────────────────────
     "promotion.campaign.create.request": FLAG_ENABLE_PROMOTION_ENGINE,
