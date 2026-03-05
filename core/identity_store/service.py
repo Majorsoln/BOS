@@ -15,6 +15,7 @@ from django.db import IntegrityError, transaction
 
 from core.identity_store.models import (
     Actor,
+    ActorStatus,
     Branch,
     Business,
     IdentityActorType,
@@ -27,14 +28,25 @@ from core.permissions.constants import (
     PERMISSION_CASH_MOVE,
     PERMISSION_CMD_EXECUTE_GENERIC,
     PERMISSION_DOC_ISSUE,
+    PERMISSION_HR_MANAGE,
+    PERMISSION_HOTEL_MANAGE,
+    PERMISSION_INVENTORY_AUDIT,
     PERMISSION_INVENTORY_MOVE,
     PERMISSION_POS_SELL,
+    PERMISSION_PROCUREMENT_APPROVE,
+    PERMISSION_REPORTING_VIEW,
+    PERMISSION_RESTAURANT_SERVE,
+    PERMISSION_WORKSHOP_MANAGE,
     VALID_PERMISSIONS,
 )
 from core.permissions_store.models import RolePermission
 
 DEFAULT_ADMIN_ROLE = "ADMIN"
 DEFAULT_CASHIER_ROLE = "CASHIER"
+DEFAULT_WAITER_ROLE = "WAITER"
+DEFAULT_WORKSHOP_ROLE = "WORKSHOP_TECHNICIAN"
+DEFAULT_HOTEL_ROLE = "HOTEL_FRONTDESK"
+DEFAULT_PROCUREMENT_ROLE = "PROCUREMENT_OFFICER"
 
 DEFAULT_ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     DEFAULT_ADMIN_ROLE: tuple(
@@ -44,8 +56,15 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
                 PERMISSION_CASH_MOVE,
                 PERMISSION_CMD_EXECUTE_GENERIC,
                 PERMISSION_DOC_ISSUE,
+                PERMISSION_HR_MANAGE,
+                PERMISSION_HOTEL_MANAGE,
+                PERMISSION_INVENTORY_AUDIT,
                 PERMISSION_INVENTORY_MOVE,
                 PERMISSION_POS_SELL,
+                PERMISSION_PROCUREMENT_APPROVE,
+                PERMISSION_REPORTING_VIEW,
+                PERMISSION_RESTAURANT_SERVE,
+                PERMISSION_WORKSHOP_MANAGE,
             }
         )
     ),
@@ -54,7 +73,41 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
             {
                 PERMISSION_CASH_MOVE,
                 PERMISSION_DOC_ISSUE,
+                PERMISSION_INVENTORY_MOVE,
                 PERMISSION_POS_SELL,
+            }
+        )
+    ),
+    DEFAULT_WAITER_ROLE: tuple(
+        sorted(
+            {
+                PERMISSION_DOC_ISSUE,
+                PERMISSION_RESTAURANT_SERVE,
+            }
+        )
+    ),
+    DEFAULT_WORKSHOP_ROLE: tuple(
+        sorted(
+            {
+                PERMISSION_DOC_ISSUE,
+                PERMISSION_INVENTORY_MOVE,
+                PERMISSION_WORKSHOP_MANAGE,
+            }
+        )
+    ),
+    DEFAULT_HOTEL_ROLE: tuple(
+        sorted(
+            {
+                PERMISSION_DOC_ISSUE,
+                PERMISSION_HOTEL_MANAGE,
+            }
+        )
+    ),
+    DEFAULT_PROCUREMENT_ROLE: tuple(
+        sorted(
+            {
+                PERMISSION_DOC_ISSUE,
+                PERMISSION_PROCUREMENT_APPROVE,
             }
         )
     ),
@@ -227,6 +280,13 @@ def _upsert_business(
     name: str,
     default_currency: str,
     default_language: str,
+    address: str = "",
+    city: str = "",
+    country_code: str = "",
+    phone: str = "",
+    email: str = "",
+    tax_id: str = "",
+    logo_url: str = "",
 ) -> Business:
     business, created = Business.objects.get_or_create(
         business_id=business_id,
@@ -234,21 +294,34 @@ def _upsert_business(
             "name": name,
             "default_currency": default_currency,
             "default_language": default_language,
+            "address": address,
+            "city": city,
+            "country_code": country_code,
+            "phone": phone,
+            "email": email,
+            "tax_id": tax_id,
+            "logo_url": logo_url,
         },
     )
     if created:
         return business
 
     update_fields: list[str] = []
-    if business.name != name:
-        business.name = name
-        update_fields.append("name")
-    if business.default_currency != default_currency:
-        business.default_currency = default_currency
-        update_fields.append("default_currency")
-    if business.default_language != default_language:
-        business.default_language = default_language
-        update_fields.append("default_language")
+    for field_name, new_val in (
+        ("name", name),
+        ("default_currency", default_currency),
+        ("default_language", default_language),
+        ("address", address),
+        ("city", city),
+        ("country_code", country_code),
+        ("phone", phone),
+        ("email", email),
+        ("tax_id", tax_id),
+        ("logo_url", logo_url),
+    ):
+        if getattr(business, field_name) != new_val:
+            setattr(business, field_name, new_val)
+            update_fields.append(field_name)
     if update_fields:
         update_fields.append("updated_at")
         business.save(update_fields=update_fields)
@@ -468,6 +541,13 @@ def serialize_business(business: Business) -> dict[str, Any]:
         "name": business.name,
         "default_currency": business.default_currency,
         "default_language": business.default_language,
+        "address": business.address,
+        "city": business.city,
+        "country_code": business.country_code,
+        "phone": business.phone,
+        "email": business.email,
+        "tax_id": business.tax_id,
+        "logo_url": business.logo_url,
     }
 
 
@@ -516,6 +596,7 @@ def serialize_actor(
         "actor_id": actor.actor_id,
         "actor_type": actor.actor_type,
         "display_name": actor.display_name or None,
+        "status": actor.status,
         "assignments": assignments,
     }
 
@@ -530,6 +611,13 @@ def bootstrap_identity(
     branches: Iterable[Mapping[str, Any]] | None = None,
     admin_actor_id: str | None = None,
     cashier_actor_id: str | None = None,
+    address: str = "",
+    city: str = "",
+    country_code: str = "",
+    phone: str = "",
+    email: str = "",
+    tax_id: str = "",
+    logo_url: str = "",
 ) -> dict[str, Any]:
     canonical_business_id = _canonical_uuid(business_id, field_name="business_id")
     canonical_business_name = _clean_string(business_name, field_name="business_name")
@@ -541,6 +629,13 @@ def bootstrap_identity(
         name=canonical_business_name,
         default_currency=canonical_currency,
         default_language=canonical_language,
+        address=_clean_optional_string(address, default=""),
+        city=_clean_optional_string(city, default=""),
+        country_code=_clean_optional_string(country_code, default=""),
+        phone=_clean_optional_string(phone, default=""),
+        email=_clean_optional_string(email, default=""),
+        tax_id=_clean_optional_string(tax_id, default=""),
+        logo_url=_clean_optional_string(logo_url, default=""),
     )
 
     branch_specs = _normalize_branch_specs(
@@ -793,3 +888,34 @@ def list_actors_for_business(
         )
         for actor_id in ordered_actor_ids
     )
+
+
+def get_business_profile(
+    business_id: uuid.UUID | str,
+) -> dict[str, Any]:
+    business = _resolve_business(business_id)
+    return serialize_business(business)
+
+
+def list_branches_for_business(
+    business_id: uuid.UUID | str,
+) -> tuple[dict[str, Any], ...]:
+    business = _resolve_business(business_id)
+    branches = Branch.objects.filter(business_id=business.business_id).order_by("name", "branch_id")
+    return tuple(serialize_branch(branch) for branch in branches)
+
+
+@transaction.atomic
+def deactivate_actor(
+    *,
+    actor_id: str,
+) -> dict[str, Any]:
+    normalized_id = _clean_string(actor_id, field_name="actor_id")
+    actor = Actor.objects.filter(actor_id=normalized_id).first()
+    if actor is None:
+        raise ValueError(f"Actor '{normalized_id}' not found.")
+    if actor.status == ActorStatus.INACTIVE:
+        return serialize_actor(actor, assignments=())
+    actor.status = ActorStatus.INACTIVE
+    actor.save(update_fields=["status", "updated_at"])
+    return serialize_actor(actor, assignments=())

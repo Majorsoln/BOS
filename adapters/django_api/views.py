@@ -15,6 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from adapters.django_api.wiring import build_dependencies
 from core.http_api.contracts import (
+    ActorDeactivateHttpRequest,
     ActorMetadata,
     ApiKeyCreateHttpRequest,
     ApiKeyRevokeHttpRequest,
@@ -39,17 +40,20 @@ from core.http_api.contracts import (
 )
 from core.http_api.errors import error_response
 from core.http_api.handlers import (
+    get_business_profile,
     get_document_render_html,
     get_document_render_pdf,
     get_document_render_plan,
     get_document_verify,
-    list_api_keys,
     list_actors,
+    list_api_keys,
+    list_branches,
     list_compliance_profiles,
     list_document_templates,
     list_feature_flags,
     list_issued_documents,
     list_roles,
+    post_actor_deactivate,
     post_api_key_create,
     post_api_key_revoke,
     post_api_key_rotate,
@@ -421,6 +425,13 @@ def _identity_bootstrap_contract_factory(*, body, actor, business_id, branch_id)
         branches=_parse_branch_specs(body.get("branches")),
         admin_actor_id=body.get("admin_actor_id"),
         cashier_actor_id=body.get("cashier_actor_id"),
+        address=body.get("address", ""),
+        city=body.get("city", ""),
+        country_code=body.get("country_code", ""),
+        phone=body.get("phone", ""),
+        email=body.get("email", ""),
+        tax_id=body.get("tax_id", ""),
+        logo_url=body.get("logo_url", ""),
     )
 
 
@@ -672,6 +683,40 @@ def roles_revoke_view(request: HttpRequest) -> JsonResponse:
     return _dispatch_write(
         post_role_revoke,
         _role_revoke_contract_factory,
+        request,
+    )
+
+
+@csrf_exempt
+def business_profile_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "GET":
+        return _method_not_allowed()
+    return _dispatch_read(get_business_profile, request)
+
+
+@csrf_exempt
+def branches_list_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "GET":
+        return _method_not_allowed()
+    return _dispatch_read(list_branches, request)
+
+
+def _actor_deactivate_contract_factory(*, body, actor, business_id, branch_id):
+    return ActorDeactivateHttpRequest(
+        business_id=business_id,
+        branch_id=branch_id,
+        actor=actor,
+        actor_id=body["actor_id"],
+    )
+
+
+@csrf_exempt
+def actors_deactivate_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    return _dispatch_write(
+        post_actor_deactivate,
+        _actor_deactivate_contract_factory,
         request,
     )
 

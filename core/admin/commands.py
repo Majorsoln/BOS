@@ -28,6 +28,7 @@ from core.documents.models import (
     VALID_TEMPLATE_STATUSES,
 )
 from core.feature_flags.models import VALID_FEATURE_STATUSES
+from core.feature_flags.registry import VALID_FLAG_KEYS
 from core.identity.requirements import ACTOR_REQUIRED
 
 
@@ -74,6 +75,11 @@ class FeatureFlagSetRequest:
     def __post_init__(self):
         if not self.flag_key or not isinstance(self.flag_key, str):
             raise ValueError("flag_key must be a non-empty string.")
+        if self.flag_key not in VALID_FLAG_KEYS:
+            raise ValueError(
+                f"flag_key '{self.flag_key}' is not a known flag. "
+                f"Valid keys: {sorted(VALID_FLAG_KEYS)}"
+            )
         if self.status not in VALID_FEATURE_STATUSES:
             raise ValueError(
                 f"status '{self.status}' not valid. "
@@ -111,6 +117,11 @@ class FeatureFlagClearRequest:
     def __post_init__(self):
         if not self.flag_key or not isinstance(self.flag_key, str):
             raise ValueError("flag_key must be a non-empty string.")
+        if self.flag_key not in VALID_FLAG_KEYS:
+            raise ValueError(
+                f"flag_key '{self.flag_key}' is not a known flag. "
+                f"Valid keys: {sorted(VALID_FLAG_KEYS)}"
+            )
         _validate_branch_id(self.branch_id)
 
     def to_command(self, context: AdminCommandContext) -> Command:

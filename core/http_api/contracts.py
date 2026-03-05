@@ -344,6 +344,14 @@ class IdentityBootstrapHttpRequest:
     admin_actor_id: str | None = None
     cashier_actor_id: str | None = None
     branch_id: Optional[uuid.UUID] = None
+    # Legal / document compliance fields
+    address: str = ""
+    city: str = ""
+    country_code: str = ""
+    phone: str = ""
+    email: str = ""
+    tax_id: str = ""
+    logo_url: str = ""
 
     def __post_init__(self):
         if not isinstance(self.business_id, uuid.UUID):
@@ -455,6 +463,24 @@ class DocumentVerifyRequest:
             raise ValueError("document_id must be UUID.")
         if self.actor is not None and not isinstance(self.actor, ActorMetadata):
             raise ValueError("actor must be ActorMetadata.")
+        if self.branch_id is not None and not isinstance(self.branch_id, uuid.UUID):
+            raise ValueError("branch_id must be UUID or None.")
+
+
+@dataclass(frozen=True)
+class ActorDeactivateHttpRequest:
+    business_id: uuid.UUID
+    actor: ActorMetadata | None
+    actor_id: str
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not isinstance(self.business_id, uuid.UUID):
+            raise ValueError("business_id must be UUID.")
+        if self.actor is not None and not isinstance(self.actor, ActorMetadata):
+            raise ValueError("actor must be ActorMetadata.")
+        if not self.actor_id or not isinstance(self.actor_id, str):
+            raise ValueError("actor_id must be a non-empty string.")
         if self.branch_id is not None and not isinstance(self.branch_id, uuid.UUID):
             raise ValueError("branch_id must be UUID or None.")
 

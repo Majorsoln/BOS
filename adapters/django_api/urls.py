@@ -8,6 +8,8 @@ from adapters.django_api import views
 
 
 urlpatterns = [
+    path("admin/business", views.business_profile_view),
+    path("admin/branches", views.branches_list_view),
     path("admin/feature-flags", views.feature_flags_list_view),
     path("admin/compliance-profiles", views.compliance_profiles_list_view),
     path("admin/document-templates", views.document_templates_list_view),
@@ -23,6 +25,7 @@ urlpatterns = [
     path("admin/identity/bootstrap", views.identity_bootstrap_view),
     path("admin/roles/assign", views.roles_assign_view),
     path("admin/roles/revoke", views.roles_revoke_view),
+    path("admin/actors/deactivate", views.actors_deactivate_view),
     path("admin/compliance-profiles/upsert", views.compliance_profiles_upsert_view),
     path(
         "admin/compliance-profiles/deactivate",

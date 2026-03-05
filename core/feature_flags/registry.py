@@ -34,6 +34,37 @@ FLAG_ENABLE_WORKSHOP_ENGINE = "ENABLE_WORKSHOP_ENGINE"
 FLAG_ENABLE_PROMOTION_ENGINE = "ENABLE_PROMOTION_ENGINE"
 FLAG_ENABLE_HR_ENGINE = "ENABLE_HR_ENGINE"
 FLAG_ENABLE_REPORTING_ENGINE = "ENABLE_REPORTING_ENGINE"
+FLAG_ENABLE_HOTEL_ENGINE = "ENABLE_HOTEL_ENGINE"
+FLAG_ENABLE_LOYALTY_ENGINE = "ENABLE_LOYALTY_ENGINE"
+FLAG_ENABLE_WALLET_ENGINE = "ENABLE_WALLET_ENGINE"
+FLAG_ENABLE_CUSTOMER_ENGINE = "ENABLE_CUSTOMER_ENGINE"
+FLAG_ENABLE_QR_MENU_ENGINE = "ENABLE_QR_MENU_ENGINE"
+
+# Catalog of all valid flag keys — prevents typo gaps at configuration time
+VALID_FLAG_KEYS: frozenset[str] = frozenset(
+    {
+        FLAG_ENABLE_COMPLIANCE_ENGINE,
+        FLAG_ENABLE_ADVANCED_POLICY_ESCALATION,
+        FLAG_ENABLE_DOCUMENT_DESIGNER,
+        FLAG_ENABLE_DOCUMENT_RENDER_PLAN,
+        FLAG_ENABLE_DOCUMENT_ENGINE,
+        FLAG_ENABLE_ACCOUNTING_ENGINE,
+        FLAG_ENABLE_CASH_ENGINE,
+        FLAG_ENABLE_INVENTORY_ENGINE,
+        FLAG_ENABLE_PROCUREMENT_ENGINE,
+        FLAG_ENABLE_RETAIL_ENGINE,
+        FLAG_ENABLE_RESTAURANT_ENGINE,
+        FLAG_ENABLE_WORKSHOP_ENGINE,
+        FLAG_ENABLE_PROMOTION_ENGINE,
+        FLAG_ENABLE_HR_ENGINE,
+        FLAG_ENABLE_REPORTING_ENGINE,
+        FLAG_ENABLE_HOTEL_ENGINE,
+        FLAG_ENABLE_LOYALTY_ENGINE,
+        FLAG_ENABLE_WALLET_ENGINE,
+        FLAG_ENABLE_CUSTOMER_ENGINE,
+        FLAG_ENABLE_QR_MENU_ENGINE,
+    }
+)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -130,6 +161,86 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "reporting.snapshot.record.request": FLAG_ENABLE_REPORTING_ENGINE,
     "reporting.kpi.record.request": FLAG_ENABLE_REPORTING_ENGINE,
     "reporting.report.generate.request": FLAG_ENABLE_REPORTING_ENGINE,
+
+    # ── Hotel Engine ──────────────────────────────────────────
+    "hotel.reservation.create.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.reservation.confirm.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.reservation.modify.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.reservation.cancel.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.reservation.no_show.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.guest.check_in.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.guest.check_out.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.stay.extend.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.early_departure.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.folio.open.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.folio.post_charge.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.folio.receive_payment.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.folio.settle.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.folio.adjust.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.folio.apply_credit.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.folio.split.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.folio.transfer.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.room.create.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.room.change_status.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.room.move.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.room.set_out_of_order.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.room.return_to_service.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.room_type.define.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.room_type.update.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.room_night.post_charge.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.rate_plan.create.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.rate_plan.update.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.rate_plan.deactivate.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.seasonal_rate.set.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.night_audit.run.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.property.configure.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.housekeeping.assign_task.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.housekeeping.start_task.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.housekeeping.complete_task.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.housekeeping.inspect_room.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.housekeeping.fail_inspection.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.lost_found.log.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.lost_found.claim.request": FLAG_ENABLE_HOTEL_ENGINE,
+    "hotel.maintenance.resolve.request": FLAG_ENABLE_HOTEL_ENGINE,
+
+    # ── Loyalty Engine ────────────────────────────────────────
+    "loyalty.program.configure.request": FLAG_ENABLE_LOYALTY_ENGINE,
+    "loyalty.points.earn.request": FLAG_ENABLE_LOYALTY_ENGINE,
+    "loyalty.points.redeem.request": FLAG_ENABLE_LOYALTY_ENGINE,
+    "loyalty.points.adjust.request": FLAG_ENABLE_LOYALTY_ENGINE,
+    "loyalty.points.expire.request": FLAG_ENABLE_LOYALTY_ENGINE,
+    "loyalty.points.reverse.request": FLAG_ENABLE_LOYALTY_ENGINE,
+
+    # ── Wallet Engine ─────────────────────────────────────────
+    "wallet.policy.configure.request": FLAG_ENABLE_WALLET_ENGINE,
+    "wallet.credit.issue.request": FLAG_ENABLE_WALLET_ENGINE,
+    "wallet.credit.spend.request": FLAG_ENABLE_WALLET_ENGINE,
+    "wallet.credit.reverse.request": FLAG_ENABLE_WALLET_ENGINE,
+    "wallet.credit.expire.request": FLAG_ENABLE_WALLET_ENGINE,
+    "wallet.credit.freeze.request": FLAG_ENABLE_WALLET_ENGINE,
+    "wallet.credit.unfreeze.request": FLAG_ENABLE_WALLET_ENGINE,
+    "wallet.credit.adjust.request": FLAG_ENABLE_WALLET_ENGINE,
+
+    # ── Customer Engine ───────────────────────────────────────
+    "customer.profile.create.request": FLAG_ENABLE_CUSTOMER_ENGINE,
+    "customer.profile.update.request": FLAG_ENABLE_CUSTOMER_ENGINE,
+    "customer.global.register.request": FLAG_ENABLE_CUSTOMER_ENGINE,
+    "customer.link.request.request": FLAG_ENABLE_CUSTOMER_ENGINE,
+    "customer.link.approve.request": FLAG_ENABLE_CUSTOMER_ENGINE,
+    "customer.link.revoke.request": FLAG_ENABLE_CUSTOMER_ENGINE,
+    "customer.segment.assign.request": FLAG_ENABLE_CUSTOMER_ENGINE,
+    "customer.consent.update_scope.request": FLAG_ENABLE_CUSTOMER_ENGINE,
+
+    # ── QR Menu Engine ────────────────────────────────────────
+    "qr_menu.register.request": FLAG_ENABLE_QR_MENU_ENGINE,
+    "qr_menu.session.create.request": FLAG_ENABLE_QR_MENU_ENGINE,
+    "qr_menu.session.expire.request": FLAG_ENABLE_QR_MENU_ENGINE,
+    "qr_menu.item.order.request": FLAG_ENABLE_QR_MENU_ENGINE,
+    "qr_menu.item.remove.request": FLAG_ENABLE_QR_MENU_ENGINE,
+    "qr_menu.order.submit.request": FLAG_ENABLE_QR_MENU_ENGINE,
+    "qr_menu.order.accept.request": FLAG_ENABLE_QR_MENU_ENGINE,
+    "qr_menu.order.reject.request": FLAG_ENABLE_QR_MENU_ENGINE,
+    "qr_menu.order.clarify.request": FLAG_ENABLE_QR_MENU_ENGINE,
 }
 
 

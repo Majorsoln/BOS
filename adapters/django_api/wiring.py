@@ -392,8 +392,15 @@ def _create_dependencies() -> HttpApiDependencies:
             biz = _BusinessModel.objects.filter(business_id=business_id).first()
             if biz:
                 return {
-                    "business_name":     biz.name,
-                    "default_currency":  biz.default_currency,
+                    "business_name":    biz.name,
+                    "default_currency": biz.default_currency,
+                    "business_address": biz.address,
+                    "business_city":    biz.city,
+                    "country_code":     biz.country_code,
+                    "business_phone":   biz.phone,
+                    "business_email":   biz.email,
+                    "tax_id":           biz.tax_id,
+                    "logo_url":         biz.logo_url,
                 }
         except Exception:
             pass

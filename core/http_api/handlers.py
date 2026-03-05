@@ -20,7 +20,10 @@ from core.context.business_context import BusinessContext
 from core.identity_store.service import (
     assign_role as assign_identity_role,
     bootstrap_identity as bootstrap_identity_store,
+    deactivate_actor as deactivate_identity_actor,
+    get_business_profile as get_identity_business_profile,
     list_actors_for_business as list_identity_actors_for_business,
+    list_branches_for_business as list_identity_branches_for_business,
     list_role_assignments_for_business as list_identity_assignments_for_business,
     list_roles_for_business as list_identity_roles_for_business,
     revoke_role as revoke_identity_role,
@@ -36,6 +39,7 @@ from core.document_issuance.registry import (
 from core.document_issuance.repository import DocumentCursorError
 from core.http_api.auth.middleware import resolve_request_context
 from core.http_api.contracts import (
+    ActorDeactivateHttpRequest,
     ActorMetadata,
     ApiKeyCreateHttpRequest,
     ApiKeyRevokeHttpRequest,
@@ -69,6 +73,9 @@ ADMIN_ROLES_ASSIGN_REQUEST = "admin.roles.assign.request"
 ADMIN_ROLES_REVOKE_REQUEST = "admin.roles.revoke.request"
 ADMIN_ROLES_LIST_REQUEST = "admin.roles.list.request"
 ADMIN_ACTORS_LIST_REQUEST = "admin.actors.list.request"
+ADMIN_ACTORS_DEACTIVATE_REQUEST = "admin.actors.deactivate.request"
+ADMIN_BUSINESS_READ_REQUEST = "admin.business.read.request"
+ADMIN_BRANCHES_LIST_REQUEST = "admin.branches.list.request"
 
 _PERMISSION_PROBE_COMMAND_ID = uuid.UUID(int=0)
 _PERMISSION_PROBE_CORRELATION_ID = uuid.UUID(int=1)
@@ -700,6 +707,126 @@ def list_actors(
     )
 
 
+def get_business_profile(
+    request: BusinessReadRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=None,
+        command_type=ADMIN_BUSINESS_READ_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        profile = get_identity_business_profile(business_context.business_id)
+    except ValueError as exc:
+        return error_response(code="INVALID_REQUEST", message=str(exc), details={})
+    except Exception as exc:
+        return error_response(
+            code="READ_MODEL_ERROR",
+            message="Failed to read business profile.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(profile, headers=headers)
+
+
+def list_branches(
+    request: BusinessReadRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=None,
+        command_type=ADMIN_BRANCHES_LIST_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        items = list_identity_branches_for_business(business_context.business_id)
+    except ValueError as exc:
+        return error_response(code="INVALID_REQUEST", message=str(exc), details={})
+    except Exception as exc:
+        return error_response(
+            code="READ_MODEL_ERROR",
+            message="Failed to list branches.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(
+        {"items": items, "count": len(items)},
+        headers=headers,
+    )
+
+
+def post_actor_deactivate(
+    request: ActorDeactivateHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=request.branch_id,
+        command_type=ADMIN_ACTORS_DEACTIVATE_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        result = deactivate_identity_actor(actor_id=request.actor_id)
+    except ValueError as exc:
+        return error_response(code="INVALID_REQUEST", message=str(exc), details={})
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to deactivate actor.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(result, headers=headers)
+
+
 def post_identity_bootstrap(
     request: IdentityBootstrapHttpRequest,
     dependencies,
@@ -734,6 +861,13 @@ def post_identity_bootstrap(
             branches=request.branches,
             admin_actor_id=request.admin_actor_id,
             cashier_actor_id=request.cashier_actor_id,
+            address=request.address,
+            city=request.city,
+            country_code=request.country_code,
+            phone=request.phone,
+            email=request.email,
+            tax_id=request.tax_id,
+            logo_url=request.logo_url,
         )
     except ValueError as exc:
         return error_response(

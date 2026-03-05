@@ -28,6 +28,14 @@ class Business(models.Model):
     name = models.CharField(max_length=255)
     default_currency = models.CharField(max_length=16, default="USD")
     default_language = models.CharField(max_length=16, default="en")
+    # Legal / document compliance fields
+    address = models.CharField(max_length=512, default="", blank=True)
+    city = models.CharField(max_length=128, default="", blank=True)
+    country_code = models.CharField(max_length=8, default="", blank=True)
+    phone = models.CharField(max_length=64, default="", blank=True)
+    email = models.CharField(max_length=255, default="", blank=True)
+    tax_id = models.CharField(max_length=64, default="", blank=True)
+    logo_url = models.CharField(max_length=512, default="", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -63,16 +71,29 @@ class Branch(models.Model):
         return f"{self.branch_id} ({self.name})"
 
 
+class ActorStatus(models.TextChoices):
+    ACTIVE = "ACTIVE", "Active"
+    INACTIVE = "INACTIVE", "Inactive"
+
+
 class Actor(models.Model):
     actor_id = models.CharField(primary_key=True, max_length=255)
     actor_type = models.CharField(max_length=20, choices=IdentityActorType.choices)
     display_name = models.CharField(max_length=255, default="", blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=ActorStatus.choices,
+        default=ActorStatus.ACTIVE,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "bos_identity_actors"
         ordering = ["actor_id"]
+        indexes = [
+            models.Index(fields=["status"], name="idx_actor_status"),
+        ]
 
     def __str__(self) -> str:
         return f"{self.actor_id} ({self.actor_type})"
