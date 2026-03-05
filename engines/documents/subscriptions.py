@@ -74,7 +74,7 @@ DOCUMENT_SUBSCRIPTIONS: Dict[str, str] = {
     "procurement.payment.released.v1":   "handle_procurement_payment_released",
 
     # Inventory
-    "inventory.stock.transfer.v1":       "handle_inventory_stock_transfer",
+    "inventory.stock.transferred.v1":    "handle_inventory_stock_transfer",
     "inventory.stock.adjusted.v1":       "handle_inventory_stock_adjusted",
 
     # Cash

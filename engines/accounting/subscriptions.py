@@ -6,11 +6,12 @@ Accounting reacts to events from other engines.
 Subscriptions:
 - inventory.stock.received.v1         → post inventory asset journal (DR Inventory, CR AP)
 - cash.payment.recorded.v1            → fulfill outstanding payment obligation
+- cash.session.closed.v1             → post cash over/short reconciliation journal
 - hr.payroll.run.v1                   → post wages journal (DR Wages Expense, CR Wages/Tax Payable)
 - retail.sale.completed.v1            → post revenue journal with VAT split
 - retail.refund.issued.v1             → post refund reversal journal
 - restaurant.bill.settled.v1          → post F&B revenue journal with VAT split
-- workshop.job.invoiced.v1            → post AR journal for workshop invoices
+- workshop.job.invoiced.v1            → post AR journal with VAT split for workshop invoices
 - hotel.folio.settled.v1              → post hotel revenue journal with VAT split
 - procurement.payment.released.v1     → post supplier payment journal (DR AP, CR Cash/Bank)
 
@@ -58,6 +59,7 @@ PAYMENT_DEBIT_ACCOUNT_MAP = {
 ACCOUNTING_SUBSCRIPTIONS: Dict[str, str] = {
     "inventory.stock.received.v1":         "handle_stock_received",
     "cash.payment.recorded.v1":            "handle_payment_recorded",
+    "cash.session.closed.v1":             "handle_cash_session_closed",
     "hr.payroll.run.v1":                   "handle_payroll_run",
     "retail.sale.completed.v1":            "handle_retail_sale",
     "retail.refund.issued.v1":             "handle_retail_refund",
@@ -409,14 +411,17 @@ class AccountingSubscriptionHandler:
 
     def handle_workshop_invoice(self, event_data: dict) -> None:
         """
-        When Workshop invoices a job, post an accounts-receivable journal entry.
+        When Workshop invoices a job, post an accounts-receivable journal entry
+        with VAT split.
 
         Management entry (non-statutory):
-          DEBIT  AR Trade      (customer owes for the completed job)
-          CREDIT Revenue Sales (revenue recognized at invoicing)
+          DEBIT  AR Trade      (total invoice amount — customer owes)
+          CREDIT Revenue Sales (net revenue after VAT)
+          CREDIT VAT Payable   (tax component, if tax_amount > 0)
 
         Event source: workshop.job.invoiced.v1
-        Payload fields used: business_id, branch_id, invoice_id, job_id, amount, currency
+        Payload fields used: business_id, branch_id, invoice_id, job_id,
+                             amount, tax_amount, currency
         """
         if self._accounting_service is None:
             return
@@ -427,6 +432,7 @@ class AccountingSubscriptionHandler:
         invoice_id = str(payload.get("invoice_id", ""))
         job_id = str(payload.get("job_id", ""))
         amount = int(payload.get("amount", 0))
+        tax_amount = int(payload.get("tax_amount", 0))
         currency = str(payload.get("currency", ""))
 
         if not business_id_raw or not amount or not currency:
@@ -438,24 +444,35 @@ class AccountingSubscriptionHandler:
         except (ValueError, AttributeError):
             return
 
+        revenue_amount = amount - tax_amount if tax_amount else amount
+
+        lines = [
+            {
+                "account_code": DEFAULT_AR_ACCOUNT,
+                "side": "DEBIT",
+                "amount": amount,
+                "description": f"Workshop invoice: {invoice_id} (job: {job_id})",
+            },
+            {
+                "account_code": DEFAULT_REVENUE_ACCOUNT,
+                "side": "CREDIT",
+                "amount": revenue_amount,
+                "description": f"Workshop service revenue: {job_id}",
+            },
+        ]
+        if tax_amount > 0:
+            lines.append({
+                "account_code": DEFAULT_VAT_PAYABLE_ACCOUNT,
+                "side": "CREDIT",
+                "amount": tax_amount,
+                "description": f"Output VAT: workshop invoice {invoice_id}",
+            })
+
         try:
             request = JournalPostRequest(
                 entry_id=f"auto:workshop-invoice:{invoice_id}",
-                lines=tuple([
-                    {
-                        "account_code": DEFAULT_AR_ACCOUNT,
-                        "side": "DEBIT",
-                        "amount": amount,
-                        "description": f"Workshop invoice: {invoice_id} (job: {job_id})",
-                    },
-                    {
-                        "account_code": DEFAULT_REVENUE_ACCOUNT,
-                        "side": "CREDIT",
-                        "amount": amount,
-                        "description": f"Workshop service revenue: {job_id}",
-                    },
-                ]),
-                memo=f"Auto-journal: workshop invoice {invoice_id} for job {job_id}",
+                lines=tuple(lines),
+                memo=f"Auto-journal: workshop invoice {invoice_id} for job {job_id} — {amount} {currency}",
                 currency=currency,
                 reference_id=invoice_id or None,
                 branch_id=branch_id,
@@ -762,6 +779,105 @@ class AccountingSubscriptionHandler:
                 memo=f"Auto-journal: procurement payment {payment_id} for order {order_id} — {amount} {currency}",
                 currency=currency,
                 reference_id=payment_id or None,
+                branch_id=branch_id,
+            )
+            command = request.to_command(
+                business_id=business_id,
+                actor_type="SYSTEM",
+                actor_id="system:accounting.subscription",
+                command_id=uuid.uuid4(),
+                correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
+                issued_at=datetime.now(tz=timezone.utc),
+            )
+            self._accounting_service._execute_command(command)
+        except (KeyError, ValueError, TypeError):
+            return
+
+    def handle_cash_session_closed(self, event_data: dict) -> None:
+        """
+        When a cash drawer session is closed, post a reconciliation journal entry
+        if there is a variance (over/short) between expected and closing balance.
+
+        Management entry (non-statutory) — only when variance != 0:
+          If cash OVER  (closing > expected):
+            DEBIT  Cash on Hand          (extra cash found)
+            CREDIT Cash Over/Short       (income — overage)
+          If cash SHORT (closing < expected):
+            DEBIT  Cash Over/Short       (expense — shortage)
+            CREDIT Cash on Hand          (cash missing)
+
+        Zero-variance closings produce no journal entry.
+
+        Event source: cash.session.closed.v1
+        Payload fields used: business_id, branch_id, session_id, drawer_id,
+                             closing_balance, expected_balance, variance, currency
+        """
+        if self._accounting_service is None:
+            return
+
+        payload = event_data.get("payload", {})
+        business_id_raw = payload.get("business_id")
+        branch_id_raw = payload.get("branch_id")
+        session_id = str(payload.get("session_id", ""))
+        drawer_id = str(payload.get("drawer_id", ""))
+        currency = str(payload.get("currency", ""))
+
+        # variance = closing_balance - expected_balance
+        variance = int(payload.get("variance", payload.get("difference", 0)))
+
+        if not business_id_raw or not currency or variance == 0:
+            return  # No variance — no journal needed
+
+        try:
+            business_id = uuid.UUID(str(business_id_raw))
+            branch_id = uuid.UUID(str(branch_id_raw)) if branch_id_raw else None
+        except (ValueError, AttributeError):
+            return
+
+        abs_variance = abs(variance)
+
+        if variance > 0:
+            # Cash OVER — more cash than expected
+            lines = [
+                {
+                    "account_code": DEFAULT_CASH_ACCOUNT,
+                    "side": "DEBIT",
+                    "amount": abs_variance,
+                    "description": f"Cash overage: session {session_id} drawer {drawer_id}",
+                },
+                {
+                    "account_code": "CASH_OVER_SHORT",
+                    "side": "CREDIT",
+                    "amount": abs_variance,
+                    "description": f"Cash over: session {session_id}",
+                },
+            ]
+            memo = f"Auto-journal: cash session {session_id} closed OVER by {abs_variance} {currency}"
+        else:
+            # Cash SHORT — less cash than expected
+            lines = [
+                {
+                    "account_code": "CASH_OVER_SHORT",
+                    "side": "DEBIT",
+                    "amount": abs_variance,
+                    "description": f"Cash shortage: session {session_id} drawer {drawer_id}",
+                },
+                {
+                    "account_code": DEFAULT_CASH_ACCOUNT,
+                    "side": "CREDIT",
+                    "amount": abs_variance,
+                    "description": f"Cash short: session {session_id}",
+                },
+            ]
+            memo = f"Auto-journal: cash session {session_id} closed SHORT by {abs_variance} {currency}"
+
+        try:
+            request = JournalPostRequest(
+                entry_id=f"auto:cash-close:{session_id}",
+                lines=tuple(lines),
+                memo=memo,
+                currency=currency,
+                reference_id=session_id or None,
                 branch_id=branch_id,
             )
             command = request.to_command(

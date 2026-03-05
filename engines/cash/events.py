@@ -91,6 +91,7 @@ def build_session_closed_payload(command: Command) -> dict:
         "expected_balance": command.payload.get("expected_balance"),
         "currency": command.payload["currency"],
         "difference": command.payload.get("difference", 0),
+        "variance": command.payload.get("variance", command.payload.get("difference", 0)),
         "closed_by": command.actor_id,
         "closed_at": command.issued_at,
     })

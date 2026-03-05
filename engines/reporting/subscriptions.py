@@ -39,6 +39,9 @@ SUBSCRIPTIONS = {
     "hotel.reservation.confirmed.v1":  "handle_reservation_confirmed",
     "hotel.guest.checked_in.v1":       "handle_guest_checked_in",
     "hotel.guest.checked_out.v1":      "handle_guest_checked_out",
+    # Inventory events
+    "inventory.stock.adjusted.v1":     "handle_stock_adjusted",
+    "inventory.stock.transferred.v1":  "handle_stock_transferred",
     # HR events
     "hr.shift.ended.v1":               "handle_shift_ended",
     "hr.employee.onboarded.v1":        "handle_employee_onboarded",
@@ -309,3 +312,45 @@ class ReportingSubscriptionHandler:
             value=1, unit="COUNT",
             event_data=event_data, source_engine="hotel_reservation",
         )
+
+    def handle_stock_adjusted(self, event_data: dict) -> None:
+        """
+        Record stock adjustment events for inventory KPIs.
+        Tracks both adjustment count and quantity delta (when available).
+        Event source: inventory.stock.adjusted.v1
+        """
+        payload = event_data.get("payload", {})
+        self._record_kpi(
+            kpi_key="STOCK_ADJUSTMENTS", kpi_name="Stock Adjustments",
+            value=1, unit="COUNT",
+            event_data=event_data, source_engine="inventory",
+        )
+        items = payload.get("items", [])
+        qty_delta = sum(abs(int(item.get("quantity_delta", item.get("quantity", 0)))) for item in items)
+        if qty_delta > 0:
+            self._record_kpi(
+                kpi_key="STOCK_ADJUSTED_UNITS", kpi_name="Stock Adjusted Units",
+                value=qty_delta, unit="COUNT",
+                event_data=event_data, source_engine="inventory",
+            )
+
+    def handle_stock_transferred(self, event_data: dict) -> None:
+        """
+        Record stock transfer events for inventory KPIs.
+        Tracks transfer count and total units moved.
+        Event source: inventory.stock.transferred.v1
+        """
+        payload = event_data.get("payload", {})
+        self._record_kpi(
+            kpi_key="STOCK_TRANSFERS", kpi_name="Stock Transfers",
+            value=1, unit="COUNT",
+            event_data=event_data, source_engine="inventory",
+        )
+        items = payload.get("items", [])
+        qty_moved = sum(int(item.get("quantity", 0)) for item in items)
+        if qty_moved > 0:
+            self._record_kpi(
+                kpi_key="STOCK_TRANSFERRED_UNITS", kpi_name="Stock Transferred Units",
+                value=qty_moved, unit="COUNT",
+                event_data=event_data, source_engine="inventory",
+            )
