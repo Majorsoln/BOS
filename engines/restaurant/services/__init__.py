@@ -17,6 +17,7 @@ from engines.restaurant.events import (
     build_order_placed_payload, build_order_item_served_payload,
     build_order_cancelled_payload, build_bill_settled_payload,
     build_kitchen_ticket_sent_payload, build_bill_split_payload,
+    build_bill_presented_payload,
 )
 
 
@@ -107,6 +108,7 @@ PAYLOAD_BUILDERS = {
     "restaurant.bill.settle.request": build_bill_settled_payload,
     "restaurant.kitchen.ticket.send.request": build_kitchen_ticket_sent_payload,
     "restaurant.bill.split.request": build_bill_split_payload,
+    "restaurant.bill.present.request": build_bill_presented_payload,
 }
 
 

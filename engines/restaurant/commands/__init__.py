@@ -21,6 +21,7 @@ RESTAURANT_ORDER_CANCEL_REQUEST = "restaurant.order.cancel.request"
 RESTAURANT_BILL_SETTLE_REQUEST = "restaurant.bill.settle.request"
 RESTAURANT_KITCHEN_TICKET_SEND_REQUEST = "restaurant.kitchen.ticket.send.request"
 RESTAURANT_BILL_SPLIT_REQUEST = "restaurant.bill.split.request"
+RESTAURANT_BILL_PRESENT_REQUEST = "restaurant.bill.present.request"
 
 RESTAURANT_COMMAND_TYPES = frozenset({
     RESTAURANT_TABLE_OPEN_REQUEST,
@@ -31,6 +32,7 @@ RESTAURANT_COMMAND_TYPES = frozenset({
     RESTAURANT_BILL_SETTLE_REQUEST,
     RESTAURANT_KITCHEN_TICKET_SEND_REQUEST,
     RESTAURANT_BILL_SPLIT_REQUEST,
+    RESTAURANT_BILL_PRESENT_REQUEST,
 })
 
 VALID_PAYMENT_METHODS = frozenset({"CASH", "CARD", "MOBILE", "BANK_TRANSFER", "CREDIT", "SPLIT"})
@@ -136,6 +138,8 @@ class OrderServeItemRequest:
 class OrderCancelRequest:
     order_id: str
     reason: str
+    refund_amount: int = 0
+    currency: str = ""
     branch_id: Optional[uuid.UUID] = None
 
     def __post_init__(self):
@@ -145,9 +149,12 @@ class OrderCancelRequest:
             raise ValueError(f"reason '{self.reason}' not valid.")
 
     def to_command(self, **kw) -> Command:
-        return _cmd(RESTAURANT_ORDER_CANCEL_REQUEST,
-                     {"order_id": self.order_id, "reason": self.reason},
-                     branch_id=self.branch_id, **kw)
+        return _cmd(RESTAURANT_ORDER_CANCEL_REQUEST, {
+            "order_id": self.order_id,
+            "reason": self.reason,
+            "refund_amount": self.refund_amount,
+            "currency": self.currency,
+        }, branch_id=self.branch_id, **kw)
 
 
 @dataclass(frozen=True)
@@ -272,3 +279,35 @@ class SplitBillRequest:
             command_id=command_id, correlation_id=correlation_id, issued_at=issued_at,
             branch_id=self.branch_id,
         )
+
+
+@dataclass(frozen=True)
+class BillPresentRequest:
+    """Present the bill to the table — timing audit between 'check please' and settlement."""
+    bill_id: str
+    table_id: str
+    total_amount: int
+    currency: str
+    table_name: str = ""
+    covers: int = 0
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.bill_id:
+            raise ValueError("bill_id must be non-empty.")
+        if not self.table_id:
+            raise ValueError("table_id must be non-empty.")
+        if not isinstance(self.total_amount, int) or self.total_amount <= 0:
+            raise ValueError("total_amount must be positive integer.")
+        if not self.currency or len(self.currency) != 3:
+            raise ValueError("currency must be 3-letter ISO code.")
+
+    def to_command(self, **kw) -> Command:
+        return _cmd(RESTAURANT_BILL_PRESENT_REQUEST, {
+            "bill_id": self.bill_id,
+            "table_id": self.table_id,
+            "table_name": self.table_name,
+            "covers": self.covers,
+            "total_amount": self.total_amount,
+            "currency": self.currency,
+        }, branch_id=self.branch_id, **kw)

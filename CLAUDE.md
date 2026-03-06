@@ -670,6 +670,13 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | DISP-01 | Event dispatcher passes Django `Event` ORM model object to handlers, but ALL handlers expect a `dict` — `event_data.get("payload", {})` raises `AttributeError` on ORM model | `core/events/dispatcher.py:82` — `handler(event)` passes ORM instance; ALL `engines/*/subscriptions.py` handlers call `.get()` on it | **SYSTEM-BREAKING** | **FIXED** — `_event_to_dict(event)` helper converts ORM model to dict before dispatch; handles both dict and ORM inputs |
 | DISP-02 | Impact: In Django production path (`_subscribed_persist_event` in `adapters/django_api/wiring.py:342` always passes `subscriber_registry`), ALL cross-engine subscription handlers silently fail. Every `except Exception` in dispatcher catches the `AttributeError` and logs it, but no documents, no accounting journals, no KPIs, no cash entries are ever produced. | All subscriber engines | **SYSTEM-BREAKING** | **FIXED** by DISP-01 |
 
+### GAP SET 19: Restaurant Command Gaps (Round 3 — Restaurant Agent)
+**Session:** 2026-03-06 Deep Code Review (Round 3)
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| REST-01 | No `BillPresentRequest` class — `restaurant.bill.present.request` in COMMAND_TO_EVENT_TYPE + has payload builder, but no command class, not in COMMAND_TYPES, not in PAYLOAD_BUILDERS | `engines/restaurant/commands/__init__.py`, `engines/restaurant/services/__init__.py` | CRITICAL | **FIXED** — `BillPresentRequest` class added, wired into `RESTAURANT_COMMAND_TYPES` + `PAYLOAD_BUILDERS` |
+| REST-02 | `OrderCancelRequest` missing `refund_amount`/`currency` — event builder provides them but command never passes them, so accounting journal never posts (refund_amount always 0) | `engines/restaurant/commands/__init__.py:136-150` | HIGH | **FIXED** — `refund_amount: int = 0`, `currency: str = ""` added to command class + payload |
+
 ---
 
 ## IMPLEMENTATION PRIORITY ORDER
