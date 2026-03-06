@@ -84,12 +84,16 @@ def build_order_created_payload(command: Command) -> dict:
     payload = _base_payload(command)
     payload.update({
         "order_id": command.payload["order_id"],
+        "po_id": command.payload["order_id"],
         "supplier_id": command.payload["supplier_id"],
         "supplier_name": command.payload["supplier_name"],
         "lines": command.payload["lines"],
         "total_amount": command.payload["total_amount"],
+        "tax_amount": command.payload.get("tax_amount", 0),
         "currency": command.payload["currency"],
         "expected_delivery": command.payload.get("expected_delivery"),
+        "delivery_date": command.payload.get("expected_delivery"),
+        "payment_terms": command.payload.get("payment_terms", ""),
         "created_at": command.issued_at,
     })
     return payload

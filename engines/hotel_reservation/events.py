@@ -9,6 +9,8 @@ Scope:  Full booking lifecycle — create, confirm, modify, cancel,
 
 from __future__ import annotations
 
+from core.commands.base import Command
+
 RESERVATION_CREATED_V1    = "hotel.reservation.created.v1"
 RESERVATION_CONFIRMED_V1  = "hotel.reservation.confirmed.v1"
 RESERVATION_MODIFIED_V1   = "hotel.reservation.modified.v1"
@@ -58,9 +60,22 @@ VALID_PAYMENT_METHODS = frozenset({
 })
 
 
+def _base_payload(cmd) -> dict:
+    """Inject envelope fields that every downstream handler requires."""
+    return {
+        "business_id": cmd.business_id,
+        "branch_id": cmd.branch_id,
+        "actor_id": cmd.actor_id,
+        "actor_type": cmd.actor_type,
+        "correlation_id": cmd.correlation_id,
+        "command_id": cmd.command_id,
+    }
+
+
 def build_reservation_created_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "reservation_id":   p["reservation_id"],
         "external_id":      p.get("external_id"),
         "source":           p["source"],
@@ -82,12 +97,14 @@ def build_reservation_created_payload(cmd) -> dict:
         "special_requests": p.get("special_requests", ""),
         "status":           "PENDING",
         "created_at":       cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_reservation_confirmed_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "reservation_id":  p["reservation_id"],
         # Guest identity — present if passed through from booking flow
         "guest_id":        p.get("guest_id"),
@@ -110,44 +127,52 @@ def build_reservation_confirmed_payload(cmd) -> dict:
         # Metadata
         "confirmed_by":    cmd.actor_id,
         "confirmed_at":    cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_reservation_modified_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "reservation_id": p["reservation_id"],
         "changes":        p.get("changes", {}),
         "modified_by":    cmd.actor_id,
         "modified_at":    cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_reservation_cancelled_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "reservation_id":      p["reservation_id"],
         "reason":              p["reason"],
         "cancellation_charge": p.get("cancellation_charge", 0),
         "refund_amount":       p.get("refund_amount", 0),
         "cancelled_by":        cmd.actor_id,
         "cancelled_at":        cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_reservation_no_show_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "reservation_id": p["reservation_id"],
         "no_show_charge": p.get("no_show_charge", 0),
         "recorded_by":    cmd.actor_id,
         "recorded_at":    cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_guest_checked_in_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "reservation_id": p["reservation_id"],
         "guest_id":       p.get("guest_id"),
         "guest_name":     p.get("guest_name", ""),
@@ -157,12 +182,14 @@ def build_guest_checked_in_payload(cmd) -> dict:
         "key_issued":     p.get("key_issued", True),
         "checked_in_by":  cmd.actor_id,
         "checked_in_at":  cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_guest_checked_out_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "reservation_id": p["reservation_id"],
         "room_id":        p["room_id"],
         "folio_id":       p["folio_id"],
@@ -172,12 +199,14 @@ def build_guest_checked_out_payload(cmd) -> dict:
         "company_name":   p.get("company_name", ""),
         "checked_out_by": cmd.actor_id,
         "checked_out_at": cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_stay_extended_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "reservation_id":     p["reservation_id"],
         "old_departure_date": p["old_departure_date"],
         "new_departure_date": p["new_departure_date"],
@@ -185,24 +214,28 @@ def build_stay_extended_payload(cmd) -> dict:
         "extra_amount":       p.get("extra_amount", 0),
         "extended_by":        cmd.actor_id,
         "extended_at":        cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_early_departure_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "reservation_id":      p["reservation_id"],
         "old_departure_date":  p["old_departure_date"],
         "actual_departure":    p["actual_departure"],
         "early_depart_charge": p.get("early_depart_charge", 0),
         "recorded_by":         cmd.actor_id,
         "recorded_at":         cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_room_moved_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "reservation_id":  p["reservation_id"],
         "old_room_id":     p["old_room_id"],
         "new_room_id":     p["new_room_id"],
@@ -210,7 +243,8 @@ def build_room_moved_payload(cmd) -> dict:
         "reason":          p.get("reason", ""),
         "moved_by":        cmd.actor_id,
         "moved_at":        cmd.issued_at,
-    }
+    })
+    return result
 
 
 PAYLOAD_BUILDERS = {

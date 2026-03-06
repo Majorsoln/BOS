@@ -632,6 +632,27 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | RC-03 | `SaleVoidRequest` has no `lines`/`total_amount`/`currency`/`original_receipt_id` — CREDIT_NOTE doc handler always skips | `engines/retail/commands/__init__.py:320-359` | HIGH | **FIXED** — all fields added as optional params |
 | RC-04 | `RefundIssueRequest` has no `customer_id` or `tax_amount` — refund notes can't address customer, VAT reversal impossible | `engines/retail/commands/__init__.py:362-415` | HIGH | **FIXED** — `customer_id`, `tax_amount` added |
 
+### GAP SET 15: Hotel Engine Structural Bug — Missing Envelope Fields (CRITICAL)
+**Session:** 2026-03-06 Deep Code Review (Round 2)
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| HE-01 | ALL 10 `hotel_folio` event builders missing `business_id`/`branch_id`/`actor_id`/`correlation_id` — no `_base_payload()` helper existed | `engines/hotel_folio/events.py` (all builders) | CRITICAL | **FIXED** — `_base_payload(cmd)` added; all 10 builders now inject envelope fields |
+| HE-02 | ALL 10 `hotel_reservation` event builders missing `business_id`/`branch_id`/`actor_id`/`correlation_id` — same structural gap | `engines/hotel_reservation/events.py` (all builders) | CRITICAL | **FIXED** — `_base_payload(cmd)` added; all 10 builders now inject envelope fields |
+| HE-03 | Impact: hotel folio settlement → zero documents, zero accounting journals, zero revenue KPIs, zero cash drawer entries (all handlers bail at `business_id` guard) | All hotel subscriber handlers across documents, accounting, reporting, cash | CRITICAL | **FIXED** by HE-01/HE-02 |
+| HE-04 | Impact: hotel reservation → zero confirmation docs, zero registration cards, zero cancellation notes, zero check-in/out KPIs | All hotel subscriber handlers | CRITICAL | **FIXED** by HE-01/HE-02 |
+
+### GAP SET 16: Additional Payload Mismatches (Round 2)
+**Session:** 2026-03-06 Deep Code Review (Round 2)
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| PM2-01 | `workshop.job.invoiced.v1` missing `payment_method` — cash handler always returns early, workshop cash payments NEVER recorded in drawer | `engines/workshop/events.py:135-154` vs `engines/cash/subscriptions.py:80-81` | CRITICAL | **FIXED** — `payment_method` added to `build_job_invoiced_payload` |
+| PM2-02 | `restaurant.bill.split.v1` missing `bill_id` — split receipt document has no bill reference | `engines/restaurant/events.py:176-187` vs `engines/documents/subscriptions.py:393` | HIGH | **FIXED** — `bill_id` added to `build_bill_split_payload` |
+| PM2-03 | `restaurant.bill.settled.v1` missing `customer_id` — restaurant receipts always say "Walk-in Customer" | `engines/restaurant/events.py:121-139` vs `engines/documents/subscriptions.py:261` | MEDIUM | **FIXED** — `customer_id` added to `build_bill_settled_payload` |
+| PM2-04 | `restaurant.kitchen.ticket.sent.v1` missing `table_name` — KOT shows blank instead of "Table 5" | `engines/restaurant/events.py:142-153` vs `engines/documents/subscriptions.py:416` | MEDIUM | **FIXED** — `table_name` added to `build_kitchen_ticket_sent_payload` |
+| PM2-05 | `workshop.job.completed.v1` missing `customer_id` — completion certificate always addresses "Walk-in" | `engines/workshop/events.py:122-132` vs `engines/documents/subscriptions.py:561` | MEDIUM | **FIXED** — `customer_id` added to `build_job_completed_payload` |
+| PM2-06 | `procurement.order.created.v1` missing `po_id` alias — PO document has no PO number | `engines/procurement/events.py:83-95` vs `engines/documents/subscriptions.py:844` | HIGH | **FIXED** — `po_id` alias, `tax_amount`, `delivery_date` alias, `payment_terms` added |
+| PM2-07 | `PaymentReleaseRequest` command class missing `supplier_id`/`supplier_name`/`approved_by` — event builder reads them but command never provides them | `engines/procurement/commands/__init__.py:362-403` | HIGH | **FIXED** — `supplier_id`, `supplier_name`, `approved_by` fields added to command class |
+
 ---
 
 ## IMPLEMENTATION PRIORITY ORDER
@@ -698,6 +719,17 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 - ✅ **`restaurant.bill.present.request`** — added to COMMAND_FLAG_MAP — **DONE (2026-03-05)**
 - ✅ **`accounting.statement.generate.request`** — added to COMMAND_FLAG_MAP — **DONE (2026-03-05)**
 - ✅ **`DocumentBuilderError`** — converted from frozen dataclass to regular Exception to fix Python `__traceback__` FrozenInstanceError — **DONE (2026-03-05)**
+
+### Phase 3D — Hotel Structural Fix + Remaining Payload Mismatches (2026-03-06 session, Round 2)
+- ✅ **HE-01** — `hotel_folio/events.py`: added `_base_payload(cmd)` helper, all 10 builders now inject `business_id`, `branch_id`, `actor_id`, `actor_type`, `correlation_id`, `command_id` — **DONE**
+- ✅ **HE-02** — `hotel_reservation/events.py`: same fix, all 10 builders now inject envelope fields — **DONE**
+- ✅ **PM2-01** — Workshop `payment_method` added to `build_job_invoiced_payload` — **DONE**
+- ✅ **PM2-02** — Restaurant `bill_id` added to `build_bill_split_payload` — **DONE**
+- ✅ **PM2-03** — Restaurant `customer_id` added to `build_bill_settled_payload` — **DONE**
+- ✅ **PM2-04** — Restaurant `table_name` added to `build_kitchen_ticket_sent_payload` — **DONE**
+- ✅ **PM2-05** — Workshop `customer_id` added to `build_job_completed_payload` — **DONE**
+- ✅ **PM2-06** — Procurement `po_id`/`tax_amount`/`delivery_date`/`payment_terms` added to `build_order_created_payload` — **DONE**
+- ✅ **PM2-07** — `PaymentReleaseRequest` command class: `supplier_id`, `supplier_name`, `approved_by` fields added — **DONE**
 
 ### Phase 4 — Delivery & Rendering
 17. ✅ **X-05** — `/docs/{id}/render-pdf` and `/docs/{id}/render-html` endpoints exist — **DONE**

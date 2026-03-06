@@ -123,6 +123,7 @@ def build_job_completed_payload(command: Command) -> dict:
     p = _base_payload(command)
     p.update({
         "job_id": command.payload["job_id"],
+        "customer_id": command.payload.get("customer_id"),
         "parts_used": command.payload.get("parts_used", []),
         "labor_hours": command.payload.get("labor_hours", 0),
         "final_cost": command.payload["final_cost"],
@@ -147,6 +148,7 @@ def build_job_invoiced_payload(command: Command) -> dict:
         "materials_total": command.payload.get("materials_total", 0),
         "tax_amount":      command.payload.get("tax_amount", 0),
         "discount_amount": command.payload.get("discount_amount", 0),
+        "payment_method":  command.payload.get("payment_method", ""),
         "payment_terms":   command.payload.get("payment_terms", "DUE_ON_RECEIPT"),
         "due_date":        command.payload.get("due_date", ""),
         "invoiced_at":     command.issued_at,

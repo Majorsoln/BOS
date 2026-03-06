@@ -9,6 +9,8 @@ Scope:  Guest running tab. Aggregates all charges (room nights,
 """
 from __future__ import annotations
 
+from core.commands.base import Command
+
 FOLIO_OPENED_V1             = "hotel.folio.opened.v1"
 FOLIO_CHARGE_POSTED_V1      = "hotel.folio.charge_posted.v1"
 FOLIO_PAYMENT_RECEIVED_V1   = "hotel.folio.payment_received.v1"
@@ -52,9 +54,22 @@ VALID_PAYMENT_METHODS = frozenset({
 VALID_ADJUSTMENT_TYPES = frozenset({"CREDIT", "DEBIT"})
 
 
+def _base_payload(cmd) -> dict:
+    """Inject envelope fields that every downstream handler requires."""
+    return {
+        "business_id": cmd.business_id,
+        "branch_id": cmd.branch_id,
+        "actor_id": cmd.actor_id,
+        "actor_type": cmd.actor_type,
+        "correlation_id": cmd.correlation_id,
+        "command_id": cmd.command_id,
+    }
+
+
 def build_folio_opened_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "folio_id":       p["folio_id"],
         "reservation_id": p["reservation_id"],
         "guest_id":       p.get("guest_id"),
@@ -64,12 +79,14 @@ def build_folio_opened_payload(cmd) -> dict:
         "balance":        0,
         "opened_by":      cmd.actor_id,
         "opened_at":      cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_charge_posted_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "folio_id":     p["folio_id"],
         "charge_id":    p["charge_id"],
         "charge_type":  p["charge_type"],
@@ -79,12 +96,14 @@ def build_charge_posted_payload(cmd) -> dict:
         "source_ref":   p.get("source_ref", ""),
         "posted_by":    cmd.actor_id,
         "posted_at":    cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_payment_received_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "folio_id":       p["folio_id"],
         "payment_id":     p["payment_id"],
         "amount":         p["amount"],
@@ -93,12 +112,14 @@ def build_payment_received_payload(cmd) -> dict:
         "reference":      p.get("reference", ""),
         "received_by":    cmd.actor_id,
         "received_at":    cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_credit_applied_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "folio_id":     p["folio_id"],
         "credit_id":    p["credit_id"],
         "amount":       p["amount"],
@@ -106,12 +127,14 @@ def build_credit_applied_payload(cmd) -> dict:
         "source":       p.get("source", "WALLET"),
         "applied_by":   cmd.actor_id,
         "applied_at":   cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_folio_adjusted_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "folio_id":        p["folio_id"],
         "adjustment_id":   p["adjustment_id"],
         "adjustment_type": p["adjustment_type"],
@@ -119,12 +142,14 @@ def build_folio_adjusted_payload(cmd) -> dict:
         "reason":          p.get("reason", ""),
         "adjusted_by":     cmd.actor_id,
         "adjusted_at":     cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_folio_transferred_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "from_folio_id": p["from_folio_id"],
         "to_folio_id":   p["to_folio_id"],
         "charge_ids":    list(p.get("charge_ids", [])),
@@ -132,12 +157,14 @@ def build_folio_transferred_payload(cmd) -> dict:
         "reason":        p.get("reason", ""),
         "transferred_by": cmd.actor_id,
         "transferred_at": cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_folio_split_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "folio_id":      p["folio_id"],
         "split_id":      p["split_id"],
         "new_folio_ids": list(p.get("new_folio_ids", [])),
@@ -145,12 +172,14 @@ def build_folio_split_payload(cmd) -> dict:
         "splits":        list(p.get("splits", [])),
         "split_by":      cmd.actor_id,
         "split_at":      cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_folio_settled_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "folio_id":           p["folio_id"],
         "reservation_id":     p.get("reservation_id"),
         "guest_name":         p.get("guest_name", ""),
@@ -169,24 +198,28 @@ def build_folio_settled_payload(cmd) -> dict:
         "company_id":         p.get("company_id"),
         "settled_by":         cmd.actor_id,
         "settled_at":         cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_night_audit_run_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "audit_id":         p["audit_id"],
         "business_date":    p["business_date"],
         "folios_processed": p.get("folios_processed", 0),
         "total_room_revenue": p.get("total_room_revenue", 0),
         "run_by":           cmd.actor_id,
         "run_at":           cmd.issued_at,
-    }
+    })
+    return result
 
 
 def build_room_night_charge_posted_payload(cmd) -> dict:
     p = cmd.payload
-    return {
+    result = _base_payload(cmd)
+    result.update({
         "folio_id":      p["folio_id"],
         "charge_id":     p["charge_id"],
         "reservation_id": p["reservation_id"],
@@ -196,7 +229,8 @@ def build_room_night_charge_posted_payload(cmd) -> dict:
         "nightly_rate":  p["nightly_rate"],
         "currency":      p["currency"],
         "posted_at":     cmd.issued_at,
-    }
+    })
+    return result
 
 
 PAYLOAD_BUILDERS = {

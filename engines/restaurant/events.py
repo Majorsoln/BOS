@@ -126,6 +126,7 @@ def build_bill_settled_payload(command: Command) -> dict:
         "table_name":     command.payload.get("table_name", ""),
         "covers":         command.payload.get("covers", 0),
         "server_id":      command.payload.get("server_id", command.actor_id),
+        "customer_id":    command.payload.get("customer_id"),
         "order_lines":    command.payload.get("order_lines", []),
         "total_amount":   command.payload["total_amount"],
         "tax_amount":     command.payload.get("tax_amount", 0),
@@ -145,6 +146,7 @@ def build_kitchen_ticket_sent_payload(command: Command) -> dict:
         "ticket_id": command.payload["ticket_id"],
         "order_id": command.payload["order_id"],
         "table_id": command.payload["table_id"],
+        "table_name": command.payload.get("table_name", ""),
         "station": command.payload["station"],
         "items": command.payload["items"],
         "sent_at": command.issued_at,
@@ -177,6 +179,7 @@ def build_bill_split_payload(command: Command) -> dict:
     payload = _base_payload(command)
     payload.update({
         "split_id": command.payload["split_id"],
+        "bill_id": command.payload.get("bill_id"),
         "table_id": command.payload["table_id"],
         "split_type": command.payload["split_type"],
         "splits": command.payload["splits"],

@@ -366,6 +366,9 @@ class PaymentReleaseRequest:
     amount: int
     currency: str
     payment_method: str
+    supplier_id: Optional[str] = None
+    supplier_name: str = ""
+    approved_by: Optional[str] = None
     reference_id: Optional[str] = None
     branch_id: Optional[uuid.UUID] = None
 
@@ -394,6 +397,9 @@ class PaymentReleaseRequest:
                 "amount": self.amount,
                 "currency": self.currency,
                 "payment_method": self.payment_method,
+                "supplier_id": self.supplier_id,
+                "supplier_name": self.supplier_name,
+                "approved_by": self.approved_by,
                 "reference_id": self.reference_id,
             },
             issued_at=issued_at, correlation_id=correlation_id,
