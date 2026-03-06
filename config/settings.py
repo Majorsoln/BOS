@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     "core.auth.apps.CoreAuthConfig",
     "core.identity_store.apps.CoreIdentityStoreConfig",
     "core.permissions_store.apps.CorePermissionsStoreConfig",
+    "core.replay",
     "core.bootstrap",
 ]
 
