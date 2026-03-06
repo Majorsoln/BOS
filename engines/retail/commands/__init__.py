@@ -266,6 +266,9 @@ class SaleCompleteRequest:
     lines: tuple
     tax_amount: int = 0
     discount_amount: int = 0
+    customer_id: Optional[str] = None
+    on_account: bool = False
+    requires_delivery: bool = False
     branch_id: Optional[uuid.UUID] = None
 
     def __post_init__(self):
@@ -301,6 +304,7 @@ class SaleCompleteRequest:
             actor_id=actor_id,
             payload={
                 "sale_id": self.sale_id,
+                "customer_id": self.customer_id,
                 "total_amount": self.total_amount,
                 "tax_amount": self.tax_amount,
                 "discount_amount": self.discount_amount,
@@ -308,6 +312,8 @@ class SaleCompleteRequest:
                 "currency": self.currency,
                 "payment_method": self.payment_method,
                 "lines": list(self.lines),
+                "on_account": self.on_account,
+                "requires_delivery": self.requires_delivery,
             },
             issued_at=issued_at,
             correlation_id=correlation_id,
@@ -322,6 +328,11 @@ class SaleVoidRequest:
     """Void a completed sale before end-of-day."""
     sale_id: str
     reason: str
+    customer_id: Optional[str] = None
+    lines: tuple = ()
+    total_amount: int = 0
+    currency: str = ""
+    original_receipt_id: Optional[str] = None
     branch_id: Optional[uuid.UUID] = None
 
     def __post_init__(self):
@@ -349,7 +360,12 @@ class SaleVoidRequest:
             actor_id=actor_id,
             payload={
                 "sale_id": self.sale_id,
+                "customer_id": self.customer_id,
                 "reason": self.reason,
+                "lines": list(self.lines),
+                "total_amount": self.total_amount,
+                "currency": self.currency,
+                "original_receipt_id": self.original_receipt_id,
             },
             issued_at=issued_at,
             correlation_id=correlation_id,
@@ -368,6 +384,8 @@ class RefundIssueRequest:
     currency: str
     reason: str
     lines: tuple = ()
+    customer_id: Optional[str] = None
+    tax_amount: int = 0
     branch_id: Optional[uuid.UUID] = None
 
     def __post_init__(self):
@@ -403,8 +421,10 @@ class RefundIssueRequest:
                 "refund_id": self.refund_id,
                 "original_sale_id": self.original_sale_id,
                 "amount": self.amount,
+                "tax_amount": self.tax_amount,
                 "currency": self.currency,
                 "reason": self.reason,
+                "customer_id": self.customer_id,
                 "lines": list(self.lines),
             },
             issued_at=issued_at,

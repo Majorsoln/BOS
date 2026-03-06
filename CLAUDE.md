@@ -623,6 +623,15 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | RV-01 | `unit="AMOUNT"` used in 3 KPI handlers but not in `VALID_KPI_UNITS` — KPI recording crashes with ValueError | `engines/reporting/subscriptions.py:386,409,434` | CRITICAL | **FIXED** — changed to `MINOR_CURRENCY` |
 | RV-02 | 20 KPI keys used by handlers but missing from `VALID_KPI_KEYS` — all KPI recording crashes | `engines/reporting/commands/__init__.py:45-66` | CRITICAL | **FIXED** — all 20 keys added to `VALID_KPI_KEYS` |
 
+### GAP SET 14: Retail Command Request Missing Fields
+**Session:** 2026-03-06 Deep Code Review
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| RC-01 | `SaleCompleteRequest` has no `customer_id` param — event payload always None, receipts always "Walk-in Customer" | `engines/retail/commands/__init__.py:258-317` | HIGH | **FIXED** — `customer_id: Optional[str]` added |
+| RC-02 | `SaleCompleteRequest` has no `on_account`/`requires_delivery` — INVOICE and DELIVERY_NOTE documents never trigger | `engines/retail/commands/__init__.py:258-317` | HIGH | **FIXED** — `on_account: bool`, `requires_delivery: bool` added |
+| RC-03 | `SaleVoidRequest` has no `lines`/`total_amount`/`currency`/`original_receipt_id` — CREDIT_NOTE doc handler always skips | `engines/retail/commands/__init__.py:320-359` | HIGH | **FIXED** — all fields added as optional params |
+| RC-04 | `RefundIssueRequest` has no `customer_id` or `tax_amount` — refund notes can't address customer, VAT reversal impossible | `engines/retail/commands/__init__.py:362-415` | HIGH | **FIXED** — `customer_id`, `tax_amount` added |
+
 ---
 
 ## IMPLEMENTATION PRIORITY ORDER
