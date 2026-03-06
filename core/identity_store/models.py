@@ -162,3 +162,45 @@ class RoleAssignment(models.Model):
 
     def __str__(self) -> str:
         return f"{self.actor_id}:{self.role_id}:{self.status}"
+
+
+class CustomerProfile(models.Model):
+    """
+    Tenant-scoped customer profile for document resolution.
+
+    Created when a business registers a customer (walk-in or linked account).
+    Queried by the document resolver to address customer-facing documents
+    with a real name instead of a raw UUID.
+    """
+
+    business_customer_id = models.UUIDField(primary_key=True, editable=False)
+    business = models.ForeignKey(
+        Business,
+        on_delete=models.PROTECT,
+        related_name="customer_profiles",
+        db_column="business_id",
+    )
+    global_customer_id = models.CharField(
+        max_length=255, default="", blank=True,
+        help_text="Platform-level customer UUID (empty for walk-in / manual entry).",
+    )
+    display_name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=64, default="", blank=True)
+    email = models.CharField(max_length=255, default="", blank=True)
+    address = models.CharField(max_length=512, default="", blank=True)
+    segment = models.CharField(max_length=100, default="", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_identity_customer_profiles"
+        ordering = ["business_id", "display_name"]
+        indexes = [
+            models.Index(
+                fields=["business", "global_customer_id"],
+                name="idx_cust_profile_biz_global",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.display_name} ({self.business_customer_id})"

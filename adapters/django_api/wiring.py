@@ -36,6 +36,7 @@ from core.event_store.persistence import (
     persist_event,
 )
 from core.event_store.validators.registry import EventTypeRegistry
+from core.events import SubscriberRegistry
 from core.http_api.dependencies import HttpApiDependencies, UtcClock, UuidIdProvider
 from core.identity_store.service import (
     DEFAULT_CASHIER_ROLE,
@@ -290,9 +291,20 @@ def _create_dependencies() -> HttpApiDependencies:
     )
     event_type_registry = EventTypeRegistry()
     event_factory = _build_event_factory()
+
+    # ── Subscription registry ──────────────────────────────────
+    subscriber_registry = SubscriberRegistry()
+
+    def _subscribed_persist_event(event_data, context, registry, **kwargs):
+        return persist_event(
+            event_data, context, registry,
+            subscriber_registry=subscriber_registry,
+            **kwargs,
+        )
+
     command_bus = CommandBus(
         dispatcher=dispatcher,
-        persist_event=persist_event,
+        persist_event=_subscribed_persist_event,
         context=business_context,
         event_type_registry=event_type_registry,
     )
@@ -315,6 +327,10 @@ def _create_dependencies() -> HttpApiDependencies:
         projection_store=document_issuance_projection_store,
         document_provider=document_provider,
     )
+
+    # Register all engine subscription handlers
+    import engines.accounting.subscriptions as _acct_subs
+    _acct_subs.register(subscriber_registry)
 
     return HttpApiDependencies(
         admin_service=admin_service,
