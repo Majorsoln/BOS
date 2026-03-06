@@ -105,6 +105,7 @@ def build_stock_issued_payload(command: Command) -> dict:
 def build_stock_transferred_payload(command: Command) -> dict:
     payload = _base_payload(command)
     payload.update({
+        "transfer_id": command.payload.get("transfer_id", command.payload.get("reference_id", "")),
         "item_id": command.payload["item_id"],
         "sku": command.payload["sku"],
         "quantity": command.payload["quantity"],
@@ -113,6 +114,12 @@ def build_stock_transferred_payload(command: Command) -> dict:
         "to_location_id": command.payload["to_location_id"],
         "to_location_name": command.payload["to_location_name"],
         "reference_id": command.payload.get("reference_id"),
+        # items[] array for document and reporting handlers
+        "items": [{
+            "item_id": command.payload["item_id"],
+            "sku": command.payload["sku"],
+            "quantity": command.payload["quantity"],
+        }],
         "transferred_at": command.issued_at,
     })
     return payload
@@ -121,6 +128,7 @@ def build_stock_transferred_payload(command: Command) -> dict:
 def build_stock_adjusted_payload(command: Command) -> dict:
     payload = _base_payload(command)
     payload.update({
+        "adjustment_id": command.payload.get("adjustment_id", command.payload.get("reference_id", "")),
         "item_id": command.payload["item_id"],
         "sku": command.payload["sku"],
         "quantity": command.payload["quantity"],
@@ -129,6 +137,13 @@ def build_stock_adjusted_payload(command: Command) -> dict:
         "location_name": command.payload["location_name"],
         "reason": command.payload["reason"],
         "reference_id": command.payload.get("reference_id"),
+        # items[] array for document and reporting handlers
+        "items": [{
+            "item_id": command.payload["item_id"],
+            "sku": command.payload["sku"],
+            "quantity": command.payload["quantity"],
+            "quantity_delta": command.payload["quantity"],
+        }],
         "adjusted_at": command.issued_at,
     })
     return payload

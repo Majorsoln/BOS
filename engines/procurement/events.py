@@ -109,6 +109,9 @@ def build_order_received_payload(command: Command) -> dict:
     payload = _base_payload(command)
     payload.update({
         "order_id": command.payload["order_id"],
+        "po_id": command.payload["order_id"],  # alias for document handler
+        "supplier_id": command.payload.get("supplier_id"),
+        "supplier_name": command.payload.get("supplier_name", ""),
         "received_lines": command.payload["received_lines"],
         "location_id": command.payload["location_id"],
         "location_name": command.payload["location_name"],

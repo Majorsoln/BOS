@@ -111,6 +111,8 @@ def build_order_cancelled_payload(command: Command) -> dict:
     payload.update({
         "order_id": command.payload["order_id"],
         "reason": command.payload["reason"],
+        "refund_amount": command.payload.get("refund_amount", 0),
+        "currency": command.payload.get("currency", ""),
         "cancelled_at": command.issued_at,
     })
     return payload

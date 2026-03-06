@@ -149,6 +149,8 @@ def build_guest_checked_in_payload(cmd) -> dict:
     p = cmd.payload
     return {
         "reservation_id": p["reservation_id"],
+        "guest_id":       p.get("guest_id"),
+        "guest_name":     p.get("guest_name", ""),
         "room_id":        p["room_id"],
         "room_number":    p.get("room_number", ""),
         "folio_id":       p["folio_id"],
@@ -166,6 +168,8 @@ def build_guest_checked_out_payload(cmd) -> dict:
         "folio_id":       p["folio_id"],
         "folio_total":    p.get("folio_total", 0),
         "payment_method": p.get("payment_method", "CARD"),
+        "company_id":     p.get("company_id"),
+        "company_name":   p.get("company_name", ""),
         "checked_out_by": cmd.actor_id,
         "checked_out_at": cmd.issued_at,
     }

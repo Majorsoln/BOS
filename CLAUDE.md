@@ -556,7 +556,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | AC-08 | No `ObligationCreateRequest` document trigger | Missing | MEDIUM | OPEN |
 | AC-09 | No handler for `cash.session.closed.v1` | Missing | MEDIUM | **FIXED** — `handle_cash_session_closed` posts CASH_OVER_SHORT journal on non-zero variance |
 | AC-10 | No handler for `retail.refund.issued.v1` | Missing | HIGH | **FIXED** — `handle_retail_refund` added; DR Revenue / CR Cash |
-| AC-11 | No handler for `restaurant.order.cancelled.v1` | Missing | MEDIUM | **FIXED** — `handle_restaurant_order_cancelled` added; posts reversal journal when `refund_amount > 0` (pre-billing cancels produce no entry) |
+| AC-11 | No handler for `restaurant.order.cancelled.v1` | Missing | MEDIUM | **PARTIAL** — handler exists but `build_order_cancelled_payload` lacks `refund_amount`/`currency`, so reversal journal never posts (see APM-01) |
 | AC-12 | `handle_payroll_run` deductions lumped into single TAX_PAYABLE | `engines/accounting/subscriptions.py` | MEDIUM | **FIXED** — deductions dict split per named key: PAYE → PAYE_PAYABLE, NSSF → NSSF_PAYABLE, NHIF/SHIF → NHIF_PAYABLE, remainder → OTHER_DEDUCTIONS_PAYABLE |
 | AC-13 | No AR aging snapshot | Missing | MEDIUM | OPEN |
 
@@ -590,6 +590,29 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | RP-11 | Workshop quote pipeline not tracked | Missing | MEDIUM | **FIXED** — `handle_workshop_quote_generated/accepted/rejected` added; records QUOTES_GENERATED, QUOTE_VALUE, QUOTES_ACCEPTED, QUOTE_ACCEPTED_VALUE, QUOTES_REJECTED |
 | RP-12 | KPI `dimension` field unused in subscriptions | `engines/reporting/subscriptions.py` | MEDIUM | **FIXED** — payment_method dimension now passed for revenue KPIs |
 | RP-13 | No hotel KPIs: ADR, RevPAR, occupancy | Missing | HIGH | **FIXED (ADR only)** — HOTEL_REVENUE_TOTAL, HOTEL_ROOM_NIGHTS, HOTEL_ADR, HOTEL_CHECKOUTS added; RevPAR needs room inventory |
+
+### GAP SET 11: Payload Mismatches — Document Handlers vs Event Builders
+**Session:** 2026-03-06 Deep Code Review
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| PM-01 | `handle_procurement_order_received` reads `po_id` but event provides `order_id` | `engines/documents/subscriptions.py:863` vs `engines/procurement/events.py:111` | CRITICAL | **FIXED** — `po_id` alias added to `build_order_received_payload` |
+| PM-02 | `handle_procurement_order_received` reads `supplier_id`, `supplier_name` — NOT in `build_order_received_payload` | `engines/documents/subscriptions.py:864-865` vs `engines/procurement/events.py:108-118` | CRITICAL | **FIXED** — `supplier_id`, `supplier_name` added to payload builder |
+| PM-03 | `handle_inventory_stock_transfer` reads `transfer_id` — NOT in `build_stock_transferred_payload` | `engines/documents/subscriptions.py:904` vs `engines/inventory/events.py:105-118` | CRITICAL | **FIXED** — `transfer_id` added (falls back to `reference_id`) |
+| PM-04 | `handle_inventory_stock_transfer` reads `items[]` as array — event has single-item fields (`item_id`, `sku`, `quantity`) | `engines/documents/subscriptions.py:907` vs `engines/inventory/events.py:108-109` | CRITICAL | **FIXED** — `items[]` array added wrapping single item |
+| PM-05 | `handle_inventory_stock_adjusted` reads `items[]` as array — event has single-item fields | `engines/documents/subscriptions.py:925` vs `engines/inventory/events.py:124-128` | CRITICAL | **FIXED** — `adjustment_id` + `items[]` array added |
+| PM-06 | `handle_hotel_guest_checked_out` reads `company_id` — NOT in `build_guest_checked_out_payload`; corporate invoice path NEVER fires | `engines/documents/subscriptions.py:742` vs `engines/hotel_reservation/events.py:161-171` | CRITICAL | **FIXED** — `company_id`, `company_name` added to checkout payload |
+| PM-07 | `handle_hotel_guest_checked_in` builds registration card without `guest_name` — field also missing from `build_guest_checked_in_payload` | `engines/documents/subscriptions.py:715-723` vs `engines/hotel_reservation/events.py:148-158` | HIGH | **FIXED** — `guest_id`, `guest_name` added to event + handler resolves guest |
+| PM-08 | `handle_hotel_folio_settled` sets `grand_total = total_charges` but `tax_amount` is separate — should be `total_charges + tax_amount` | `engines/documents/subscriptions.py:796` | MEDIUM | **FIXED** — `grand_total = total_charges + tax_amount` |
+| PM-09 | `handle_workshop_job_invoiced` sets both `subtotal` and `grand_total` to `amount` — ignores `tax_amount`/`discount_amount` | `engines/documents/subscriptions.py:605,608` | MEDIUM | **FIXED** — `subtotal` now back-computed; `grand_total = amount` (tax-inclusive) |
+| PM-10 | Reporting `handle_stock_adjusted` reads `items[]` as array — same inventory single-item mismatch, `qty_delta` always 0 | `engines/reporting/subscriptions.py:334` | HIGH | **FIXED** — inventory event now provides `items[]` array |
+| PM-11 | Reporting `handle_stock_transferred` reads `items[]` as array — same mismatch, `qty_moved` always 0 | `engines/reporting/subscriptions.py:355` | HIGH | **FIXED** — inventory event now provides `items[]` array |
+
+### GAP SET 12: Accounting & Cash Payload Mismatches
+**Session:** 2026-03-06 Deep Code Review
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| APM-01 | `handle_restaurant_order_cancelled` reads `refund_amount` and `currency` but `build_order_cancelled_payload` provides neither — handler ALWAYS returns early, reversal journal never posts | `engines/accounting/subscriptions.py:968` vs `engines/restaurant/events.py:109-116` | CRITICAL | **FIXED** — `refund_amount`, `currency` added to `build_order_cancelled_payload` |
+| APM-02 | Cash `handle_retail_sale` records `net_amount` into drawer but customer pays `total_amount` (includes tax) — cash drawer balance understated | `engines/cash/subscriptions.py:139` | HIGH | **FIXED** — `amount_key` changed to `total_amount` |
 
 ---
 

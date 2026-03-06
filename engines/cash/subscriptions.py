@@ -136,7 +136,7 @@ class CashSubscriptionHandler:
         Event source: retail.sale.completed.v1
         """
         self._record_cash_payment(
-            event_data, amount_key="net_amount",
+            event_data, amount_key="total_amount",
             ref_prefix="SALE", id_key="sale_id",
         )
 

@@ -602,10 +602,10 @@ class DocumentSubscriptionHandler:
             "job_id":         p.get("job_id"),
             "invoice_id":     p.get("invoice_id"),
             "line_items":     line_items,
-            "subtotal":       p.get("amount", 0),
+            "subtotal":       p.get("amount", 0) - p.get("tax_amount", 0) + p.get("discount_amount", 0),
             "tax_total":      p.get("tax_amount", 0),
             "discount_total": p.get("discount_amount", 0),
-            "grand_total":    p.get("amount", 0),
+            "grand_total":    p.get("amount", 0),  # amount is the final total (tax-inclusive)
             "currency":       p.get("currency"),
             "payment_terms":  p.get("payment_terms", "DUE_ON_RECEIPT"),
             "due_date":       p.get("due_date", ""),
@@ -711,9 +711,13 @@ class DocumentSubscriptionHandler:
             return
 
         biz = self._resolve_biz(str(business_id))
+        guest_id = p.get("guest_id")
+        guest_info = self._resolve_cust(guest_id) if guest_id else {}
 
         payload = {
             **biz,
+            **guest_info,
+            "guest_name":     p.get("guest_name", guest_info.get("customer_name", "")),
             "reservation_id": p.get("reservation_id"),
             "folio_id":       p.get("folio_id"),
             "room_id":        p.get("room_id"),
@@ -793,7 +797,7 @@ class DocumentSubscriptionHandler:
             "line_items":     p.get("charge_lines", []),
             "subtotal":       p.get("total_charges", 0),
             "tax_total":      p.get("tax_amount", 0),
-            "grand_total":    p.get("total_charges", 0),
+            "grand_total":    p.get("total_charges", 0) + p.get("tax_amount", 0),
             "currency":       p.get("currency"),
             "payment_method": p.get("payment_method", ""),
             "issued_at":      p.get("settled_at"),
