@@ -554,10 +554,10 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | AC-06 | No PAYMENT_VOUCHER document trigger from accounting | Missing | HIGH | OPEN — needs DocumentSubscriptionHandler (W-03) |
 | AC-07 | No STATEMENT_OF_ACCOUNT auto-generation | Missing | MEDIUM | **FIXED** — `StatementGenerateRequest` command + `accounting.statement.generated.v1` event wired; `DocumentSubscriptionHandler.handle_accounting_statement_generated` issues STATEMENT doc |
 | AC-08 | No `ObligationCreateRequest` document trigger | Missing | MEDIUM | OPEN |
-| AC-09 | No handler for `cash.session.closed.v1` | Missing | MEDIUM | OPEN |
+| AC-09 | No handler for `cash.session.closed.v1` | Missing | MEDIUM | **FIXED** — `handle_cash_session_closed` posts CASH_OVER_SHORT journal on non-zero variance |
 | AC-10 | No handler for `retail.refund.issued.v1` | Missing | HIGH | **FIXED** — `handle_retail_refund` added; DR Revenue / CR Cash |
-| AC-11 | No handler for `restaurant.order.cancelled.v1` | Missing | MEDIUM | OPEN |
-| AC-12 | `handle_payroll_run` deductions lumped into single TAX_PAYABLE | `engines/accounting/subscriptions.py` | MEDIUM | OPEN — PAYE/NSSF/NHIF split needs HR payload breakdown |
+| AC-11 | No handler for `restaurant.order.cancelled.v1` | Missing | MEDIUM | **FIXED** — `handle_restaurant_order_cancelled` added; posts reversal journal when `refund_amount > 0` (pre-billing cancels produce no entry) |
+| AC-12 | `handle_payroll_run` deductions lumped into single TAX_PAYABLE | `engines/accounting/subscriptions.py` | MEDIUM | **FIXED** — deductions dict split per named key: PAYE → PAYE_PAYABLE, NSSF → NSSF_PAYABLE, NHIF/SHIF → NHIF_PAYABLE, remainder → OTHER_DEDUCTIONS_PAYABLE |
 | AC-13 | No AR aging snapshot | Missing | MEDIUM | OPEN |
 
 ### GAP SET 9: Cash Engine Gaps
@@ -578,7 +578,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | ID | Gap | File | Severity | Status |
 |----|-----|------|----------|--------|
 | RP-01 | No hotel events subscribed — zero hotel KPIs recorded | Missing | HIGH | **FIXED** — hotel.folio.settled, reservation.confirmed, guest.checked_in/out added |
-| RP-02 | No `cash.session.closed.v1` handler for cash KPIs | Missing | MEDIUM | OPEN |
+| RP-02 | No `cash.session.closed.v1` handler for cash KPIs | Missing | MEDIUM | **FIXED** — `handle_cash_session_closed` records CASH_SESSIONS_CLOSED (count) + CASH_SESSION_VARIANCE (abs variance amount) |
 | RP-03 | No accounting journal handler (audit trail KPI) | Missing | LOW | OPEN |
 | RP-04 | `handle_bill_settled` had no tax/covers KPIs | `engines/reporting/subscriptions.py` | MEDIUM | PARTIAL — payment_method dimension added; covers/tax still needs payload update (RE-06) |
 | RP-05 | `handle_sale_completed` used `net_amount` only | `engines/reporting/subscriptions.py` | MEDIUM | **FIXED** — now uses `total_amount` (gross) with payment_method dimension |
@@ -587,7 +587,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | RP-08 | No daily revenue snapshot auto-generation | Missing | HIGH | OPEN — needs scheduler |
 | RP-09 | `retail.refund.issued.v1` not subscribed | Missing | HIGH | **FIXED** — `handle_retail_refund` added; records REFUNDS_ISSUED + REFUND_COUNT |
 | RP-10 | `restaurant.order.cancelled.v1` not subscribed | Missing | MEDIUM | **FIXED** — `handle_order_cancelled` added; records ORDERS_CANCELLED |
-| RP-11 | Workshop quote pipeline not tracked | Missing | MEDIUM | OPEN — needs `workshop.quote.generated.v1` handler |
+| RP-11 | Workshop quote pipeline not tracked | Missing | MEDIUM | **FIXED** — `handle_workshop_quote_generated/accepted/rejected` added; records QUOTES_GENERATED, QUOTE_VALUE, QUOTES_ACCEPTED, QUOTE_ACCEPTED_VALUE, QUOTES_REJECTED |
 | RP-12 | KPI `dimension` field unused in subscriptions | `engines/reporting/subscriptions.py` | MEDIUM | **FIXED** — payment_method dimension now passed for revenue KPIs |
 | RP-13 | No hotel KPIs: ADR, RevPAR, occupancy | Missing | HIGH | **FIXED (ADR only)** — HOTEL_REVENUE_TOTAL, HOTEL_ROOM_NIGHTS, HOTEL_ADR, HOTEL_CHECKOUTS added; RevPAR needs room inventory |
 
@@ -622,17 +622,21 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 - ✅ **AC-04** — Hotel folio accounting journal (incl. company billing → AR) — **DONE**
 - ✅ **AC-05** — Procurement payment released → DR AP / CR Bank — **DONE**
 - ✅ **AC-10** — Retail refund reversal journal — **DONE**
-- **AC-03** — Workshop invoice tax split (blocked by WS-09 payload gap — still open)
+- ✅ **AC-03** — Workshop invoice tax split — **DONE** (tax_amount was already in payload; VAT split journal already in handle_workshop_invoice)
 - ✅ **AC-07** — `StatementGenerateRequest` + `accounting.statement.generated.v1` + `handle_accounting_statement_generated` → STATEMENT doc — **DONE**
-- **AC-09** — Cash session closed → ledger reconciliation entry (OPEN)
+- ✅ **AC-09** — Cash session closed → ledger reconciliation entry — **DONE** (`handle_cash_session_closed` posts CASH_OVER_SHORT journal)
+- ✅ **AC-11** — Restaurant order cancelled → revenue reversal journal — **DONE** (fires only when `refund_amount > 0`)
+- ✅ **AC-12** — Payroll deductions split: PAYE/NSSF/NHIF/SHIF per named key in deductions dict — **DONE (2026-03-06)**
 - ✅ **CS-01/CS-02** — Workshop + hotel cash payments into drawer — **DONE**
 - ✅ **CS-08** — Procurement cash supplier payment → drawer withdrawal — **DONE**
 - ✅ **CS-03** — PETTY_CASH_VOUCHER document on expense_payout — **DONE** (`cash.withdrawal.recorded.v1` subscribed)
 - ✅ **CS-07** — `variance` field added to `build_session_closed_payload` — **DONE**
 - ✅ **RP-01** — Hotel events subscribed: folio, reservation, check-in/out — **DONE**
+- ✅ **RP-02** — Cash session KPIs: CASH_SESSIONS_CLOSED + CASH_SESSION_VARIANCE — **DONE (2026-03-06)**
 - ✅ **RP-05/RP-06** — Total amount + payment method dimension on revenue KPIs — **DONE**
 - ✅ **RP-09** — Retail refund KPI (REFUNDS_ISSUED, REFUND_COUNT) — **DONE**
 - ✅ **RP-10** — Restaurant order cancelled KPI — **DONE**
+- ✅ **RP-11** — Workshop quote pipeline: QUOTES_GENERATED, QUOTE_VALUE, QUOTES_ACCEPTED, QUOTE_ACCEPTED_VALUE, QUOTES_REJECTED — **DONE (2026-03-06)**
 - ✅ **RP-12/RP-13** — Hotel ADR, room nights, checkout KPIs — **DONE**
 - **RP-08** — Daily revenue snapshot auto-generation (needs scheduler — OPEN)
 - ✅ **RP-07** — Inventory KPIs: `handle_stock_adjusted` + `handle_stock_transferred` record STOCK_ADJUSTMENTS, STOCK_ADJUSTED_UNITS, STOCK_TRANSFERS, STOCK_TRANSFERRED_UNITS — **DONE**

@@ -685,7 +685,7 @@ class TestWireAllSubscriptions:
             accounting_service=_acct_svc(),
         )
         assert "accounting" in result
-        assert result["accounting"] == 10  # stock_received + payment + cash_session + payroll + retail + refund + restaurant + workshop + hotel + procurement
+        assert result["accounting"] == 11  # stock_received + payment + cash_session + payroll + retail + refund + restaurant + restaurant_cancel + workshop + hotel + procurement
         assert registry.has_subscribers("inventory.stock.received.v1")
         assert registry.has_subscribers("cash.payment.recorded.v1")
         assert registry.has_subscribers("hr.payroll.run.v1")

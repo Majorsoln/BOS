@@ -43,6 +43,20 @@ DEFAULT_CARD_ACCOUNT = "CARD_CLEARING"
 DEFAULT_MOBILE_ACCOUNT = "MOBILE_CLEARING"
 DEFAULT_BANK_ACCOUNT = "BANK_CLEARING"
 
+# Payroll-specific statutory deduction accounts (Kenya defaults)
+DEFAULT_PAYE_PAYABLE_ACCOUNT = "PAYE_PAYABLE"          # Income tax (PAYE)
+DEFAULT_NSSF_PAYABLE_ACCOUNT = "NSSF_PAYABLE"          # National Social Security Fund
+DEFAULT_NHIF_PAYABLE_ACCOUNT = "NHIF_PAYABLE"          # National Hospital Insurance Fund / SHIF
+DEFAULT_OTHER_DEDUCTIONS_ACCOUNT = "OTHER_DEDUCTIONS_PAYABLE"
+
+# Canonical deduction-key → account-code (matched case-insensitively on deduction key)
+DEDUCTION_ACCOUNT_MAP = {
+    "paye":  DEFAULT_PAYE_PAYABLE_ACCOUNT,
+    "nssf":  DEFAULT_NSSF_PAYABLE_ACCOUNT,
+    "nhif":  DEFAULT_NHIF_PAYABLE_ACCOUNT,
+    "shif":  DEFAULT_NHIF_PAYABLE_ACCOUNT,   # SHIF (successor to NHIF from 2024)
+}
+
 # Map payment method → debit account for revenue journal entries.
 # SPLIT has no breakdown available in the event payload; the cash account
 # is used as a fallback and requires manual reconciliation.
@@ -64,6 +78,7 @@ ACCOUNTING_SUBSCRIPTIONS: Dict[str, str] = {
     "retail.sale.completed.v1":            "handle_retail_sale",
     "retail.refund.issued.v1":             "handle_retail_refund",
     "restaurant.bill.settled.v1":          "handle_restaurant_bill",
+    "restaurant.order.cancelled.v1":       "handle_restaurant_order_cancelled",
     "workshop.job.invoiced.v1":            "handle_workshop_invoice",
     "hotel.folio.settled.v1":              "handle_hotel_folio_settled",
     "procurement.payment.released.v1":     "handle_procurement_payment_released",
@@ -272,7 +287,48 @@ class AccountingSubscriptionHandler:
         except (ValueError, AttributeError):
             return
 
-        total_deductions = gross_pay - net_pay
+        # Build itemised deduction lines from the deductions dict.
+        # The deductions dict maps deduction-key (e.g. "PAYE", "NSSF", "NHIF") →
+        # amount in minor currency units.  Each known key gets its own ledger
+        # account; any unknown key goes to OTHER_DEDUCTIONS_PAYABLE.
+        deductions_dict: dict = payload.get("deductions") or {}
+        deduction_lines = []
+        named_total = 0
+        for ded_key, ded_amount_raw in deductions_dict.items():
+            try:
+                ded_amount = int(ded_amount_raw)
+            except (TypeError, ValueError):
+                continue
+            if ded_amount <= 0:
+                continue
+            account = DEDUCTION_ACCOUNT_MAP.get(ded_key.lower(), DEFAULT_OTHER_DEDUCTIONS_ACCOUNT)
+            deduction_lines.append({
+                "account_code": account,
+                "side": "CREDIT",
+                "amount": ded_amount,
+                "description": f"{ded_key} deduction: {employee_id}",
+            })
+            named_total += ded_amount
+
+        # If gross-net gap is larger than the itemised deductions, post the
+        # remainder to OTHER_DEDUCTIONS_PAYABLE (covers legacy payloads with
+        # no deductions dict or when deductions dict is incomplete).
+        remainder = (gross_pay - net_pay) - named_total
+        if remainder > 0 and not deduction_lines:
+            # No itemised deductions — use legacy lump-sum entry
+            deduction_lines.append({
+                "account_code": DEFAULT_TAX_PAYABLE_ACCOUNT,
+                "side": "CREDIT",
+                "amount": remainder,
+                "description": f"Payroll deductions (lump): {employee_id}",
+            })
+        elif remainder > 0:
+            deduction_lines.append({
+                "account_code": DEFAULT_OTHER_DEDUCTIONS_ACCOUNT,
+                "side": "CREDIT",
+                "amount": remainder,
+                "description": f"Other deductions: {employee_id}",
+            })
 
         lines = [
             {
@@ -287,14 +343,7 @@ class AccountingSubscriptionHandler:
                 "amount": net_pay,
                 "description": f"Net pay: {employee_id}",
             },
-        ]
-        if total_deductions > 0:
-            lines.append({
-                "account_code": DEFAULT_TAX_PAYABLE_ACCOUNT,
-                "side": "CREDIT",
-                "amount": total_deductions,
-                "description": f"Payroll deductions: {employee_id}",
-            })
+        ] + deduction_lines
 
         try:
             request = JournalPostRequest(
@@ -878,6 +927,77 @@ class AccountingSubscriptionHandler:
                 memo=memo,
                 currency=currency,
                 reference_id=session_id or None,
+                branch_id=branch_id,
+            )
+            command = request.to_command(
+                business_id=business_id,
+                actor_type="SYSTEM",
+                actor_id="system:accounting.subscription",
+                command_id=uuid.uuid4(),
+                correlation_id=uuid.UUID(str(payload.get("correlation_id", uuid.uuid4()))),
+                issued_at=datetime.now(tz=timezone.utc),
+            )
+            self._accounting_service._execute_command(command)
+        except (KeyError, ValueError, TypeError):
+            return
+
+    def handle_restaurant_order_cancelled(self, event_data: dict) -> None:
+        """
+        When a restaurant order is cancelled AFTER it has been billed/charged,
+        post a revenue-reversal journal.
+
+        Most order cancellations occur pre-billing (no financial impact).
+        A journal is only posted when the payload carries a non-zero
+        `refund_amount` (indicating a charge had already been recorded).
+
+        Management entry (non-statutory) — only when refund_amount > 0:
+          DEBIT  Revenue Sales   (revenue reversed)
+          CREDIT AR Trade        (reduce customer balance or issue refund)
+
+        Event source: restaurant.order.cancelled.v1
+        Payload fields used: business_id, branch_id, order_id,
+                             refund_amount (optional), currency (optional)
+        """
+        if self._accounting_service is None:
+            return
+
+        payload = event_data.get("payload", {})
+        business_id_raw = payload.get("business_id")
+        branch_id_raw = payload.get("branch_id")
+        order_id = str(payload.get("order_id", ""))
+        refund_amount = int(payload.get("refund_amount", 0))
+        currency = str(payload.get("currency", ""))
+
+        # No financial impact for pre-billing cancellations — skip silently.
+        if not business_id_raw or refund_amount <= 0 or not currency:
+            return
+
+        try:
+            business_id = uuid.UUID(str(business_id_raw))
+            branch_id = uuid.UUID(str(branch_id_raw)) if branch_id_raw else None
+        except (ValueError, AttributeError):
+            return
+
+        try:
+            request = JournalPostRequest(
+                entry_id=f"auto:restaurant-cancel:{order_id}",
+                lines=tuple([
+                    {
+                        "account_code": DEFAULT_REVENUE_ACCOUNT,
+                        "side": "DEBIT",
+                        "amount": refund_amount,
+                        "description": f"Revenue reversal: cancelled order {order_id}",
+                    },
+                    {
+                        "account_code": DEFAULT_AR_ACCOUNT,
+                        "side": "CREDIT",
+                        "amount": refund_amount,
+                        "description": f"Refund/credit note for cancelled order {order_id}",
+                    },
+                ]),
+                memo=f"Auto-journal: restaurant order {order_id} cancelled — reversal {refund_amount} {currency}",
+                currency=currency,
+                reference_id=order_id or None,
                 branch_id=branch_id,
             )
             command = request.to_command(

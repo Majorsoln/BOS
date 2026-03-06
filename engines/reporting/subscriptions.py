@@ -45,6 +45,12 @@ SUBSCRIPTIONS = {
     # HR events
     "hr.shift.ended.v1":               "handle_shift_ended",
     "hr.employee.onboarded.v1":        "handle_employee_onboarded",
+    # Cash session events (RP-02)
+    "cash.session.closed.v1":          "handle_cash_session_closed",
+    # Workshop quote pipeline events (RP-11)
+    "workshop.quote.generated.v1":     "handle_workshop_quote_generated",
+    "workshop.quote.accepted.v1":      "handle_workshop_quote_accepted",
+    "workshop.quote.rejected.v1":      "handle_workshop_quote_rejected",
 }
 
 
@@ -354,3 +360,91 @@ class ReportingSubscriptionHandler:
                 value=qty_moved, unit="COUNT",
                 event_data=event_data, source_engine="inventory",
             )
+
+    def handle_cash_session_closed(self, event_data: dict) -> None:
+        """
+        When a cash drawer session is closed, record:
+        - CASH_SESSIONS_CLOSED: count of sessions closed (always 1)
+        - CASH_SESSION_VARIANCE: absolute variance (over/short) in minor units.
+          Zero-variance closings contribute 0 to this metric.
+
+        Event source: cash.session.closed.v1
+        Payload fields used: business_id, branch_id, session_id,
+                             closing_balance, expected_balance, variance
+        """
+        payload = event_data.get("payload", {})
+        self._record_kpi(
+            kpi_key="CASH_SESSIONS_CLOSED", kpi_name="Cash Sessions Closed",
+            value=1, unit="COUNT",
+            event_data=event_data, source_engine="cash",
+        )
+        variance = int(payload.get("variance", payload.get("difference", 0)))
+        abs_variance = abs(variance)
+        if abs_variance > 0:
+            self._record_kpi(
+                kpi_key="CASH_SESSION_VARIANCE", kpi_name="Cash Session Variance",
+                value=abs_variance, unit="AMOUNT",
+                event_data=event_data, source_engine="cash",
+            )
+
+    def handle_workshop_quote_generated(self, event_data: dict) -> None:
+        """
+        When a workshop quote is generated, record:
+        - QUOTES_GENERATED: count (always 1)
+        - QUOTE_VALUE: total_price of the quote in minor currency units.
+
+        Event source: workshop.quote.generated.v1
+        Payload fields used: business_id, branch_id, quote_id, total_price
+        """
+        payload = event_data.get("payload", {})
+        self._record_kpi(
+            kpi_key="QUOTES_GENERATED", kpi_name="Workshop Quotes Generated",
+            value=1, unit="COUNT",
+            event_data=event_data, source_engine="workshop",
+        )
+        total_price = int(payload.get("total_price", 0))
+        if total_price > 0:
+            self._record_kpi(
+                kpi_key="QUOTE_VALUE", kpi_name="Workshop Quote Value",
+                value=total_price, unit="AMOUNT",
+                event_data=event_data, source_engine="workshop",
+            )
+
+    def handle_workshop_quote_accepted(self, event_data: dict) -> None:
+        """
+        When a customer accepts a workshop quote, record:
+        - QUOTES_ACCEPTED: count (always 1)
+        - QUOTE_ACCEPTED_VALUE: total_price of the accepted quote.
+
+        This feeds the quote conversion rate: QUOTES_ACCEPTED / QUOTES_GENERATED.
+
+        Event source: workshop.quote.accepted.v1
+        Payload fields used: business_id, branch_id, quote_id, total_price
+        """
+        payload = event_data.get("payload", {})
+        self._record_kpi(
+            kpi_key="QUOTES_ACCEPTED", kpi_name="Workshop Quotes Accepted",
+            value=1, unit="COUNT",
+            event_data=event_data, source_engine="workshop",
+        )
+        total_price = int(payload.get("total_price", 0))
+        if total_price > 0:
+            self._record_kpi(
+                kpi_key="QUOTE_ACCEPTED_VALUE", kpi_name="Workshop Quote Accepted Value",
+                value=total_price, unit="AMOUNT",
+                event_data=event_data, source_engine="workshop",
+            )
+
+    def handle_workshop_quote_rejected(self, event_data: dict) -> None:
+        """
+        When a customer rejects a workshop quote, record:
+        - QUOTES_REJECTED: count (always 1)
+
+        Event source: workshop.quote.rejected.v1
+        Payload fields used: business_id, branch_id, quote_id
+        """
+        self._record_kpi(
+            kpi_key="QUOTES_REJECTED", kpi_name="Workshop Quotes Rejected",
+            value=1, unit="COUNT",
+            event_data=event_data, source_engine="workshop",
+        )
