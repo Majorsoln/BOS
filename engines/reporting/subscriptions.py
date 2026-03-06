@@ -383,7 +383,7 @@ class ReportingSubscriptionHandler:
         if abs_variance > 0:
             self._record_kpi(
                 kpi_key="CASH_SESSION_VARIANCE", kpi_name="Cash Session Variance",
-                value=abs_variance, unit="AMOUNT",
+                value=abs_variance, unit="MINOR_CURRENCY",
                 event_data=event_data, source_engine="cash",
             )
 
@@ -406,7 +406,7 @@ class ReportingSubscriptionHandler:
         if total_price > 0:
             self._record_kpi(
                 kpi_key="QUOTE_VALUE", kpi_name="Workshop Quote Value",
-                value=total_price, unit="AMOUNT",
+                value=total_price, unit="MINOR_CURRENCY",
                 event_data=event_data, source_engine="workshop",
             )
 
@@ -431,7 +431,7 @@ class ReportingSubscriptionHandler:
         if total_price > 0:
             self._record_kpi(
                 kpi_key="QUOTE_ACCEPTED_VALUE", kpi_name="Workshop Quote Accepted Value",
-                value=total_price, unit="AMOUNT",
+                value=total_price, unit="MINOR_CURRENCY",
                 event_data=event_data, source_engine="workshop",
             )
 

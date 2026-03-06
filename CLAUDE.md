@@ -613,6 +613,15 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 |----|-----|---------|----------|--------|
 | APM-01 | `handle_restaurant_order_cancelled` reads `refund_amount` and `currency` but `build_order_cancelled_payload` provides neither — handler ALWAYS returns early, reversal journal never posts | `engines/accounting/subscriptions.py:968` vs `engines/restaurant/events.py:109-116` | CRITICAL | **FIXED** — `refund_amount`, `currency` added to `build_order_cancelled_payload` |
 | APM-02 | Cash `handle_retail_sale` records `net_amount` into drawer but customer pays `total_amount` (includes tax) — cash drawer balance understated | `engines/cash/subscriptions.py:139` | HIGH | **FIXED** — `amount_key` changed to `total_amount` |
+| APM-03 | Refund journal posts flat `DR Revenue / CR Cash` without reversing VAT — VAT liability overstated after refunds | `engines/accounting/subscriptions.py:620-684` | MEDIUM | **FIXED** — 3-line journal: DR Revenue (net) + DR VAT_PAYABLE (tax) / CR Cash (total) |
+| APM-04 | `build_refund_issued_payload` missing `tax_amount` — refund VAT reversal impossible | `engines/retail/events.py:167-178` | HIGH | **FIXED** — `tax_amount` added to refund event payload |
+
+### GAP SET 13: Reporting Validation Failures
+**Session:** 2026-03-06 Deep Code Review
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| RV-01 | `unit="AMOUNT"` used in 3 KPI handlers but not in `VALID_KPI_UNITS` — KPI recording crashes with ValueError | `engines/reporting/subscriptions.py:386,409,434` | CRITICAL | **FIXED** — changed to `MINOR_CURRENCY` |
+| RV-02 | 20 KPI keys used by handlers but missing from `VALID_KPI_KEYS` — all KPI recording crashes | `engines/reporting/commands/__init__.py:45-66` | CRITICAL | **FIXED** — all 20 keys added to `VALID_KPI_KEYS` |
 
 ---
 

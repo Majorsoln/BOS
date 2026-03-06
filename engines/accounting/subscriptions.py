@@ -619,15 +619,16 @@ class AccountingSubscriptionHandler:
 
     def handle_retail_refund(self, event_data: dict) -> None:
         """
-        When Retail issues a refund, post a reversal journal entry.
+        When Retail issues a refund, post a reversal journal entry with VAT split.
 
         Management entry (non-statutory):
-          DEBIT  Revenue Sales       (revenue reversal)
-          CREDIT <payment_account>   (cash/card refunded to customer)
+          DEBIT  Revenue Sales       (net revenue reversal)
+          DEBIT  VAT Payable         (tax component reversal, if tax_amount > 0)
+          CREDIT Cash on Hand        (total refund out to customer)
 
         Event source: retail.refund.issued.v1
-        Payload fields used: business_id, branch_id, refund_id, amount, currency
-        Note: refund payload carries no payment_method — CASH_ON_HAND used as fallback.
+        Payload fields used: business_id, branch_id, refund_id, amount,
+                             tax_amount, currency
         """
         if self._accounting_service is None:
             return
@@ -638,6 +639,7 @@ class AccountingSubscriptionHandler:
         refund_id = str(payload.get("refund_id", ""))
         original_sale_id = str(payload.get("original_sale_id", ""))
         amount = int(payload.get("amount", 0))
+        tax_amount = int(payload.get("tax_amount", 0))
         currency = str(payload.get("currency", ""))
 
         if not business_id_raw or not amount or not currency:
@@ -649,23 +651,34 @@ class AccountingSubscriptionHandler:
         except (ValueError, AttributeError):
             return
 
+        revenue_reversal = amount - tax_amount if tax_amount else amount
+
+        lines = [
+            {
+                "account_code": DEFAULT_REVENUE_ACCOUNT,
+                "side": "DEBIT",
+                "amount": revenue_reversal,
+                "description": f"Refund reversal: {refund_id} (orig sale: {original_sale_id})",
+            },
+            {
+                "account_code": DEFAULT_CASH_ACCOUNT,
+                "side": "CREDIT",
+                "amount": amount,
+                "description": f"Refund payment out: {refund_id}",
+            },
+        ]
+        if tax_amount > 0:
+            lines.append({
+                "account_code": DEFAULT_VAT_PAYABLE_ACCOUNT,
+                "side": "DEBIT",
+                "amount": tax_amount,
+                "description": f"VAT reversal: refund {refund_id}",
+            })
+
         try:
             request = JournalPostRequest(
                 entry_id=f"auto:refund:{refund_id}",
-                lines=tuple([
-                    {
-                        "account_code": DEFAULT_REVENUE_ACCOUNT,
-                        "side": "DEBIT",
-                        "amount": amount,
-                        "description": f"Refund reversal: {refund_id} (orig sale: {original_sale_id})",
-                    },
-                    {
-                        "account_code": DEFAULT_CASH_ACCOUNT,
-                        "side": "CREDIT",
-                        "amount": amount,
-                        "description": f"Refund payment out: {refund_id}",
-                    },
-                ]),
+                lines=tuple(lines),
                 memo=f"Auto-journal: retail refund {refund_id} — {amount} {currency}",
                 currency=currency,
                 reference_id=refund_id or None,

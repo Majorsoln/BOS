@@ -170,6 +170,7 @@ def build_refund_issued_payload(command: Command) -> dict:
         "refund_id": command.payload["refund_id"],
         "original_sale_id": command.payload["original_sale_id"],
         "amount": command.payload["amount"],
+        "tax_amount": command.payload.get("tax_amount", 0),
         "currency": command.payload["currency"],
         "reason": command.payload["reason"],
         "lines": command.payload.get("lines", []),

@@ -62,6 +62,31 @@ VALID_KPI_KEYS = frozenset({
     "HOURS_WORKED",          # Total hours worked
     "TIPS_COLLECTED",        # Tips collected (restaurant)
     "TABLES_SERVED",         # Tables served (restaurant)
+    # Retail refunds
+    "REFUNDS_ISSUED",        # Refund amount (minor currency)
+    "REFUND_COUNT",          # Refund count
+    # Cash session
+    "CASH_SESSIONS_CLOSED",  # Cash sessions closed count
+    "CASH_SESSION_VARIANCE", # Cash session over/short variance
+    # Hotel KPIs
+    "HOTEL_REVENUE_TOTAL",   # Hotel revenue total
+    "HOTEL_ROOM_NIGHTS",     # Room nights sold
+    "HOTEL_ADR",             # Average daily rate
+    "HOTEL_CHECKOUTS",       # Guest checkouts count
+    "RESERVATIONS_CONFIRMED",# Reservations confirmed count
+    "GUESTS_CHECKED_IN",     # Guest check-ins count
+    "GUESTS_CHECKED_OUT",    # Guest check-outs count
+    # Workshop quote pipeline
+    "QUOTES_GENERATED",      # Workshop quotes generated
+    "QUOTE_VALUE",           # Workshop quote value (minor currency)
+    "QUOTES_ACCEPTED",       # Workshop quotes accepted
+    "QUOTE_ACCEPTED_VALUE",  # Accepted quote value (minor currency)
+    "QUOTES_REJECTED",       # Workshop quotes rejected
+    # Inventory movements
+    "STOCK_ADJUSTMENTS",     # Stock adjustment count
+    "STOCK_ADJUSTED_UNITS",  # Units adjusted
+    "STOCK_TRANSFERS",       # Stock transfer count
+    "STOCK_TRANSFERRED_UNITS", # Units transferred
     "CUSTOM",                # Custom KPI
 })
 
