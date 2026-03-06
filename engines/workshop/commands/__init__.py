@@ -101,6 +101,11 @@ class JobCreateRequest:
 class JobAssignRequest:
     job_id: str
     technician_id: str
+    customer_id: Optional[str] = None
+    job_description: str = ""
+    priority: str = "NORMAL"
+    estimated_completion: str = ""
+    parts_required: tuple = ()
     branch_id: Optional[uuid.UUID] = None
 
     def __post_init__(self):
@@ -112,6 +117,11 @@ class JobAssignRequest:
     def to_command(self, **kw) -> Command:
         return _cmd(WORKSHOP_JOB_ASSIGN_REQUEST, {
             "job_id": self.job_id, "technician_id": self.technician_id,
+            "customer_id": self.customer_id,
+            "job_description": self.job_description,
+            "priority": self.priority,
+            "estimated_completion": self.estimated_completion,
+            "parts_required": list(self.parts_required),
         }, branch_id=self.branch_id, **kw)
 
 
@@ -161,6 +171,17 @@ class JobInvoiceRequest:
     invoice_id: str
     amount: int
     currency: str
+    customer_id: Optional[str] = None
+    labour_hours: int = 0
+    labour_rate: int = 0
+    labour_total: int = 0
+    parts_used: tuple = ()
+    materials_total: int = 0
+    tax_amount: int = 0
+    discount_amount: int = 0
+    payment_method: str = ""
+    payment_terms: str = "DUE_ON_RECEIPT"
+    due_date: str = ""
     branch_id: Optional[uuid.UUID] = None
 
     def __post_init__(self):
@@ -177,6 +198,17 @@ class JobInvoiceRequest:
         return _cmd(WORKSHOP_JOB_INVOICE_REQUEST, {
             "job_id": self.job_id, "invoice_id": self.invoice_id,
             "amount": self.amount, "currency": self.currency,
+            "customer_id": self.customer_id,
+            "labour_hours": self.labour_hours,
+            "labour_rate": self.labour_rate,
+            "labour_total": self.labour_total,
+            "parts_used": list(self.parts_used),
+            "materials_total": self.materials_total,
+            "tax_amount": self.tax_amount,
+            "discount_amount": self.discount_amount,
+            "payment_method": self.payment_method,
+            "payment_terms": self.payment_terms,
+            "due_date": self.due_date,
         }, branch_id=self.branch_id, **kw)
 
 

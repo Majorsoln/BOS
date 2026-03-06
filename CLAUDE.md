@@ -653,6 +653,16 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | PM2-06 | `procurement.order.created.v1` missing `po_id` alias — PO document has no PO number | `engines/procurement/events.py:83-95` vs `engines/documents/subscriptions.py:844` | HIGH | **FIXED** — `po_id` alias, `tax_amount`, `delivery_date` alias, `payment_terms` added |
 | PM2-07 | `PaymentReleaseRequest` command class missing `supplier_id`/`supplier_name`/`approved_by` — event builder reads them but command never provides them | `engines/procurement/commands/__init__.py:362-403` | HIGH | **FIXED** — `supplier_id`, `supplier_name`, `approved_by` fields added to command class |
 
+### GAP SET 17: Workshop Service & Command Gaps (Round 3)
+**Session:** 2026-03-06 Deep Code Review (Round 3 — Workshop Agent)
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| WS3-01 | `PAYLOAD_BUILDERS` dict missing `workshop.quote.accept.request` and `workshop.quote.reject.request` — causes KeyError crash when accepting/rejecting quotes | `engines/workshop/services/__init__.py:168-180` | CRITICAL | **FIXED** — entries + imports added |
+| WS3-02 | `build_job_completed_payload` uses `labor_hours` (American) but rest of codebase uses `labour_hours` (British) — document handler reads `labour_hours` | `engines/workshop/events.py:128` vs `engines/documents/subscriptions.py:586` | MEDIUM | **FIXED** — event builder now outputs `labour_hours` (reads both spellings from command) |
+| WS3-03 | Project quote document handler reads `unit_cost`/`item_cost` from items but event provides raw input items with no cost data — all line items show 0 | `engines/documents/subscriptions.py:466-475` vs `engines/workshop/events.py:284` | HIGH | **FIXED** — handler now distributes `total_cost` across items as fallback |
+| WS3-04 | `JobAssignRequest` only has `job_id` + `technician_id` — event builder reads `customer_id`, `job_description`, `priority`, `estimated_completion`, `parts_required` | `engines/workshop/commands/__init__.py:101-115` | HIGH | **FIXED** — all fields added to request class |
+| WS3-05 | `JobInvoiceRequest` only has `job_id`/`invoice_id`/`amount`/`currency` — event builder reads `customer_id`, `labour_hours/rate/total`, `parts_used`, `materials_total`, `tax_amount`, `discount_amount`, `payment_method`, `payment_terms`, `due_date` | `engines/workshop/commands/__init__.py:158-180` | HIGH | **FIXED** — all 11 fields added to request class |
+
 ---
 
 ## IMPLEMENTATION PRIORITY ORDER
@@ -730,6 +740,13 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 - ✅ **PM2-05** — Workshop `customer_id` added to `build_job_completed_payload` — **DONE**
 - ✅ **PM2-06** — Procurement `po_id`/`tax_amount`/`delivery_date`/`payment_terms` added to `build_order_created_payload` — **DONE**
 - ✅ **PM2-07** — `PaymentReleaseRequest` command class: `supplier_id`, `supplier_name`, `approved_by` fields added — **DONE**
+
+### Phase 3E — Workshop Service Bugs + Command Completeness (2026-03-06 session, Round 3)
+- ✅ **WS3-01** — `PAYLOAD_BUILDERS` entries + imports for `workshop.quote.accept/reject.request` — **DONE**
+- ✅ **WS3-02** — `labor_hours` → `labour_hours` in `build_job_completed_payload` — **DONE**
+- ✅ **WS3-03** — Project quote document handler: distribute `total_cost` across items as fallback — **DONE**
+- ✅ **WS3-04** — `JobAssignRequest`: added `customer_id`, `job_description`, `priority`, `estimated_completion`, `parts_required` — **DONE**
+- ✅ **WS3-05** — `JobInvoiceRequest`: added `customer_id`, `labour_hours/rate/total`, `parts_used`, `materials_total`, `tax_amount`, `discount_amount`, `payment_method`, `payment_terms`, `due_date` — **DONE**
 
 ### Phase 4 — Delivery & Rendering
 17. ✅ **X-05** — `/docs/{id}/render-pdf` and `/docs/{id}/render-html` endpoints exist — **DONE**

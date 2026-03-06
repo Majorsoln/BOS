@@ -464,12 +464,15 @@ class DocumentSubscriptionHandler:
         customer = self._resolve_cust(p.get("customer_id"))
 
         items = p.get("items", [])
+        total_cost = p.get("total_cost", 0)
+        num_items = len(items) or 1
         line_items = [
             {
-                "description": f"Item {item.get('item_id', i+1)} — {item.get('style_id', '')}",
+                "description": f"Item {item.get('item_id', i+1)} — {item.get('style_id', '')} "
+                               f"({item.get('dimensions', {})})",
                 "quantity":    item.get("unit_quantity", 1),
-                "unit_price":  item.get("unit_cost", 0),
-                "line_total":  item.get("item_cost", 0),
+                "unit_price":  item.get("unit_cost", total_cost // num_items),
+                "line_total":  item.get("item_cost", total_cost // num_items),
             }
             for i, item in enumerate(items)
         ]

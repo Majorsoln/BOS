@@ -125,7 +125,7 @@ def build_job_completed_payload(command: Command) -> dict:
         "job_id": command.payload["job_id"],
         "customer_id": command.payload.get("customer_id"),
         "parts_used": command.payload.get("parts_used", []),
-        "labor_hours": command.payload.get("labor_hours", 0),
+        "labour_hours": command.payload.get("labor_hours", command.payload.get("labour_hours", 0)),
         "final_cost": command.payload["final_cost"],
         "currency": command.payload["currency"],
         "completed_at": command.issued_at,
