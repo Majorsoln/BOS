@@ -23,6 +23,8 @@ ENV/
 .env
 .env.*
 *.env
+# Allow the example template (contains no real secrets)
+!.env.example
 
 # -------------------------
 # Django

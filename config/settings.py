@@ -6,6 +6,16 @@ BOS architecture is the authority — Django does not dictate structure.
 
 INSTALLED_APPS will grow as BOS modules are built, starting with
 core.event_store as the first module.
+
+Environment variables required for production:
+  BOS_SECRET_KEY       — Django secret key (required in production)
+  BOS_DEBUG            — "true"/"false" (default: "true" for dev)
+  BOS_ALLOWED_HOSTS    — comma-separated hostnames (default: empty)
+  BOS_DB_NAME          — PostgreSQL database name
+  BOS_DB_USER          — PostgreSQL username
+  BOS_DB_PASSWORD      — PostgreSQL password
+  BOS_DB_HOST          — PostgreSQL host (default: localhost)
+  BOS_DB_PORT          — PostgreSQL port (default: 5432)
 """
 
 import os
@@ -16,12 +26,12 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ── Security ──────────────────────────────────────────────────
-# TODO: Move to environment variable before any deployment
-SECRET_KEY = "bos-dev-key-replace-before-deployment"
+SECRET_KEY = os.environ.get("BOS_SECRET_KEY", "bos-dev-key-replace-before-deployment")
 
-DEBUG = True
+DEBUG = os.environ.get("BOS_DEBUG", "true").lower() == "true"
 
-ALLOWED_HOSTS = []
+_allowed_hosts = os.environ.get("BOS_ALLOWED_HOSTS", "")
+ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts.split(",") if h.strip()]
 
 # ── Installed Apps ────────────────────────────────────────────
 # Django infrastructure only. BOS modules are added as they are built.
@@ -50,15 +60,14 @@ ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 
 # ── Database ──────────────────────────────────────────────────
-#psspg annotations5123
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'bos_project',
-        'USER': 'postgres',
-        'PASSWORD': 'annotations5123',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': os.environ.get("BOS_DB_NAME", "bos_project"),
+        'USER': os.environ.get("BOS_DB_USER", "postgres"),
+        'PASSWORD': os.environ.get("BOS_DB_PASSWORD", ""),
+        'HOST': os.environ.get("BOS_DB_HOST", "localhost"),
+        'PORT': os.environ.get("BOS_DB_PORT", "5432"),
     }
 }
 
