@@ -663,9 +663,19 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | WS3-04 | `JobAssignRequest` only has `job_id` + `technician_id` — event builder reads `customer_id`, `job_description`, `priority`, `estimated_completion`, `parts_required` | `engines/workshop/commands/__init__.py:101-115` | HIGH | **FIXED** — all fields added to request class |
 | WS3-05 | `JobInvoiceRequest` only has `job_id`/`invoice_id`/`amount`/`currency` — event builder reads `customer_id`, `labour_hours/rate/total`, `parts_used`, `materials_total`, `tax_amount`, `discount_amount`, `payment_method`, `payment_terms`, `due_date` | `engines/workshop/commands/__init__.py:158-180` | HIGH | **FIXED** — all 11 fields added to request class |
 
+### GAP SET 18: Event Dispatcher Type Mismatch (ROOT CAUSE)
+**Session:** 2026-03-06 Deep Code Review (Round 3 — Hotel Agent)
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| DISP-01 | Event dispatcher passes Django `Event` ORM model object to handlers, but ALL handlers expect a `dict` — `event_data.get("payload", {})` raises `AttributeError` on ORM model | `core/events/dispatcher.py:82` — `handler(event)` passes ORM instance; ALL `engines/*/subscriptions.py` handlers call `.get()` on it | **SYSTEM-BREAKING** | **FIXED** — `_event_to_dict(event)` helper converts ORM model to dict before dispatch; handles both dict and ORM inputs |
+| DISP-02 | Impact: In Django production path (`_subscribed_persist_event` in `adapters/django_api/wiring.py:342` always passes `subscriber_registry`), ALL cross-engine subscription handlers silently fail. Every `except Exception` in dispatcher catches the `AttributeError` and logs it, but no documents, no accounting journals, no KPIs, no cash entries are ever produced. | All subscriber engines | **SYSTEM-BREAKING** | **FIXED** by DISP-01 |
+
 ---
 
 ## IMPLEMENTATION PRIORITY ORDER
+
+### Phase 0 — Root Cause Fix (Production Dispatcher)
+- ✅ **DISP-01/DISP-02** — `_event_to_dict()` converts Event ORM model to dict before passing to handlers; all cross-engine subscriptions now receive proper dict data — **DONE (2026-03-06)**
 
 ### Phase 1 — Foundation (Unblock Everything)
 1. ✅ **W-05** — Expand `VALID_DOCUMENT_TYPES` to include all 25 types — **DONE**

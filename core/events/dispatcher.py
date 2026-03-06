@@ -34,6 +34,32 @@ from core.events.registry import SubscriberRegistry
 logger = logging.getLogger("bos.events")
 
 
+def _event_to_dict(event: Any) -> dict:
+    """Convert an Event ORM model instance to a plain dict for handlers.
+
+    Handlers expect dict access (event_data.get("payload", {})), not
+    attribute access on a Django model. This bridges the two conventions.
+    """
+    if isinstance(event, dict):
+        return event
+    return {
+        "event_id": event.event_id,
+        "event_type": event.event_type,
+        "event_version": event.event_version,
+        "business_id": event.business_id,
+        "branch_id": event.branch_id,
+        "source_engine": event.source_engine,
+        "actor_type": event.actor_type,
+        "actor_id": event.actor_id,
+        "correlation_id": event.correlation_id,
+        "causation_id": getattr(event, "causation_id", None),
+        "payload": event.payload,
+        "reference": getattr(event, "reference", {}),
+        "created_at": event.created_at,
+        "status": getattr(event, "status", "FINAL"),
+    }
+
+
 def dispatch(event: Any, registry: SubscriberRegistry) -> dict:
     """
     Dispatch a persisted event to all registered subscribers.
@@ -75,11 +101,15 @@ def dispatch(event: Any, registry: SubscriberRegistry) -> dict:
         )
         return result
 
+    # Convert Event ORM model to dict for handlers.
+    # Handlers expect event_data.get("payload", {}) — dict access, not attribute access.
+    event_dict = _event_to_dict(event)
+
     for handler, subscriber_engine in subscribers:
         handler_name = getattr(handler, "__qualname__", str(handler))
 
         try:
-            handler(event)
+            handler(event_dict)
             result["subscribers_notified"] += 1
             logger.debug(
                 f"Dispatched {event_type} → {handler_name} "
