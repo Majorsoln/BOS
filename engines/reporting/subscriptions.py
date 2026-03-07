@@ -51,6 +51,8 @@ SUBSCRIPTIONS = {
     "workshop.quote.generated.v1":     "handle_workshop_quote_generated",
     "workshop.quote.accepted.v1":      "handle_workshop_quote_accepted",
     "workshop.quote.rejected.v1":      "handle_workshop_quote_rejected",
+    # Accounting events (AC-13)
+    "accounting.ar_aging.snapshot.v1": "handle_ar_aging_snapshot",
 }
 
 
@@ -448,3 +450,29 @@ class ReportingSubscriptionHandler:
             value=1, unit="COUNT",
             event_data=event_data, source_engine="workshop",
         )
+
+    # ── ACCOUNTING ───────────────────────────────────────────────
+
+    def handle_ar_aging_snapshot(self, event_data: dict) -> None:
+        """
+        accounting.ar_aging.snapshot.v1 → AR aging KPIs
+
+        Records 6 KPI entries covering the AR aging buckets:
+        AR_CURRENT, AR_AGING_0_30, AR_AGING_30_60, AR_AGING_60_90,
+        AR_AGING_90_PLUS, AR_TOTAL_OUTSTANDING.
+        """
+        payload = event_data.get("payload", {})
+        buckets = [
+            ("AR_CURRENT",           "AR Current (Not Due)",    payload.get("current", 0)),
+            ("AR_AGING_0_30",        "AR Aging 0-30 Days",      payload.get("aging_0_30", 0)),
+            ("AR_AGING_30_60",       "AR Aging 30-60 Days",     payload.get("aging_30_60", 0)),
+            ("AR_AGING_60_90",       "AR Aging 60-90 Days",     payload.get("aging_60_90", 0)),
+            ("AR_AGING_90_PLUS",     "AR Aging 90+ Days",       payload.get("aging_90_plus", 0)),
+            ("AR_TOTAL_OUTSTANDING", "AR Total Outstanding",    payload.get("total_outstanding", 0)),
+        ]
+        for kpi_key, kpi_name, value in buckets:
+            self._record_kpi(
+                kpi_key=kpi_key, kpi_name=kpi_name,
+                value=value, unit="MINOR_CURRENCY",
+                event_data=event_data, source_engine="accounting",
+            )

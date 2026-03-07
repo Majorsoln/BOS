@@ -293,6 +293,7 @@ def _build_default_numbering_provider(business_id: uuid.UUID) -> InMemoryNumberi
         ("STOCK_TRANSFER_NOTE",     "STN-",  "MONTHLY"),
         ("STOCK_ADJUSTMENT_NOTE",   "SAN-",  "MONTHLY"),
         ("STATEMENT",               "STMT-", "MONTHLY"),
+        ("CASH_SESSION_RECONCILIATION", "CSR-", "DAILY"),
         ("MATERIAL_REQUISITION",    "MRN-",  "MONTHLY"),
         ("JOB_SHEET",               "JS-",   "YEARLY"),
     ]

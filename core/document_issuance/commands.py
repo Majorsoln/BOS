@@ -35,6 +35,7 @@ from core.document_issuance.registry import (
     DOC_REGISTRATION_CARD_ISSUE_REQUEST,
     DOC_RESERVATION_CONFIRMATION_ISSUE_REQUEST,
     DOC_SALES_ORDER_ISSUE_REQUEST,
+    DOC_CASH_SESSION_RECONCILIATION_ISSUE_REQUEST,
     DOC_STATEMENT_ISSUE_REQUEST,
     DOC_STOCK_ADJUSTMENT_NOTE_ISSUE_REQUEST,
     DOC_STOCK_TRANSFER_NOTE_ISSUE_REQUEST,
@@ -282,3 +283,4 @@ PettyCashVoucherIssueRequest         = _make_issue_request(DOC_PETTY_CASH_VOUCHE
 StockTransferNoteIssueRequest        = _make_issue_request(DOC_STOCK_TRANSFER_NOTE_ISSUE_REQUEST)
 StockAdjustmentNoteIssueRequest      = _make_issue_request(DOC_STOCK_ADJUSTMENT_NOTE_ISSUE_REQUEST)
 StatementIssueRequest                = _make_issue_request(DOC_STATEMENT_ISSUE_REQUEST)
+CashSessionReconciliationIssueRequest = _make_issue_request(DOC_CASH_SESSION_RECONCILIATION_ISSUE_REQUEST)

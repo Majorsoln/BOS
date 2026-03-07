@@ -87,6 +87,13 @@ VALID_KPI_KEYS = frozenset({
     "STOCK_ADJUSTED_UNITS",  # Units adjusted
     "STOCK_TRANSFERS",       # Stock transfer count
     "STOCK_TRANSFERRED_UNITS", # Units transferred
+    # AR aging
+    "AR_CURRENT",            # AR not yet due
+    "AR_AGING_0_30",         # AR 0-30 days overdue
+    "AR_AGING_30_60",        # AR 30-60 days overdue
+    "AR_AGING_60_90",        # AR 60-90 days overdue
+    "AR_AGING_90_PLUS",      # AR 90+ days overdue
+    "AR_TOTAL_OUTSTANDING",  # Total outstanding AR
     "CUSTOM",                # Custom KPI
 })
 

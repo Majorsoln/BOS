@@ -66,6 +66,7 @@ COMMAND_PERMISSION_MAP = {
     "doc.stock_transfer_note.issue.request": PERMISSION_DOC_ISSUE,
     "doc.stock_adjustment_note.issue.request": PERMISSION_DOC_ISSUE,
     "doc.statement.issue.request": PERMISSION_DOC_ISSUE,
+    "doc.cash_session_reconciliation.issue.request": PERMISSION_DOC_ISSUE,
     "doc.material_requisition.issue.request": PERMISSION_DOC_ISSUE,
     "doc.job_sheet.issue.request": PERMISSION_DOC_ISSUE,
     # ------------------------------------------------------------------ Retail / POS
@@ -183,6 +184,8 @@ COMMAND_PERMISSION_MAP = {
     "accounting.journal.reverse.request": PERMISSION_ADMIN_CONFIGURE,
     "accounting.obligation.create.request": PERMISSION_ADMIN_CONFIGURE,
     "accounting.obligation.fulfill.request": PERMISSION_ADMIN_CONFIGURE,
+    "accounting.statement.generate.request": PERMISSION_ADMIN_CONFIGURE,
+    "accounting.ar_aging.snapshot.request": PERMISSION_ADMIN_CONFIGURE,
     # ------------------------------------------------------------------ Loyalty / Wallet / Promotion / Customer
     "loyalty.program.configure.request": PERMISSION_ADMIN_CONFIGURE,
     "loyalty.points.earn.request": PERMISSION_POS_SELL,

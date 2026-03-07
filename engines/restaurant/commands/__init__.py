@@ -210,29 +210,22 @@ class SendKitchenTicketRequest:
             raise ValueError("order_id must be non-empty.")
         if not self.table_id:
             raise ValueError("table_id must be non-empty.")
-        if not self.station:
-            raise ValueError("station must be non-empty.")
+        if self.station not in self.VALID_STATIONS:
+            raise ValueError(f"station must be one of {sorted(self.VALID_STATIONS)}.")
         if not isinstance(self.items, tuple) or not self.items:
             raise ValueError("items must be a non-empty tuple.")
         if self.priority not in self.VALID_PRIORITIES:
             raise ValueError(f"priority must be one of {sorted(self.VALID_PRIORITIES)}.")
 
-    def to_command(self, *, business_id, actor_type, actor_id,
-                   command_id, correlation_id, issued_at):
-        return _cmd(
-            RESTAURANT_KITCHEN_TICKET_SEND_REQUEST,
-            {
-                "ticket_id": self.ticket_id,
-                "order_id": self.order_id,
-                "table_id": self.table_id,
-                "station": self.station,
-                "items": list(self.items),
-                "priority": self.priority,
-            },
-            business_id=business_id, actor_type=actor_type, actor_id=actor_id,
-            command_id=command_id, correlation_id=correlation_id, issued_at=issued_at,
-            branch_id=self.branch_id,
-        )
+    def to_command(self, **kw) -> Command:
+        return _cmd(RESTAURANT_KITCHEN_TICKET_SEND_REQUEST, {
+            "ticket_id": self.ticket_id,
+            "order_id": self.order_id,
+            "table_id": self.table_id,
+            "station": self.station,
+            "items": list(self.items),
+            "priority": self.priority,
+        }, branch_id=self.branch_id, **kw)
 
 
 VALID_SPLIT_TYPES = frozenset({"BY_GUEST", "BY_ITEM", "EQUAL"})
@@ -258,27 +251,25 @@ class SplitBillRequest:
             raise ValueError(f"split_type must be one of {sorted(VALID_SPLIT_TYPES)}.")
         if not isinstance(self.splits, tuple) or not self.splits:
             raise ValueError("splits must be a non-empty tuple.")
+        for i, split in enumerate(self.splits):
+            if not isinstance(split, dict):
+                raise ValueError(f"splits[{i}] must be a dict.")
+            if "amount" not in split:
+                raise ValueError(f"splits[{i}] must contain 'amount'.")
         if not isinstance(self.total_amount, int) or self.total_amount <= 0:
             raise ValueError("total_amount must be positive integer.")
         if not self.currency or len(self.currency) != 3:
             raise ValueError("currency must be 3-letter ISO code.")
 
-    def to_command(self, *, business_id, actor_type, actor_id,
-                   command_id, correlation_id, issued_at):
-        return _cmd(
-            RESTAURANT_BILL_SPLIT_REQUEST,
-            {
-                "split_id": self.split_id,
-                "table_id": self.table_id,
-                "split_type": self.split_type,
-                "splits": list(self.splits),
-                "total_amount": self.total_amount,
-                "currency": self.currency,
-            },
-            business_id=business_id, actor_type=actor_type, actor_id=actor_id,
-            command_id=command_id, correlation_id=correlation_id, issued_at=issued_at,
-            branch_id=self.branch_id,
-        )
+    def to_command(self, **kw) -> Command:
+        return _cmd(RESTAURANT_BILL_SPLIT_REQUEST, {
+            "split_id": self.split_id,
+            "table_id": self.table_id,
+            "split_type": self.split_type,
+            "splits": list(self.splits),
+            "total_amount": self.total_amount,
+            "currency": self.currency,
+        }, branch_id=self.branch_id, **kw)
 
 
 @dataclass(frozen=True)

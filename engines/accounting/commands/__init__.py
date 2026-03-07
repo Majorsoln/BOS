@@ -26,6 +26,7 @@ ACCOUNTING_ACCOUNT_CREATE_REQUEST = "accounting.account.create.request"
 ACCOUNTING_OBLIGATION_CREATE_REQUEST = "accounting.obligation.create.request"
 ACCOUNTING_OBLIGATION_FULFILL_REQUEST = "accounting.obligation.fulfill.request"
 ACCOUNTING_STATEMENT_GENERATE_REQUEST = "accounting.statement.generate.request"
+ACCOUNTING_AR_AGING_SNAPSHOT_REQUEST = "accounting.ar_aging.snapshot.request"
 
 ACCOUNTING_COMMAND_TYPES = frozenset({
     ACCOUNTING_JOURNAL_POST_REQUEST,
@@ -34,6 +35,7 @@ ACCOUNTING_COMMAND_TYPES = frozenset({
     ACCOUNTING_OBLIGATION_CREATE_REQUEST,
     ACCOUNTING_OBLIGATION_FULFILL_REQUEST,
     ACCOUNTING_STATEMENT_GENERATE_REQUEST,
+    ACCOUNTING_AR_AGING_SNAPSHOT_REQUEST,
 })
 
 VALID_ACCOUNT_TYPES = frozenset({
@@ -387,6 +389,70 @@ class StatementGenerateRequest:
                 "total_credit":    self.total_credit,
                 "closing_balance": self.closing_balance,
                 "currency":        self.currency,
+            },
+            issued_at=issued_at,
+            correlation_id=correlation_id,
+            source_engine="accounting",
+            scope_requirement=SCOPE_BUSINESS_ALLOWED,
+            actor_requirement=ACTOR_REQUIRED,
+        )
+
+
+@dataclass(frozen=True)
+class ArAgingSnapshotRequest:
+    """
+    On-demand or scheduled request to compute AR aging buckets.
+
+    The caller pre-computes the aging data from obligation records.
+    On success the accounting engine emits accounting.ar_aging.snapshot.v1
+    which the ReportingSubscriptionHandler records as KPIs.
+    """
+    snapshot_id: str
+    snapshot_date: str            # ISO date string e.g. "2026-03-07"
+    currency: str
+    current: int = 0              # Not yet due (minor currency)
+    aging_0_30: int = 0           # 0-30 days overdue
+    aging_30_60: int = 0          # 30-60 days overdue
+    aging_60_90: int = 0          # 60-90 days overdue
+    aging_90_plus: int = 0        # 90+ days overdue
+    total_outstanding: int = 0    # Total AR outstanding
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.snapshot_id:
+            raise ValueError("snapshot_id must be non-empty.")
+        if not self.snapshot_date:
+            raise ValueError("snapshot_date must be non-empty.")
+        if not self.currency or len(self.currency) != 3:
+            raise ValueError("currency must be 3-letter ISO 4217 code.")
+
+    def to_command(
+        self,
+        *,
+        business_id: uuid.UUID,
+        actor_type: str,
+        actor_id: str,
+        command_id: uuid.UUID,
+        correlation_id: uuid.UUID,
+        issued_at: datetime,
+    ) -> Command:
+        return Command(
+            command_id=command_id,
+            command_type=ACCOUNTING_AR_AGING_SNAPSHOT_REQUEST,
+            business_id=business_id,
+            branch_id=self.branch_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            payload={
+                "snapshot_id":       self.snapshot_id,
+                "snapshot_date":     self.snapshot_date,
+                "currency":          self.currency,
+                "current":           self.current,
+                "aging_0_30":        self.aging_0_30,
+                "aging_30_60":       self.aging_30_60,
+                "aging_60_90":       self.aging_60_90,
+                "aging_90_plus":     self.aging_90_plus,
+                "total_outstanding": self.total_outstanding,
             },
             issued_at=issued_at,
             correlation_id=correlation_id,

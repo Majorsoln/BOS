@@ -23,6 +23,7 @@ ACCOUNTING_ACCOUNT_CREATED_V1 = "accounting.account.created.v1"
 ACCOUNTING_OBLIGATION_CREATED_V1 = "accounting.obligation.created.v1"
 ACCOUNTING_OBLIGATION_FULFILLED_V1 = "accounting.obligation.fulfilled.v1"
 ACCOUNTING_STATEMENT_GENERATED_V1 = "accounting.statement.generated.v1"
+ACCOUNTING_AR_AGING_SNAPSHOT_V1 = "accounting.ar_aging.snapshot.v1"
 
 ACCOUNTING_EVENT_TYPES = (
     ACCOUNTING_JOURNAL_POSTED_V1,
@@ -31,6 +32,7 @@ ACCOUNTING_EVENT_TYPES = (
     ACCOUNTING_OBLIGATION_CREATED_V1,
     ACCOUNTING_OBLIGATION_FULFILLED_V1,
     ACCOUNTING_STATEMENT_GENERATED_V1,
+    ACCOUNTING_AR_AGING_SNAPSHOT_V1,
 )
 
 
@@ -45,6 +47,7 @@ COMMAND_TO_EVENT_TYPE = {
     "accounting.obligation.create.request": ACCOUNTING_OBLIGATION_CREATED_V1,
     "accounting.obligation.fulfill.request": ACCOUNTING_OBLIGATION_FULFILLED_V1,
     "accounting.statement.generate.request": ACCOUNTING_STATEMENT_GENERATED_V1,
+    "accounting.ar_aging.snapshot.request": ACCOUNTING_AR_AGING_SNAPSHOT_V1,
 }
 
 
@@ -157,5 +160,26 @@ def build_statement_generated_payload(command: Command) -> dict:
         "closing_balance": command.payload.get("closing_balance", 0),
         "currency":        command.payload.get("currency", ""),
         "generated_at":    command.issued_at,
+    })
+    return payload
+
+
+def build_ar_aging_snapshot_payload(command: Command) -> dict:
+    """
+    Payload for AR aging snapshot.
+    Pre-computed aging buckets from obligation records.
+    """
+    payload = _base_payload(command)
+    payload.update({
+        "snapshot_id":       command.payload["snapshot_id"],
+        "snapshot_date":     command.payload["snapshot_date"],
+        "currency":          command.payload.get("currency", ""),
+        "current":           command.payload.get("current", 0),
+        "aging_0_30":        command.payload.get("aging_0_30", 0),
+        "aging_30_60":       command.payload.get("aging_30_60", 0),
+        "aging_60_90":       command.payload.get("aging_60_90", 0),
+        "aging_90_plus":     command.payload.get("aging_90_plus", 0),
+        "total_outstanding": command.payload.get("total_outstanding", 0),
+        "snapshot_at":       command.issued_at,
     })
     return payload

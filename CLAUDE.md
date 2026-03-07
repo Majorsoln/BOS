@@ -553,12 +553,12 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | AC-05 | No handler for `procurement.payment.released.v1` | Missing | HIGH | **FIXED** — `handle_procurement_payment_released` added; DR AP / CR Bank |
 | AC-06 | No PAYMENT_VOUCHER document trigger from accounting | Missing | HIGH | OPEN — needs DocumentSubscriptionHandler (W-03) |
 | AC-07 | No STATEMENT_OF_ACCOUNT auto-generation | Missing | MEDIUM | **FIXED** — `StatementGenerateRequest` command + `accounting.statement.generated.v1` event wired; `DocumentSubscriptionHandler.handle_accounting_statement_generated` issues STATEMENT doc |
-| AC-08 | No `ObligationCreateRequest` document trigger | Missing | MEDIUM | OPEN |
+| AC-08 | No `ObligationCreateRequest` document trigger | Missing | MEDIUM | **FIXED** — `handle_accounting_obligation_created` added to `DocumentSubscriptionHandler`; RECEIVABLE obligations auto-issue INVOICE |
 | AC-09 | No handler for `cash.session.closed.v1` | Missing | MEDIUM | **FIXED** — `handle_cash_session_closed` posts CASH_OVER_SHORT journal on non-zero variance |
 | AC-10 | No handler for `retail.refund.issued.v1` | Missing | HIGH | **FIXED** — `handle_retail_refund` added; DR Revenue / CR Cash |
 | AC-11 | No handler for `restaurant.order.cancelled.v1` | Missing | MEDIUM | **PARTIAL** — handler exists but `build_order_cancelled_payload` lacks `refund_amount`/`currency`, so reversal journal never posts (see APM-01) |
 | AC-12 | `handle_payroll_run` deductions lumped into single TAX_PAYABLE | `engines/accounting/subscriptions.py` | MEDIUM | **FIXED** — deductions dict split per named key: PAYE → PAYE_PAYABLE, NSSF → NSSF_PAYABLE, NHIF/SHIF → NHIF_PAYABLE, remainder → OTHER_DEDUCTIONS_PAYABLE |
-| AC-13 | No AR aging snapshot | Missing | MEDIUM | OPEN |
+| AC-13 | No AR aging snapshot | Missing | MEDIUM | **FIXED** — `ArAgingSnapshotRequest` command + `accounting.ar_aging.snapshot.v1` event + `handle_ar_aging_snapshot` reporting handler; 6 KPI keys: AR_CURRENT, AR_AGING_0_30/30_60/60_90/90_PLUS, AR_TOTAL_OUTSTANDING |
 
 ### GAP SET 9: Cash Engine Gaps
 **Session:** 2026-03-04 Deep Dive
@@ -568,7 +568,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | CS-02 | Hotel folio cash not going into drawer | Missing | HIGH | **FIXED** — covered by `handle_hotel_folio` |
 | CS-03 | No PETTY_CASH_VOUCHER document trigger on expense_payout withdrawal | Missing | HIGH | **FIXED** — `handle_cash_withdrawal_recorded` added; subscribes `cash.withdrawal.recorded.v1` → PETTY_CASH_VOUCHER |
 | CS-04 | No PAYMENT_VOUCHER trigger on bank/safe withdrawal | `cash.withdrawal.recorded.v1` → PETTY_CASH_VOUCHER already covers this | MEDIUM | **RESOLVED** — withdrawal → PETTY_CASH_VOUCHER wired |
-| CS-05 | No cash session closing reconciliation document | Missing | MEDIUM | OPEN |
+| CS-05 | No cash session closing reconciliation document | Missing | MEDIUM | **FIXED** — new `CASH_SESSION_RECONCILIATION` doc type added; `handle_cash_session_closed` in DocumentSubscriptionHandler auto-issues reconciliation document on session close |
 | CS-06 | CARD and MOBILE payments have no float tracking | `engines/cash/subscriptions.py` | MEDIUM | OPEN — by design; card settled via bank reconciliation |
 | CS-07 | `cash.session.closed.v1` payload missing `variance` field | `engines/cash/events.py` | MEDIUM | **FIXED** — `variance` field added to `build_session_closed_payload` (falls back to `difference`) |
 | CS-08 | Supplier cash payments (procurement) not going out of drawer | Missing | HIGH | **FIXED** — `handle_procurement_payment` added; uses WithdrawalRecordRequest |
@@ -677,6 +677,15 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | REST-01 | No `BillPresentRequest` class — `restaurant.bill.present.request` in COMMAND_TO_EVENT_TYPE + has payload builder, but no command class, not in COMMAND_TYPES, not in PAYLOAD_BUILDERS | `engines/restaurant/commands/__init__.py`, `engines/restaurant/services/__init__.py` | CRITICAL | **FIXED** — `BillPresentRequest` class added, wired into `RESTAURANT_COMMAND_TYPES` + `PAYLOAD_BUILDERS` |
 | REST-02 | `OrderCancelRequest` missing `refund_amount`/`currency` — event builder provides them but command never passes them, so accounting journal never posts (refund_amount always 0) | `engines/restaurant/commands/__init__.py:136-150` | HIGH | **FIXED** — `refund_amount: int = 0`, `currency: str = ""` added to command class + payload |
 
+### GAP SET 20: Remaining Gaps Batch Fix (2026-03-07)
+**Session:** 2026-03-07
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| REG-01 | `COMMAND_DOCUMENT_TYPE_MAP` in `core/documents/registry.py` only had 3 entries (RECEIPT/QUOTE/INVOICE) — `_execute_issue_command` line 145 check rejects ALL other 22+ doc types | `core/documents/registry.py` | **SYSTEM-BREAKING** | **FIXED** — `resolve_document_type` now delegates to `resolve_doc_type_for_issue_command` (single source of truth) |
+| R02-FIX | `SendKitchenTicketRequest.VALID_STATIONS` defined but NOT validated | `engines/restaurant/commands/__init__.py:213` | HIGH | **FIXED** — validation added against `VALID_STATIONS` frozenset |
+| R04-FIX | `SplitBillRequest.splits` tuple contents not validated | `engines/restaurant/commands/__init__.py:259` | HIGH | **FIXED** — each split validated as dict with `amount` key |
+| R05-FIX | `SendKitchenTicketRequest` and `SplitBillRequest` used explicit named params instead of `**kw` | `engines/restaurant/commands/__init__.py` | MEDIUM | **FIXED** — both converted to `**kw` pattern matching other 7 classes |
+
 ---
 
 ## IMPLEMENTATION PRIORITY ORDER
@@ -764,6 +773,13 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 - ✅ **WS3-03** — Project quote document handler: distribute `total_cost` across items as fallback — **DONE**
 - ✅ **WS3-04** — `JobAssignRequest`: added `customer_id`, `job_description`, `priority`, `estimated_completion`, `parts_required` — **DONE**
 - ✅ **WS3-05** — `JobInvoiceRequest`: added `customer_id`, `labour_hours/rate/total`, `parts_used`, `materials_total`, `tax_amount`, `discount_amount`, `payment_method`, `payment_terms`, `due_date` — **DONE**
+
+### Phase 3F — Remaining Gap Fixes (2026-03-07 session)
+- ✅ **REG-01** — `core/documents/registry.py` `COMMAND_DOCUMENT_TYPE_MAP` only had 3 entries; delegated to issuance registry as single source of truth — **DONE**
+- ✅ **AC-08** — `handle_accounting_obligation_created` → RECEIVABLE obligations auto-issue INVOICE — **DONE**
+- ✅ **AC-13** — `ArAgingSnapshotRequest` command + event + `handle_ar_aging_snapshot` reporting handler with 6 KPI keys — **DONE**
+- ✅ **CS-05** — `CASH_SESSION_RECONCILIATION` doc type + `handle_cash_session_closed` in DocumentSubscriptionHandler — **DONE**
+- ✅ **R02/R04/R05** — Restaurant command validation and consistency fixes — **DONE**
 
 ### Phase 4 — Delivery & Rendering
 17. ✅ **X-05** — `/docs/{id}/render-pdf` and `/docs/{id}/render-html` endpoints exist — **DONE**

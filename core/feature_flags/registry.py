@@ -87,6 +87,7 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     "accounting.obligation.create.request": FLAG_ENABLE_ACCOUNTING_ENGINE,
     "accounting.obligation.fulfill.request": FLAG_ENABLE_ACCOUNTING_ENGINE,
     "accounting.statement.generate.request": FLAG_ENABLE_ACCOUNTING_ENGINE,
+    "accounting.ar_aging.snapshot.request": FLAG_ENABLE_ACCOUNTING_ENGINE,
 
     # ── Cash Engine ───────────────────────────────────────────
     "cash.session.open.request": FLAG_ENABLE_CASH_ENGINE,

@@ -34,6 +34,7 @@ from core.document_issuance.commands import (
     RegistrationCardIssueRequest,
     ReservationConfirmationIssueRequest,
     SalesOrderIssueRequest,
+    CashSessionReconciliationIssueRequest,
     StatementIssueRequest,
     StockAdjustmentNoteIssueRequest,
     StockTransferNoteIssueRequest,
@@ -466,6 +467,13 @@ class DocumentIssuanceService:
     def issue_statement(self, *, business_id, branch_id, document_id, payload,
                         actor_context, command_id, correlation_id, issued_at):
         return self._issue(StatementIssueRequest, business_id=business_id,
+                           branch_id=branch_id, document_id=document_id, payload=payload,
+                           actor_context=actor_context, command_id=command_id,
+                           correlation_id=correlation_id, issued_at=issued_at)
+
+    def issue_cash_session_reconciliation(self, *, business_id, branch_id, document_id, payload,
+                                          actor_context, command_id, correlation_id, issued_at):
+        return self._issue(CashSessionReconciliationIssueRequest, business_id=business_id,
                            branch_id=branch_id, document_id=document_id, payload=payload,
                            actor_context=actor_context, command_id=command_id,
                            correlation_id=correlation_id, issued_at=issued_at)

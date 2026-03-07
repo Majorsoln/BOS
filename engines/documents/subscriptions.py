@@ -79,8 +79,10 @@ DOCUMENT_SUBSCRIPTIONS: Dict[str, str] = {
 
     # Cash
     "cash.withdrawal.recorded.v1":       "handle_cash_withdrawal_recorded",
+    "cash.session.closed.v1":            "handle_cash_session_closed",
 
-    # Accounting — on-demand statement of account
+    # Accounting
+    "accounting.obligation.created.v1":  "handle_accounting_obligation_created",
     "accounting.statement.generated.v1": "handle_accounting_statement_generated",
 }
 
@@ -972,7 +974,77 @@ class DocumentSubscriptionHandler:
         }
         self._issue_doc("issue_petty_cash_voucher", business_id=business_id, branch_id=branch_id, payload=payload)
 
+    def handle_cash_session_closed(self, event_data: dict) -> None:
+        """
+        cash.session.closed.v1 → CASH_SESSION_RECONCILIATION
+
+        Generates a reconciliation document when a cash session (drawer) is closed.
+        Shows opening balance, expected vs actual closing balance, and variance.
+        """
+        p = event_data.get("payload", {})
+        business_id = p.get("business_id")
+        branch_id = p.get("branch_id")
+        if not business_id:
+            return
+
+        biz = self._resolve_biz(str(business_id))
+
+        closing_balance = p.get("closing_balance", 0)
+        expected_balance = p.get("expected_balance", 0)
+        variance = p.get("variance", p.get("difference", 0))
+
+        payload = {
+            **biz,
+            "session_id":       p.get("session_id"),
+            "drawer_id":        p.get("drawer_id"),
+            "expected_balance":  expected_balance,
+            "closing_balance":   closing_balance,
+            "variance":          variance,
+            "currency":          p.get("currency", ""),
+            "closed_by":         p.get("closed_by", p.get("actor_id", "")),
+            "closed_at":         p.get("closed_at", ""),
+            "line_items":        [],
+            "grand_total":       closing_balance,
+            "issued_at":         p.get("closed_at"),
+        }
+        self._issue_doc("issue_cash_session_reconciliation", business_id=business_id, branch_id=branch_id, payload=payload)
+
     # ── ACCOUNTING ────────────────────────────────────────────────
+
+    def handle_accounting_obligation_created(self, event_data: dict) -> None:
+        """
+        accounting.obligation.created.v1 → INVOICE (RECEIVABLE only)
+
+        When an AR (accounts receivable) obligation is created, auto-issue
+        an INVOICE document for the customer.  AP obligations (payable) do
+        not generate a document — the supplier sends their own invoice.
+        """
+        p = event_data.get("payload", {})
+        business_id = p.get("business_id")
+        branch_id = p.get("branch_id")
+        if not business_id:
+            return
+
+        obligation_type = p.get("obligation_type", "")
+        if obligation_type != "RECEIVABLE":
+            return
+
+        biz = self._resolve_biz(str(business_id))
+        customer = self._resolve_cust(p.get("party_id"))
+
+        payload = {
+            **biz,
+            **customer,
+            "obligation_id":  p.get("obligation_id"),
+            "reference_id":   p.get("reference_id"),
+            "description":    p.get("description", ""),
+            "due_date":       p.get("due_date", ""),
+            "line_items":     [{"description": p.get("description", "Obligation"), "total": p.get("total_amount", 0)}],
+            "grand_total":    p.get("total_amount", 0),
+            "currency":       p.get("currency", ""),
+            "issued_at":      p.get("created_at"),
+        }
+        self._issue_doc("issue_invoice", business_id=business_id, branch_id=branch_id, payload=payload)
 
     def handle_accounting_statement_generated(self, event_data: dict) -> None:
         """
