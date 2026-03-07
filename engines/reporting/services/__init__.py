@@ -12,10 +12,13 @@ This engine is ADDITIVE ONLY:
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Protocol
 
 from core.commands.base import Command
+from core.context.actor_context import ActorContext
 from core.context.scope_guard import enforce_scope_guard
 from core.feature_flags.evaluator import FeatureFlagEvaluator
 from engines.reporting.commands import REPORTING_COMMAND_TYPES
@@ -278,6 +281,68 @@ class ReportingService:
             persist_result=persist_result,
             projection_applied=applied,
         )
+
+    def generate_daily_revenue_snapshot(
+        self,
+        *,
+        business_id: uuid.UUID,
+        snapshot_date: str,
+        branch_id: uuid.UUID | None = None,
+    ) -> ReportingExecutionResult:
+        """
+        Aggregate today's KPIs into a DAILY_OPS revenue snapshot.
+
+        Called by external scheduler (Django management command, celery beat,
+        cron job). Reads the in-memory KPI projection store for the given date
+        and produces a SnapshotRecordRequest with aggregated metrics.
+
+        Args:
+            business_id: Business UUID
+            snapshot_date: ISO date string (YYYY-MM-DD) for the snapshot
+            branch_id: Optional branch UUID for branch-level snapshots
+        """
+        from engines.reporting.commands import SnapshotRecordRequest
+
+        store = self._projection_store
+        revenue_keys = [
+            "REVENUE_TOTAL", "TIPS_COLLECTED", "REFUNDS_ISSUED",
+            "HOTEL_REVENUE_TOTAL", "RESTAURANT_TAX_COLLECTED",
+        ]
+        count_keys = [
+            "BILLS_SETTLED", "ORDERS_PLACED", "ORDERS_CANCELLED",
+            "JOBS_INVOICED", "HOTEL_CHECKOUTS", "REFUND_COUNT",
+            "CASH_SESSIONS_CLOSED", "RESTAURANT_COVERS",
+        ]
+
+        metrics: Dict[str, int] = {}
+        for key in revenue_keys:
+            val = store.sum_kpi(key)
+            if val:
+                metrics[key] = val
+        for key in count_keys:
+            val = store.sum_kpi(key)
+            if val:
+                metrics[key] = val
+
+        req = SnapshotRecordRequest(
+            snapshot_id=f"daily-revenue-{snapshot_date}-{uuid.uuid4().hex[:8]}",
+            snapshot_type="DAILY_OPS",
+            period_start=snapshot_date,
+            period_end=snapshot_date,
+            period_label=f"Daily Revenue {snapshot_date}",
+            metrics=metrics,
+            source_engines=("retail", "restaurant", "workshop", "hotel_folio", "cash"),
+            branch_id=branch_id,
+        )
+        cmd = req.to_command(
+            business_id=business_id,
+            actor_type="SYSTEM",
+            actor_id="daily-revenue-scheduler",
+            command_id=uuid.uuid4(),
+            correlation_id=uuid.uuid4(),
+            issued_at=datetime.now(tz=timezone.utc),
+        )
+        return self._execute_command(cmd)
 
     @property
     def projection_store(self) -> ReportingProjectionStore:

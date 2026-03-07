@@ -539,7 +539,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | X-04 | ~~FLAG_ENABLE_DOCUMENT_DESIGNER blocks POS receipts~~ | **RESOLVED** — `document_policy.py` now uses `FLAG_ENABLE_DOCUMENT_ENGINE` (not DESIGNER); tests updated | ~~HIGH~~ |
 | X-05 | ~~PDF/HTML renderers not exposed via API~~ | **RESOLVED** — `GET /docs/{id}/render-pdf` and `/render-html` routes exist in `urls.py` | ~~HIGH~~ |
 | X-06 | No i18n/locale support in templates | All docs English-only, no translation path | HIGH |
-| X-07 | No document delivery (email/SMS/WhatsApp) | Docs generated but never sent to customer | MEDIUM |
+| X-07 | No document delivery (email/SMS/WhatsApp) | Docs generated but never sent to customer | MEDIUM | **FIXED** — `DocumentDeliveryService` + `DeliveryRequest`/`DeliveryResult` + stub channels (EmailDeliveryChannel, SMSDeliveryChannel, WhatsAppDeliveryChannel) in `core/documents/delivery.py` |
 | X-08 | No per-engine document template differentiation | Same receipt template for all contexts | MEDIUM |
 
 ### GAP SET 8: Accounting Engine Gaps
@@ -584,7 +584,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | RP-05 | `handle_sale_completed` used `net_amount` only | `engines/reporting/subscriptions.py` | MEDIUM | **FIXED** — now uses `total_amount` (gross) with payment_method dimension |
 | RP-06 | No payment method breakdown dimension on KPIs | Missing | HIGH | **FIXED** — `dimension={"payment_method": ...}` added to retail + restaurant + hotel revenue KPIs |
 | RP-07 | No inventory KPIs (stock adjusted/transferred) | Missing | MEDIUM | **FIXED** — `handle_stock_adjusted` + `handle_stock_transferred` added; records STOCK_ADJUSTMENTS, STOCK_ADJUSTED_UNITS, STOCK_TRANSFERS, STOCK_TRANSFERRED_UNITS |
-| RP-08 | No daily revenue snapshot auto-generation | Missing | HIGH | OPEN — needs scheduler |
+| RP-08 | No daily revenue snapshot auto-generation | Missing | HIGH | **FIXED** — `ReportingService.generate_daily_revenue_snapshot()` aggregates KPIs into DAILY_OPS snapshot; callable by Django management command or celery beat |
 | RP-09 | `retail.refund.issued.v1` not subscribed | Missing | HIGH | **FIXED** — `handle_retail_refund` added; records REFUNDS_ISSUED + REFUND_COUNT |
 | RP-10 | `restaurant.order.cancelled.v1` not subscribed | Missing | MEDIUM | **FIXED** — `handle_order_cancelled` added; records ORDERS_CANCELLED |
 | RP-11 | Workshop quote pipeline not tracked | Missing | MEDIUM | **FIXED** — `handle_workshop_quote_generated/accepted/rejected` added; records QUOTES_GENERATED, QUOTE_VALUE, QUOTES_ACCEPTED, QUOTE_ACCEPTED_VALUE, QUOTES_REJECTED |
@@ -736,7 +736,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 - ✅ **RP-10** — Restaurant order cancelled KPI — **DONE**
 - ✅ **RP-11** — Workshop quote pipeline: QUOTES_GENERATED, QUOTE_VALUE, QUOTES_ACCEPTED, QUOTE_ACCEPTED_VALUE, QUOTES_REJECTED — **DONE (2026-03-06)**
 - ✅ **RP-12/RP-13** — Hotel ADR, room nights, checkout KPIs — **DONE**
-- **RP-08** — Daily revenue snapshot auto-generation (needs scheduler — OPEN)
+- ✅ **RP-08** — `generate_daily_revenue_snapshot()` on ReportingService; aggregates KPIs into DAILY_OPS snapshot — **DONE**
 - ✅ **RP-07** — Inventory KPIs: `handle_stock_adjusted` + `handle_stock_transferred` record STOCK_ADJUSTMENTS, STOCK_ADJUSTED_UNITS, STOCK_TRANSFERS, STOCK_TRANSFERRED_UNITS — **DONE**
 
 ### Phase 3C — Document Subscription Completeness (2026-03-04 session)
@@ -785,7 +785,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 17. ✅ **X-05** — `/docs/{id}/render-pdf` and `/docs/{id}/render-html` endpoints exist — **DONE**
 18. ✅ **X-03** — `InMemoryNumberingProvider` with all 26 doc type policies registered in `wiring.py` — **DONE**
 19. **X-06** — i18n: template label keys + translation table in Admin (OPEN)
-20. **X-07** — Document delivery (email/SMS/WhatsApp) integration stubs (OPEN)
+20. ✅ **X-07** — `DocumentDeliveryService` + Email/SMS/WhatsApp stub channels in `core/documents/delivery.py` — **DONE**
 
 ---
 
