@@ -548,15 +548,15 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 |----|-----|------|----------|--------|
 | AC-01 | `handle_retail_sale` used `net_amount` only — no VAT split journal | `engines/accounting/subscriptions.py` | HIGH | **FIXED** — now posts DR payment / CR Revenue + CR VAT_PAYABLE |
 | AC-02 | `handle_restaurant_bill` had no tax split | `engines/accounting/subscriptions.py` | HIGH | **FIXED** — same 3-line pattern with VAT_PAYABLE |
-| AC-03 | `handle_workshop_invoice` has no tax/labour/materials breakdown | `engines/accounting/subscriptions.py` | HIGH | OPEN — workshop payload needs `tax_amount` first (WS-09) |
+| AC-03 | `handle_workshop_invoice` has no tax/labour/materials breakdown | `engines/accounting/subscriptions.py` | HIGH | **FIXED** — WS-09 resolved; `build_job_invoiced_payload` now provides `tax_amount`, `labour_hours/rate/total`, `parts_used`; handler posts 3-line VAT-split journal |
 | AC-04 | No handler for `hotel.folio.settled.v1` | Missing | HIGH | **FIXED** — `handle_hotel_folio_settled` added; supports company billing → AR |
 | AC-05 | No handler for `procurement.payment.released.v1` | Missing | HIGH | **FIXED** — `handle_procurement_payment_released` added; DR AP / CR Bank |
-| AC-06 | No PAYMENT_VOUCHER document trigger from accounting | Missing | HIGH | OPEN — needs DocumentSubscriptionHandler (W-03) |
+| AC-06 | No PAYMENT_VOUCHER document trigger from accounting | Missing | HIGH | **FIXED** — `handle_procurement_payment_released` in DocumentSubscriptionHandler issues PAYMENT_VOUCHER on `procurement.payment.released.v1` |
 | AC-07 | No STATEMENT_OF_ACCOUNT auto-generation | Missing | MEDIUM | **FIXED** — `StatementGenerateRequest` command + `accounting.statement.generated.v1` event wired; `DocumentSubscriptionHandler.handle_accounting_statement_generated` issues STATEMENT doc |
 | AC-08 | No `ObligationCreateRequest` document trigger | Missing | MEDIUM | **FIXED** — `handle_accounting_obligation_created` added to `DocumentSubscriptionHandler`; RECEIVABLE obligations auto-issue INVOICE |
 | AC-09 | No handler for `cash.session.closed.v1` | Missing | MEDIUM | **FIXED** — `handle_cash_session_closed` posts CASH_OVER_SHORT journal on non-zero variance |
 | AC-10 | No handler for `retail.refund.issued.v1` | Missing | HIGH | **FIXED** — `handle_retail_refund` added; DR Revenue / CR Cash |
-| AC-11 | No handler for `restaurant.order.cancelled.v1` | Missing | MEDIUM | **PARTIAL** — handler exists but `build_order_cancelled_payload` lacks `refund_amount`/`currency`, so reversal journal never posts (see APM-01) |
+| AC-11 | No handler for `restaurant.order.cancelled.v1` | Missing | MEDIUM | **FIXED** — APM-01 resolved; `build_order_cancelled_payload` now provides `refund_amount`/`currency`; handler posts reversal journal when `refund_amount > 0` |
 | AC-12 | `handle_payroll_run` deductions lumped into single TAX_PAYABLE | `engines/accounting/subscriptions.py` | MEDIUM | **FIXED** — deductions dict split per named key: PAYE → PAYE_PAYABLE, NSSF → NSSF_PAYABLE, NHIF/SHIF → NHIF_PAYABLE, remainder → OTHER_DEDUCTIONS_PAYABLE |
 | AC-13 | No AR aging snapshot | Missing | MEDIUM | **FIXED** — `ArAgingSnapshotRequest` command + `accounting.ar_aging.snapshot.v1` event + `handle_ar_aging_snapshot` reporting handler; 6 KPI keys: AR_CURRENT, AR_AGING_0_30/30_60/60_90/90_PLUS, AR_TOTAL_OUTSTANDING |
 
@@ -579,8 +579,8 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 |----|-----|------|----------|--------|
 | RP-01 | No hotel events subscribed — zero hotel KPIs recorded | Missing | HIGH | **FIXED** — hotel.folio.settled, reservation.confirmed, guest.checked_in/out added |
 | RP-02 | No `cash.session.closed.v1` handler for cash KPIs | Missing | MEDIUM | **FIXED** — `handle_cash_session_closed` records CASH_SESSIONS_CLOSED (count) + CASH_SESSION_VARIANCE (abs variance amount) |
-| RP-03 | No accounting journal handler (audit trail KPI) | Missing | LOW | OPEN |
-| RP-04 | `handle_bill_settled` had no tax/covers KPIs | `engines/reporting/subscriptions.py` | MEDIUM | PARTIAL — payment_method dimension added; covers/tax still needs payload update (RE-06) |
+| RP-03 | No accounting journal handler (audit trail KPI) | Missing | LOW | **FIXED** — `handle_journal_posted` added; subscribes `accounting.journal.posted.v1`; records JOURNAL_ENTRIES_POSTED (count) + JOURNAL_LINES_POSTED (count) |
+| RP-04 | `handle_bill_settled` had no tax/covers KPIs | `engines/reporting/subscriptions.py` | MEDIUM | **FIXED** — `tax_amount` → RESTAURANT_TAX_COLLECTED + `covers` → RESTAURANT_COVERS KPIs added to `handle_bill_settled` |
 | RP-05 | `handle_sale_completed` used `net_amount` only | `engines/reporting/subscriptions.py` | MEDIUM | **FIXED** — now uses `total_amount` (gross) with payment_method dimension |
 | RP-06 | No payment method breakdown dimension on KPIs | Missing | HIGH | **FIXED** — `dimension={"payment_method": ...}` added to retail + restaurant + hotel revenue KPIs |
 | RP-07 | No inventory KPIs (stock adjusted/transferred) | Missing | MEDIUM | **FIXED** — `handle_stock_adjusted` + `handle_stock_transferred` added; records STOCK_ADJUSTMENTS, STOCK_ADJUSTED_UNITS, STOCK_TRANSFERS, STOCK_TRANSFERRED_UNITS |

@@ -51,8 +51,9 @@ SUBSCRIPTIONS = {
     "workshop.quote.generated.v1":     "handle_workshop_quote_generated",
     "workshop.quote.accepted.v1":      "handle_workshop_quote_accepted",
     "workshop.quote.rejected.v1":      "handle_workshop_quote_rejected",
-    # Accounting events (AC-13)
+    # Accounting events (AC-13, RP-03)
     "accounting.ar_aging.snapshot.v1": "handle_ar_aging_snapshot",
+    "accounting.journal.posted.v1":   "handle_journal_posted",
 }
 
 
@@ -139,6 +140,20 @@ class ReportingSubscriptionHandler:
             value=1, unit="COUNT",
             event_data=event_data, source_engine="restaurant",
         )
+        tax = payload.get("tax_amount", 0)
+        if tax > 0:
+            self._record_kpi(
+                kpi_key="RESTAURANT_TAX_COLLECTED", kpi_name="Restaurant Tax Collected",
+                value=tax, unit="MINOR_CURRENCY",
+                event_data=event_data, source_engine="restaurant",
+            )
+        covers = payload.get("covers", 0)
+        if covers > 0:
+            self._record_kpi(
+                kpi_key="RESTAURANT_COVERS", kpi_name="Restaurant Covers",
+                value=covers, unit="COUNT",
+                event_data=event_data, source_engine="restaurant",
+            )
 
     def handle_sale_completed(self, event_data: dict) -> None:
         payload = event_data.get("payload", {})
@@ -474,5 +489,27 @@ class ReportingSubscriptionHandler:
             self._record_kpi(
                 kpi_key=kpi_key, kpi_name=kpi_name,
                 value=value, unit="MINOR_CURRENCY",
+                event_data=event_data, source_engine="accounting",
+            )
+
+    def handle_journal_posted(self, event_data: dict) -> None:
+        """
+        accounting.journal.posted.v1 → Audit trail KPIs
+
+        Records:
+        - JOURNAL_ENTRIES_POSTED: count (always 1)
+        - JOURNAL_LINES_POSTED: count of debit/credit lines in the journal entry
+        """
+        payload = event_data.get("payload", {})
+        self._record_kpi(
+            kpi_key="JOURNAL_ENTRIES_POSTED", kpi_name="Journal Entries Posted",
+            value=1, unit="COUNT",
+            event_data=event_data, source_engine="accounting",
+        )
+        lines = payload.get("lines", [])
+        if lines:
+            self._record_kpi(
+                kpi_key="JOURNAL_LINES_POSTED", kpi_name="Journal Lines Posted",
+                value=len(lines), unit="COUNT",
                 event_data=event_data, source_engine="accounting",
             )

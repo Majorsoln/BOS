@@ -94,6 +94,12 @@ VALID_KPI_KEYS = frozenset({
     "AR_AGING_60_90",        # AR 60-90 days overdue
     "AR_AGING_90_PLUS",      # AR 90+ days overdue
     "AR_TOTAL_OUTSTANDING",  # Total outstanding AR
+    # Accounting audit trail
+    "JOURNAL_ENTRIES_POSTED", # Journal entries posted count
+    "JOURNAL_LINES_POSTED",   # Journal lines posted count
+    # Restaurant detail
+    "RESTAURANT_TAX_COLLECTED", # Restaurant tax collected
+    "RESTAURANT_COVERS",        # Restaurant covers (guests served)
     "CUSTOM",                # Custom KPI
 })
 
