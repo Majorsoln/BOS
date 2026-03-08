@@ -538,7 +538,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | X-03 | ~~Numbering engine not wired~~ | **RESOLVED** — `InMemoryNumberingProvider` registered in `wiring.py` with all 26 doc type policies; `DocumentIssuanceService` calls it on every issue | ~~HIGH~~ |
 | X-04 | ~~FLAG_ENABLE_DOCUMENT_DESIGNER blocks POS receipts~~ | **RESOLVED** — `document_policy.py` now uses `FLAG_ENABLE_DOCUMENT_ENGINE` (not DESIGNER); tests updated | ~~HIGH~~ |
 | X-05 | ~~PDF/HTML renderers not exposed via API~~ | **RESOLVED** — `GET /docs/{id}/render-pdf` and `/render-html` routes exist in `urls.py` | ~~HIGH~~ |
-| X-06 | No i18n/locale support in templates | All docs English-only, no translation path | HIGH |
+| X-06 | ~~No i18n/locale support in templates~~ | **FIXED** — `core/documents/translations.py` with 100+ label keys, default bundles (en, sw, fr, ar), field-to-key mapping; both renderers accept `locale`/`translations` params; `DocumentRenderRequest` accepts `?locale=` query param; falls back to `Business.default_language` | ~~HIGH~~ |
 | X-07 | No document delivery (email/SMS/WhatsApp) | Docs generated but never sent to customer | MEDIUM | **FIXED** — `DocumentDeliveryService` + `DeliveryRequest`/`DeliveryResult` + stub channels (EmailDeliveryChannel, SMSDeliveryChannel, WhatsAppDeliveryChannel) in `core/documents/delivery.py` |
 | X-08 | No per-engine document template differentiation | Same receipt template for all contexts | MEDIUM |
 
@@ -791,7 +791,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 ### Phase 4 — Delivery & Rendering
 17. ✅ **X-05** — `/docs/{id}/render-pdf` and `/docs/{id}/render-html` endpoints exist — **DONE**
 18. ✅ **X-03** — `InMemoryNumberingProvider` with all 26 doc type policies registered in `wiring.py` — **DONE**
-19. **X-06** — i18n: template label keys + translation table in Admin (OPEN)
+19. ✅ **X-06** — i18n: `core/documents/translations.py` with label keys, locale bundles (en/sw/fr/ar), field mapping; renderers accept `locale`; API accepts `?locale=` param — **DONE**
 20. ✅ **X-07** — `DocumentDeliveryService` + Email/SMS/WhatsApp stub channels in `core/documents/delivery.py` — **DONE**
 
 ---

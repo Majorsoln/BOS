@@ -1661,6 +1661,20 @@ def post_issue_document_by_type(
 # Phase 3: Render & Verification handlers
 # ---------------------------------------------------------------------------
 
+def _resolve_business_language(business_id, dependencies) -> str | None:
+    """
+    Look up Business.default_language for a given business_id.
+    Returns the language string or None if not resolvable.
+    """
+    try:
+        profile = get_identity_business_profile(business_id)
+        if isinstance(profile, dict):
+            return profile.get("default_language")
+    except Exception:
+        pass
+    return None
+
+
 def _get_document_record(request, dependencies):
     """
     Resolve a document record from the issuance repository.
@@ -1765,10 +1779,15 @@ def get_document_render_html(
             details={"document_id": str(request.document_id)},
         )
 
+    # Resolve locale: explicit request param > business default_language > "en"
+    locale = getattr(request, "locale", None)
+    if not locale:
+        locale = _resolve_business_language(request.business_id, dependencies)
+
     try:
         from core.documents.renderer import render_html
         doc_hash = getattr(record, "render_plan_hash", None)
-        html_content = render_html(render_plan, doc_hash=doc_hash)
+        html_content = render_html(render_plan, doc_hash=doc_hash, locale=locale)
     except Exception as exc:
         return error_response(
             code="RENDER_FAILED",
@@ -1781,6 +1800,7 @@ def get_document_render_html(
         "doc_type": record.doc_type,
         "doc_number": getattr(record, "doc_number", None),
         "content_type": "text/html",
+        "locale": locale,
         "html": html_content,
     })
 
@@ -1822,10 +1842,15 @@ def get_document_render_pdf(
             details={"document_id": str(request.document_id)},
         )
 
+    # Resolve locale: explicit request param > business default_language > "en"
+    locale = getattr(request, "locale", None)
+    if not locale:
+        locale = _resolve_business_language(request.business_id, dependencies)
+
     try:
         from core.documents.renderer import render_pdf
         doc_hash = getattr(record, "render_plan_hash", None)
-        pdf_bytes = render_pdf(render_plan, doc_hash=doc_hash)
+        pdf_bytes = render_pdf(render_plan, doc_hash=doc_hash, locale=locale)
         pdf_b64 = base64.b64encode(pdf_bytes).decode("ascii")
     except Exception as exc:
         return error_response(
@@ -1839,6 +1864,7 @@ def get_document_render_pdf(
         "doc_type": record.doc_type,
         "doc_number": getattr(record, "doc_number", None),
         "content_type": "application/pdf",
+        "locale": locale,
         "pdf_base64": pdf_b64,
         "size_bytes": len(pdf_bytes),
     })

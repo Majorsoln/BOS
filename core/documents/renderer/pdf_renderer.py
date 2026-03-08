@@ -19,6 +19,12 @@ from __future__ import annotations
 import io
 from typing import Any
 
+from core.documents.translations import (
+    get_translations,
+    resolve_label,
+    translate_field_label,
+)
+
 
 # ---------------------------------------------------------------------------
 # PDF string encoding
@@ -315,6 +321,8 @@ def render_pdf(
     render_plan: dict,
     *,
     doc_hash: str | None = None,
+    locale: str | None = None,
+    translations: dict[str, str] | None = None,
 ) -> bytes:
     """
     Render a render_plan dict to PDF bytes.
@@ -322,6 +330,8 @@ def render_pdf(
     Args:
         render_plan: the render plan produced by DocumentBuilder
         doc_hash: optional document hash to embed in the footer
+        locale: optional locale code (e.g. "sw", "sw_KE", "fr")
+        translations: optional pre-resolved translation dict
 
     Returns:
         PDF file as bytes.
@@ -331,6 +341,13 @@ def render_pdf(
     """
     if not isinstance(render_plan, dict):
         raise ValueError("render_plan must be a dict.")
+
+    # Resolve translations if locale provided but translations not pre-resolved
+    if translations is None and locale:
+        translations = get_translations(locale)
+
+    def _label(field_key: str) -> str:
+        return translate_field_label(field_key, translations)
 
     writer = _PdfWriter()
 
@@ -348,15 +365,15 @@ def render_pdf(
     # Header section
     header = render_plan.get("header", {})
     if header:
-        writer.add_heading("Header")
+        writer.add_heading(resolve_label("section.header", translations))
         for key, value in sorted(header.items()):
-            writer.add_kv(key.replace("_", " ").title(), value)
+            writer.add_kv(_label(key), value)
         writer.add_vspace()
 
     # Line items
     line_items = render_plan.get("line_items", [])
     if isinstance(line_items, (list, tuple)) and line_items:
-        writer.add_heading("Items")
+        writer.add_heading(resolve_label("section.items", translations))
         # Discover columns
         all_keys: list[str] = []
         seen_keys: set[str] = set()
@@ -374,7 +391,7 @@ def render_pdf(
         if col_count:
             col_width = available_width / col_count
             col_widths = [col_width] * col_count
-            headers = [k.replace("_", " ").title() for k in all_keys]
+            headers = [_label(k) for k in all_keys]
             writer.add_table_header(headers, col_widths)
             for item in line_items:
                 if not isinstance(item, dict):
@@ -386,39 +403,39 @@ def render_pdf(
     # Totals
     totals = render_plan.get("totals", {})
     if totals:
-        writer.add_heading("Totals")
+        writer.add_heading(resolve_label("section.totals", translations))
         currency = totals.get("currency", "")
         priority = ("subtotal", "discount_total", "tax_total", "grand_total")
         seen: set[str] = set()
         for key in priority:
             if key in totals and totals[key] is not None:
                 value_str = f"{currency} {_fmt(totals[key])}" if currency else _fmt(totals[key])
-                writer.add_kv(key.replace("_", " ").title(), value_str)
+                writer.add_kv(_label(key), value_str)
                 seen.add(key)
         for key, value in sorted(totals.items()):
             if key not in seen and key != "currency" and value is not None:
                 value_str = f"{currency} {_fmt(value)}" if currency else _fmt(value)
-                writer.add_kv(key.replace("_", " ").title(), value_str)
+                writer.add_kv(_label(key), value_str)
         writer.add_vspace()
 
     # Footer / notes
     footer = render_plan.get("footer", {})
     if footer:
-        writer.add_heading("Notes")
+        writer.add_heading(resolve_label("section.notes", translations))
         for key, value in sorted(footer.items()):
             if value is not None:
-                writer.add_kv(key.replace("_", " ").title(), value)
+                writer.add_kv(_label(key), value)
         writer.add_vspace()
 
     # Metadata footer
     writer.add_separator()
     meta_parts = []
     if template_id:
-        meta_parts.append(f"Template: {template_id}")
+        meta_parts.append(f"{resolve_label('footer.template', translations)}: {template_id}")
     if template_version:
         meta_parts.append(f"v{template_version}")
     if doc_hash:
-        meta_parts.append(f"Hash: {doc_hash[:16]}...")
+        meta_parts.append(f"{resolve_label('footer.hash', translations)}: {doc_hash[:16]}...")
     if meta_parts:
         writer.add_text(" | ".join(meta_parts))
 

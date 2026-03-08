@@ -436,6 +436,7 @@ class DocumentRenderRequest:
     document_id: uuid.UUID
     actor: ActorMetadata | None = None
     branch_id: Optional[uuid.UUID] = None
+    locale: Optional[str] = None
 
     def __post_init__(self):
         if not isinstance(self.business_id, uuid.UUID):
@@ -446,6 +447,8 @@ class DocumentRenderRequest:
             raise ValueError("actor must be ActorMetadata.")
         if self.branch_id is not None and not isinstance(self.branch_id, uuid.UUID):
             raise ValueError("branch_id must be UUID or None.")
+        if self.locale is not None and not isinstance(self.locale, str):
+            raise ValueError("locale must be str or None.")
 
 
 @dataclass(frozen=True)

@@ -742,6 +742,7 @@ def _dispatch_document_read(
             branch_id=_parse_optional_uuid(
                 request.GET.get("branch_id"), "branch_id"
             ),
+            locale=request.GET.get("locale"),
         )
     except (ValueError, KeyError) as exc:
         return _json_error("INVALID_REQUEST", str(exc), status=400)
