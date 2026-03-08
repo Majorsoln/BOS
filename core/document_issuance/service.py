@@ -49,7 +49,6 @@ from core.document_issuance.registry import (
     resolve_event_type_for_issue_command,
 )
 from core.documents.builder import DocumentBuilder
-from core.documents.registry import resolve_document_type
 from core.documents.numbering.provider import NumberingProvider
 
 
@@ -139,13 +138,6 @@ class DocumentIssuanceService:
         if doc_type is None:
             raise ValueError(
                 f"Unsupported document issue command type: {command.command_type}"
-            )
-
-        mapped_doc_type = resolve_document_type(command.command_type)
-        if mapped_doc_type != doc_type:
-            raise ValueError(
-                "Document type mapping mismatch between issuance registry "
-                "and document registry."
             )
 
         event_type = resolve_event_type_for_issue_command(command.command_type)

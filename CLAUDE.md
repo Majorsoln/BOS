@@ -686,6 +686,13 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | R04-FIX | `SplitBillRequest.splits` tuple contents not validated | `engines/restaurant/commands/__init__.py:259` | HIGH | **FIXED** — each split validated as dict with `amount` key |
 | R05-FIX | `SendKitchenTicketRequest` and `SplitBillRequest` used explicit named params instead of `**kw` | `engines/restaurant/commands/__init__.py` | MEDIUM | **FIXED** — both converted to `**kw` pattern matching other 7 classes |
 
+### GAP SET 21: Critical Fixes — Circular Import + Missing Template (2026-03-07)
+**Session:** 2026-03-07 (Round 2)
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| CIRC-01 | `core/document_issuance/service.py` imports `resolve_document_type` from `core/documents/registry` which imports from `core/document_issuance/registry` — circular import breaks all engine imports | `core/document_issuance/service.py:52` | **SYSTEM-BREAKING** | **FIXED** — removed circular import; redundant validation check removed (both functions delegated to same source) |
+| DEFLT-01 | `CASH_SESSION_RECONCILIATION` added to `VALID_DOCUMENT_TYPES` and issuance registry but no default template in `core/documents/defaults.py` — DocumentBuilder crashes on session close | `core/documents/defaults.py` | HIGH | **FIXED** — import + layout spec added with session_id, drawer_id, expected/closing balance, variance fields |
+
 ---
 
 ## IMPLEMENTATION PRIORITY ORDER

@@ -31,6 +31,7 @@ from core.documents.models import (
     DOCUMENT_REGISTRATION_CARD,
     DOCUMENT_RESERVATION_CONFIRMATION,
     DOCUMENT_SALES_ORDER,
+    DOCUMENT_CASH_SESSION_RECONCILIATION,
     DOCUMENT_STATEMENT,
     DOCUMENT_STOCK_ADJUSTMENT_NOTE,
     DOCUMENT_STOCK_TRANSFER_NOTE,
@@ -215,6 +216,13 @@ DEFAULT_LAYOUT_SPECS = {
         "line_item_fields": ("date", "description", "debit", "credit", "balance"),
         "total_fields": ("opening_balance", "total_debit", "total_credit", "closing_balance"),
         "footer_fields": ("notes",),
+    },
+    DOCUMENT_CASH_SESSION_RECONCILIATION: {
+        "header_fields": ("session_id", "issued_at", "drawer_id"),
+        "line_items_path": "line_items",
+        "line_item_fields": (),
+        "total_fields": ("expected_balance", "closing_balance", "variance"),
+        "footer_fields": ("closed_by", "closed_at", "notes"),
     },
 }
 
