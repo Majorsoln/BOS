@@ -18,6 +18,8 @@ from core.identity_store.models import (
     ActorStatus,
     Branch,
     Business,
+    CustomerProfile,
+    CustomerProfileStatus,
     IdentityActorType,
     Role,
     RoleAssignment,
@@ -906,6 +908,74 @@ def list_branches_for_business(
 
 
 @transaction.atomic
+def update_business_profile(
+    *,
+    business_id: uuid.UUID | str,
+    business_name: str | None = None,
+    default_currency: str | None = None,
+    default_language: str | None = None,
+    address: str | None = None,
+    city: str | None = None,
+    country_code: str | None = None,
+    phone: str | None = None,
+    email: str | None = None,
+    tax_id: str | None = None,
+    logo_url: str | None = None,
+) -> dict[str, Any]:
+    """Update an existing business profile. Only non-None fields are changed."""
+    business = _resolve_business(business_id)
+    update_fields: list[str] = []
+    field_map = {
+        "name": business_name,
+        "default_currency": default_currency,
+        "default_language": default_language,
+        "address": address,
+        "city": city,
+        "country_code": country_code,
+        "phone": phone,
+        "email": email,
+        "tax_id": tax_id,
+        "logo_url": logo_url,
+    }
+    for field_name, new_val in field_map.items():
+        if new_val is not None and getattr(business, field_name) != new_val:
+            setattr(business, field_name, new_val)
+            update_fields.append(field_name)
+    if update_fields:
+        update_fields.append("updated_at")
+        business.save(update_fields=update_fields)
+    return serialize_business(business)
+
+
+@transaction.atomic
+def create_custom_role(
+    *,
+    business_id: uuid.UUID | str,
+    role_name: str,
+    permissions: tuple[str, ...],
+) -> dict[str, Any]:
+    """Create a custom role with specified permissions for a business."""
+    business = _resolve_business(business_id)
+    normalized_name = _normalize_role_name(role_name)
+    existing = Role.objects.filter(
+        business_id=business.business_id,
+        name=normalized_name,
+    ).first()
+    if existing is not None:
+        raise ValueError(
+            f"Role '{normalized_name}' already exists for business '{business.business_id}'."
+        )
+    role = _get_or_create_role(business=business, role_name=normalized_name)
+    _sync_role_permissions(role=role, permissions=permissions)
+    perm_keys = tuple(
+        RolePermission.objects.filter(role=role)
+        .values_list("permission_key", flat=True)
+        .order_by("permission_key")
+    )
+    return serialize_role(role, permissions=perm_keys)
+
+
+@transaction.atomic
 def deactivate_actor(
     *,
     actor_id: str,
@@ -919,3 +989,112 @@ def deactivate_actor(
     actor.status = ActorStatus.INACTIVE
     actor.save(update_fields=["status", "updated_at"])
     return serialize_actor(actor, assignments=())
+
+
+# ── Customer Profile CRUD ──────────────────────────────────────
+
+
+def _serialize_customer_profile(profile: "CustomerProfile") -> dict[str, Any]:
+    return {
+        "customer_id": str(profile.customer_id),
+        "business_id": str(profile.business_id),
+        "display_name": profile.display_name,
+        "phone": profile.phone,
+        "email": profile.email,
+        "address": profile.address,
+        "status": profile.status,
+    }
+
+
+@transaction.atomic
+def create_customer_profile(
+    *,
+    business_id: uuid.UUID | str,
+    display_name: str,
+    phone: str = "",
+    email: str = "",
+    address: str = "",
+) -> dict[str, Any]:
+    """Create a new customer profile for a business."""
+    business = _resolve_business(business_id)
+    cleaned_name = _clean_string(display_name, field_name="display_name")
+    profile = CustomerProfile.objects.create(
+        customer_id=uuid.uuid4(),
+        business=business,
+        display_name=cleaned_name,
+        phone=phone.strip(),
+        email=email.strip(),
+        address=address.strip(),
+    )
+    return _serialize_customer_profile(profile)
+
+
+@transaction.atomic
+def update_customer_profile(
+    *,
+    business_id: uuid.UUID | str,
+    customer_id: str,
+    display_name: str | None = None,
+    phone: str | None = None,
+    email: str | None = None,
+    address: str | None = None,
+) -> dict[str, Any]:
+    """Update an existing customer profile."""
+    business = _resolve_business(business_id)
+    canonical_cid = _canonical_uuid(customer_id, field_name="customer_id")
+    profile = CustomerProfile.objects.filter(
+        customer_id=canonical_cid,
+        business_id=business.business_id,
+    ).first()
+    if profile is None:
+        raise ValueError(
+            f"Customer '{canonical_cid}' not found for business '{business.business_id}'."
+        )
+    update_fields: list[str] = []
+    if display_name is not None and profile.display_name != display_name:
+        profile.display_name = display_name
+        update_fields.append("display_name")
+    if phone is not None and profile.phone != phone:
+        profile.phone = phone
+        update_fields.append("phone")
+    if email is not None and profile.email != email:
+        profile.email = email
+        update_fields.append("email")
+    if address is not None and profile.address != address:
+        profile.address = address
+        update_fields.append("address")
+    if update_fields:
+        update_fields.append("updated_at")
+        profile.save(update_fields=update_fields)
+    return _serialize_customer_profile(profile)
+
+
+def list_customer_profiles(
+    business_id: uuid.UUID | str,
+) -> tuple[dict[str, Any], ...]:
+    """List all active customer profiles for a business."""
+    business = _resolve_business(business_id)
+    profiles = CustomerProfile.objects.filter(
+        business_id=business.business_id,
+        status=CustomerProfileStatus.ACTIVE,
+    ).order_by("display_name", "customer_id")
+    return tuple(_serialize_customer_profile(p) for p in profiles)
+
+
+def get_customer_profile(
+    *,
+    business_id: uuid.UUID | str,
+    customer_id: str,
+) -> dict[str, Any]:
+    """Get a single customer profile by ID."""
+    business = _resolve_business(business_id)
+    canonical_cid = _canonical_uuid(customer_id, field_name="customer_id")
+    profile = CustomerProfile.objects.filter(
+        customer_id=canonical_cid,
+        business_id=business.business_id,
+    ).first()
+    if profile is None:
+        raise ValueError(
+            f"Customer '{canonical_cid}' not found for business '{business.business_id}'."
+        )
+    return _serialize_customer_profile(profile)

@@ -811,3 +811,12 @@ Branch override:      {business_id}.{branch_id}.{doc_type_lower}.v{n}
 - **User can:** Customise label strings or add locales via Admin panel
 - **Locale format:** `{language}_{country}` e.g. `sw_KE`, `en_KE`, `fr_CI`, `ar_EG`
 - **Fallback chain:** `{locale}` → `{language}` → `en`
+
+### GAP SET 22: Admin HTTP Endpoint Gaps
+**Session:** 2026-03-08 Admin Gap Fix
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| A-06 | No Tax Rate Configuration HTTP endpoint — tax rules only settable via event, no POST/GET endpoint | `core/http_api/handlers.py`, `adapters/django_api/views.py`, `adapters/django_api/urls.py` | CRITICAL | **FIXED** — `POST /admin/tax-rules/set` + `GET /admin/tax-rules` endpoints; validates rate 0–1; applies to SettingsProjection |
+| A-10 | No Business Profile UPDATE endpoint — bootstrap only, cannot change name/address/tax_id after creation | `core/identity_store/service.py`, `core/http_api/handlers.py` | CRITICAL | **FIXED** — `POST /admin/business/update` endpoint; `update_business_profile()` service function; partial update (only non-None fields changed) |
+| A-02 | No Customer CRUD — documents have customer_id but no way to manage customers | `core/identity_store/models.py`, `core/identity_store/service.py`, `core/http_api/handlers.py` | HIGH | **FIXED** — `CustomerProfile` Django ORM model added; `POST /admin/customers/create`, `POST /admin/customers/update`, `GET /admin/customers` endpoints; migration `0003_customerprofile` |
+| A-12 | No Custom Role creation — only 6 hardcoded default roles | `core/identity_store/service.py`, `core/http_api/handlers.py` | HIGH | **FIXED** — `POST /admin/roles/create` endpoint; `create_custom_role()` service function; validates permissions against `VALID_PERMISSIONS` |

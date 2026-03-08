@@ -489,6 +489,124 @@ class ActorDeactivateHttpRequest:
 
 
 @dataclass(frozen=True)
+class TaxRuleSetHttpRequest:
+    """Set a tax rule for a business (e.g. VAT 16%)."""
+    business_id: uuid.UUID
+    actor: ActorMetadata | None
+    tax_code: str
+    rate: str  # decimal string e.g. "0.16"
+    description: str = ""
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not isinstance(self.business_id, uuid.UUID):
+            raise ValueError("business_id must be UUID.")
+        if self.actor is not None and not isinstance(self.actor, ActorMetadata):
+            raise ValueError("actor must be ActorMetadata.")
+        if not self.tax_code or not isinstance(self.tax_code, str):
+            raise ValueError("tax_code must be a non-empty string.")
+        if not isinstance(self.rate, str):
+            raise ValueError("rate must be a decimal string (e.g. '0.16').")
+        if self.branch_id is not None and not isinstance(self.branch_id, uuid.UUID):
+            raise ValueError("branch_id must be UUID or None.")
+
+
+@dataclass(frozen=True)
+class BusinessUpdateHttpRequest:
+    """Update a business profile (name, address, tax_id, etc.)."""
+    business_id: uuid.UUID
+    actor: ActorMetadata | None
+    business_name: Optional[str] = None
+    default_currency: Optional[str] = None
+    default_language: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    country_code: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    tax_id: Optional[str] = None
+    logo_url: Optional[str] = None
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not isinstance(self.business_id, uuid.UUID):
+            raise ValueError("business_id must be UUID.")
+        if self.actor is not None and not isinstance(self.actor, ActorMetadata):
+            raise ValueError("actor must be ActorMetadata.")
+        if self.branch_id is not None and not isinstance(self.branch_id, uuid.UUID):
+            raise ValueError("branch_id must be UUID or None.")
+
+
+@dataclass(frozen=True)
+class RoleCreateHttpRequest:
+    """Create a custom role for a business."""
+    business_id: uuid.UUID
+    actor: ActorMetadata | None
+    role_name: str
+    permissions: tuple[str, ...]
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not isinstance(self.business_id, uuid.UUID):
+            raise ValueError("business_id must be UUID.")
+        if self.actor is not None and not isinstance(self.actor, ActorMetadata):
+            raise ValueError("actor must be ActorMetadata.")
+        if not self.role_name or not isinstance(self.role_name, str):
+            raise ValueError("role_name must be a non-empty string.")
+        if not isinstance(self.permissions, tuple):
+            raise ValueError("permissions must be a tuple.")
+        if not self.permissions:
+            raise ValueError("permissions must have at least one entry.")
+        if self.branch_id is not None and not isinstance(self.branch_id, uuid.UUID):
+            raise ValueError("branch_id must be UUID or None.")
+
+
+@dataclass(frozen=True)
+class CustomerProfileCreateHttpRequest:
+    """Create a customer profile for a business."""
+    business_id: uuid.UUID
+    actor: ActorMetadata | None
+    display_name: str
+    phone: str = ""
+    email: str = ""
+    address: str = ""
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not isinstance(self.business_id, uuid.UUID):
+            raise ValueError("business_id must be UUID.")
+        if self.actor is not None and not isinstance(self.actor, ActorMetadata):
+            raise ValueError("actor must be ActorMetadata.")
+        if not self.display_name or not isinstance(self.display_name, str):
+            raise ValueError("display_name must be a non-empty string.")
+        if self.branch_id is not None and not isinstance(self.branch_id, uuid.UUID):
+            raise ValueError("branch_id must be UUID or None.")
+
+
+@dataclass(frozen=True)
+class CustomerProfileUpdateHttpRequest:
+    """Update a customer profile."""
+    business_id: uuid.UUID
+    actor: ActorMetadata | None
+    customer_id: str
+    display_name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not isinstance(self.business_id, uuid.UUID):
+            raise ValueError("business_id must be UUID.")
+        if self.actor is not None and not isinstance(self.actor, ActorMetadata):
+            raise ValueError("actor must be ActorMetadata.")
+        if not self.customer_id or not isinstance(self.customer_id, str):
+            raise ValueError("customer_id must be a non-empty string.")
+        if self.branch_id is not None and not isinstance(self.branch_id, uuid.UUID):
+            raise ValueError("branch_id must be UUID or None.")
+
+
+@dataclass(frozen=True)
 class HttpApiErrorBody:
     code: str
     message: str

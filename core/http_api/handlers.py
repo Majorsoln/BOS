@@ -20,13 +20,19 @@ from core.context.business_context import BusinessContext
 from core.identity_store.service import (
     assign_role as assign_identity_role,
     bootstrap_identity as bootstrap_identity_store,
+    create_custom_role as create_identity_custom_role,
+    create_customer_profile as create_identity_customer_profile,
     deactivate_actor as deactivate_identity_actor,
     get_business_profile as get_identity_business_profile,
+    get_customer_profile as get_identity_customer_profile,
     list_actors_for_business as list_identity_actors_for_business,
     list_branches_for_business as list_identity_branches_for_business,
+    list_customer_profiles as list_identity_customer_profiles,
     list_role_assignments_for_business as list_identity_assignments_for_business,
     list_roles_for_business as list_identity_roles_for_business,
     revoke_role as revoke_identity_role,
+    update_business_profile as update_identity_business_profile,
+    update_customer_profile as update_identity_customer_profile,
 )
 from core.document_issuance.registry import (
     DOC_INVOICE_ISSUE_REQUEST,
@@ -45,8 +51,11 @@ from core.http_api.contracts import (
     ApiKeyRevokeHttpRequest,
     ApiKeyRotateHttpRequest,
     BusinessReadRequest,
+    BusinessUpdateHttpRequest,
     ComplianceProfileDeactivateHttpRequest,
     ComplianceProfileUpsertHttpRequest,
+    CustomerProfileCreateHttpRequest,
+    CustomerProfileUpdateHttpRequest,
     DocumentRenderRequest,
     DocumentTemplateDeactivateHttpRequest,
     DocumentTemplateUpsertHttpRequest,
@@ -60,7 +69,9 @@ from core.http_api.contracts import (
     IssueReceiptHttpRequest,
     IssuedDocumentsReadRequest,
     RoleAssignHttpRequest,
+    RoleCreateHttpRequest,
     RoleRevokeHttpRequest,
+    TaxRuleSetHttpRequest,
 )
 from core.http_api.errors import error_response, rejection_response, success_response
 
@@ -1907,3 +1918,392 @@ def get_document_verify(
         )
 
     return success_response(result.as_dict())
+
+
+# ---------------------------------------------------------------------------
+# Tax Rule Configuration
+# ---------------------------------------------------------------------------
+
+ADMIN_TAX_RULE_SET_REQUEST = "admin.tax_rule.set.request"
+ADMIN_TAX_RULE_LIST_REQUEST = "admin.tax_rule.list.request"
+ADMIN_BUSINESS_UPDATE_REQUEST = "admin.business.update.request"
+ADMIN_ROLE_CREATE_REQUEST = "admin.role.create.request"
+ADMIN_CUSTOMER_CREATE_REQUEST = "admin.customer.create.request"
+ADMIN_CUSTOMER_UPDATE_REQUEST = "admin.customer.update.request"
+ADMIN_CUSTOMER_LIST_REQUEST = "admin.customer.list.request"
+
+
+def post_tax_rule_set(
+    request: TaxRuleSetHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Set a tax rule for a business via the SettingsProjection event path."""
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=request.branch_id,
+        command_type=ADMIN_TAX_RULE_SET_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        from decimal import Decimal, InvalidOperation
+        try:
+            rate = Decimal(request.rate)
+        except (InvalidOperation, ValueError):
+            return error_response(
+                code="INVALID_REQUEST",
+                message=f"rate '{request.rate}' is not a valid decimal.",
+                details={},
+            )
+        if rate < 0 or rate > 1:
+            return error_response(
+                code="INVALID_REQUEST",
+                message="rate must be between 0 and 1 (e.g. 0.16 for 16%).",
+                details={},
+            )
+
+        from core.admin.settings import (
+            SETTINGS_TAX_RULE_CONFIGURED_V1,
+            SetTaxRuleRequest,
+        )
+        tax_request = SetTaxRuleRequest(
+            business_id=business_context.business_id,
+            tax_code=request.tax_code.strip().upper(),
+            rate=rate,
+            description=request.description,
+            actor_id=actor_context.actor_id,
+            issued_at=dependencies.clock.now_issued_at(),
+        )
+        payload = {
+            "business_id": str(tax_request.business_id),
+            "tax_code": tax_request.tax_code,
+            "rate": str(tax_request.rate),
+            "description": tax_request.description,
+            "actor_id": tax_request.actor_id,
+            "issued_at": tax_request.issued_at.isoformat(),
+        }
+        settings_projection = getattr(dependencies, "settings_projection", None)
+        if settings_projection is not None:
+            settings_projection.apply(SETTINGS_TAX_RULE_CONFIGURED_V1, payload)
+    except ValueError as exc:
+        return error_response(code="INVALID_REQUEST", message=str(exc), details={})
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to set tax rule.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(
+        {
+            "tax_code": payload["tax_code"],
+            "rate": payload["rate"],
+            "description": payload["description"],
+        },
+        headers=headers,
+    )
+
+
+def list_tax_rules(
+    request: BusinessReadRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """List all tax rules for a business."""
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=None,
+        command_type=ADMIN_TAX_RULE_LIST_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    settings_projection = getattr(dependencies, "settings_projection", None)
+    if settings_projection is None:
+        return _success_with_language({"items": [], "count": 0}, headers=headers)
+
+    rules = settings_projection.list_tax_rules(business_context.business_id)
+    items = tuple(
+        {
+            "tax_code": r.tax_code,
+            "rate": str(r.rate),
+            "description": r.description,
+            "configured_at": _iso_datetime_value(r.configured_at),
+            "configured_by": r.configured_by,
+        }
+        for r in rules
+    )
+    return _success_with_language(
+        {"items": items, "count": len(items)},
+        headers=headers,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Business Profile Update
+# ---------------------------------------------------------------------------
+
+def post_business_update(
+    request: BusinessUpdateHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Update a business profile (name, address, tax_id, etc.)."""
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=request.branch_id,
+        command_type=ADMIN_BUSINESS_UPDATE_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        result = update_identity_business_profile(
+            business_id=request.business_id,
+            business_name=request.business_name,
+            default_currency=request.default_currency,
+            default_language=request.default_language,
+            address=request.address,
+            city=request.city,
+            country_code=request.country_code,
+            phone=request.phone,
+            email=request.email,
+            tax_id=request.tax_id,
+            logo_url=request.logo_url,
+        )
+    except ValueError as exc:
+        return error_response(code="INVALID_REQUEST", message=str(exc), details={})
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to update business profile.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(result, headers=headers)
+
+
+# ---------------------------------------------------------------------------
+# Custom Role Creation
+# ---------------------------------------------------------------------------
+
+def post_role_create(
+    request: RoleCreateHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create a custom role with specified permissions."""
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=request.branch_id,
+        command_type=ADMIN_ROLE_CREATE_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        result = create_identity_custom_role(
+            business_id=request.business_id,
+            role_name=request.role_name,
+            permissions=request.permissions,
+        )
+    except ValueError as exc:
+        return error_response(code="INVALID_REQUEST", message=str(exc), details={})
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to create role.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(result, headers=headers)
+
+
+# ---------------------------------------------------------------------------
+# Customer Profile CRUD
+# ---------------------------------------------------------------------------
+
+def post_customer_create(
+    request: CustomerProfileCreateHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create a new customer profile for a business."""
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=request.branch_id,
+        command_type=ADMIN_CUSTOMER_CREATE_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        result = create_identity_customer_profile(
+            business_id=request.business_id,
+            display_name=request.display_name,
+            phone=request.phone,
+            email=request.email,
+            address=request.address,
+        )
+    except ValueError as exc:
+        return error_response(code="INVALID_REQUEST", message=str(exc), details={})
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to create customer profile.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(result, headers=headers)
+
+
+def post_customer_update(
+    request: CustomerProfileUpdateHttpRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Update an existing customer profile."""
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=request.branch_id,
+        command_type=ADMIN_CUSTOMER_UPDATE_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        result = update_identity_customer_profile(
+            business_id=request.business_id,
+            customer_id=request.customer_id,
+            display_name=request.display_name,
+            phone=request.phone,
+            email=request.email,
+            address=request.address,
+        )
+    except ValueError as exc:
+        return error_response(code="INVALID_REQUEST", message=str(exc), details={})
+    except Exception as exc:
+        return error_response(
+            code="HANDLER_EXECUTION_FAILED",
+            message="Failed to update customer profile.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(result, headers=headers)
+
+
+def list_customers(
+    request: BusinessReadRequest,
+    dependencies,
+    headers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """List all customer profiles for a business."""
+    resolved_context = _resolve_handler_context(
+        request=request,
+        dependencies=dependencies,
+        headers=headers,
+        require_actor=True,
+    )
+    if isinstance(resolved_context, RejectionReason):
+        return rejection_response(resolved_context)
+    actor_context, business_context = resolved_context
+
+    permission_rejection = _enforce_admin_permission(
+        dependencies=dependencies,
+        actor_context=actor_context,
+        business_context=business_context,
+        branch_id=None,
+        command_type=ADMIN_CUSTOMER_LIST_REQUEST,
+    )
+    if permission_rejection is not None:
+        return rejection_response(permission_rejection)
+
+    try:
+        items = list_identity_customer_profiles(business_context.business_id)
+    except ValueError as exc:
+        return error_response(code="INVALID_REQUEST", message=str(exc), details={})
+    except Exception as exc:
+        return error_response(
+            code="READ_MODEL_ERROR",
+            message="Failed to list customer profiles.",
+            details={"error_type": type(exc).__name__},
+        )
+
+    return _success_with_language(
+        {"items": items, "count": len(items)},
+        headers=headers,
+    )

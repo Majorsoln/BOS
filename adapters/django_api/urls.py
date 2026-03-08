@@ -36,6 +36,17 @@ urlpatterns = [
         "admin/document-templates/deactivate",
         views.document_templates_deactivate_view,
     ),
+    # Tax rule configuration
+    path("admin/tax-rules", views.tax_rules_list_view),
+    path("admin/tax-rules/set", views.tax_rules_set_view),
+    # Business profile update
+    path("admin/business/update", views.business_update_view),
+    # Custom role creation
+    path("admin/roles/create", views.roles_create_view),
+    # Customer profile CRUD
+    path("admin/customers", views.customers_list_view),
+    path("admin/customers/create", views.customers_create_view),
+    path("admin/customers/update", views.customers_update_view),
     path("docs/receipt/issue", views.issue_receipt_view),
     path("docs/quote/issue", views.issue_quote_view),
     path("docs/invoice/issue", views.issue_invoice_view),

@@ -21,8 +21,11 @@ from core.http_api.contracts import (
     ApiKeyRevokeHttpRequest,
     ApiKeyRotateHttpRequest,
     BusinessReadRequest,
+    BusinessUpdateHttpRequest,
     ComplianceProfileDeactivateHttpRequest,
     ComplianceProfileUpsertHttpRequest,
+    CustomerProfileCreateHttpRequest,
+    CustomerProfileUpdateHttpRequest,
     DocumentRenderRequest,
     DocumentTemplateDeactivateHttpRequest,
     DocumentTemplateUpsertHttpRequest,
@@ -36,7 +39,9 @@ from core.http_api.contracts import (
     IssueReceiptHttpRequest,
     IssuedDocumentsReadRequest,
     RoleAssignHttpRequest,
+    RoleCreateHttpRequest,
     RoleRevokeHttpRequest,
+    TaxRuleSetHttpRequest,
 )
 from core.http_api.errors import error_response
 from core.http_api.handlers import (
@@ -49,16 +54,21 @@ from core.http_api.handlers import (
     list_api_keys,
     list_branches,
     list_compliance_profiles,
+    list_customers,
     list_document_templates,
     list_feature_flags,
     list_issued_documents,
     list_roles,
+    list_tax_rules,
     post_actor_deactivate,
     post_api_key_create,
     post_api_key_revoke,
     post_api_key_rotate,
+    post_business_update,
     post_compliance_profile_deactivate,
     post_compliance_profile_upsert,
+    post_customer_create,
+    post_customer_update,
     post_document_template_deactivate,
     post_document_template_upsert,
     post_feature_flag_clear,
@@ -69,7 +79,9 @@ from core.http_api.handlers import (
     post_issue_quote,
     post_issue_receipt,
     post_role_assign,
+    post_role_create,
     post_role_revoke,
+    post_tax_rule_set,
 )
 
 
@@ -793,3 +805,155 @@ def document_verify_view(request: HttpRequest, document_id: uuid.UUID) -> JsonRe
 
     payload = get_document_verify(contract, build_dependencies(), headers=headers)
     return JsonResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# Tax Rule endpoints
+# ---------------------------------------------------------------------------
+
+def _tax_rule_set_contract_factory(*, body, actor, business_id, branch_id):
+    return TaxRuleSetHttpRequest(
+        business_id=business_id,
+        branch_id=branch_id,
+        actor=actor,
+        tax_code=body["tax_code"],
+        rate=str(body["rate"]),
+        description=body.get("description", ""),
+    )
+
+
+@csrf_exempt
+def tax_rules_list_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "GET":
+        return _method_not_allowed()
+    return _dispatch_read(list_tax_rules, request)
+
+
+@csrf_exempt
+def tax_rules_set_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    return _dispatch_write(
+        post_tax_rule_set,
+        _tax_rule_set_contract_factory,
+        request,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Business Profile Update endpoint
+# ---------------------------------------------------------------------------
+
+def _business_update_contract_factory(*, body, actor, business_id, branch_id):
+    return BusinessUpdateHttpRequest(
+        business_id=business_id,
+        branch_id=branch_id,
+        actor=actor,
+        business_name=body.get("business_name"),
+        default_currency=body.get("default_currency"),
+        default_language=body.get("default_language"),
+        address=body.get("address"),
+        city=body.get("city"),
+        country_code=body.get("country_code"),
+        phone=body.get("phone"),
+        email=body.get("email"),
+        tax_id=body.get("tax_id"),
+        logo_url=body.get("logo_url"),
+    )
+
+
+@csrf_exempt
+def business_update_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    return _dispatch_write(
+        post_business_update,
+        _business_update_contract_factory,
+        request,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Custom Role Creation endpoint
+# ---------------------------------------------------------------------------
+
+def _role_create_contract_factory(*, body, actor, business_id, branch_id):
+    permissions = body.get("permissions", [])
+    if isinstance(permissions, list):
+        permissions = tuple(permissions)
+    return RoleCreateHttpRequest(
+        business_id=business_id,
+        branch_id=branch_id,
+        actor=actor,
+        role_name=body["role_name"],
+        permissions=permissions,
+    )
+
+
+@csrf_exempt
+def roles_create_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    return _dispatch_write(
+        post_role_create,
+        _role_create_contract_factory,
+        request,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Customer Profile CRUD endpoints
+# ---------------------------------------------------------------------------
+
+def _customer_create_contract_factory(*, body, actor, business_id, branch_id):
+    return CustomerProfileCreateHttpRequest(
+        business_id=business_id,
+        branch_id=branch_id,
+        actor=actor,
+        display_name=body["display_name"],
+        phone=body.get("phone", ""),
+        email=body.get("email", ""),
+        address=body.get("address", ""),
+    )
+
+
+def _customer_update_contract_factory(*, body, actor, business_id, branch_id):
+    return CustomerProfileUpdateHttpRequest(
+        business_id=business_id,
+        branch_id=branch_id,
+        actor=actor,
+        customer_id=body["customer_id"],
+        display_name=body.get("display_name"),
+        phone=body.get("phone"),
+        email=body.get("email"),
+        address=body.get("address"),
+    )
+
+
+@csrf_exempt
+def customers_list_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "GET":
+        return _method_not_allowed()
+    return _dispatch_read(list_customers, request)
+
+
+@csrf_exempt
+def customers_create_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    return _dispatch_write(
+        post_customer_create,
+        _customer_create_contract_factory,
+        request,
+    )
+
+
+@csrf_exempt
+def customers_update_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    return _dispatch_write(
+        post_customer_update,
+        _customer_update_contract_factory,
+        request,
+    )

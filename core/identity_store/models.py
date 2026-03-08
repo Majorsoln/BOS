@@ -183,3 +183,47 @@ class RoleAssignment(models.Model):
 
     def __str__(self) -> str:
         return f"{self.actor_id}:{self.role_id}:{self.status}"
+
+
+class CustomerProfileStatus(models.TextChoices):
+    ACTIVE = "ACTIVE", "Active"
+    INACTIVE = "INACTIVE", "Inactive"
+
+
+class CustomerProfile(models.Model):
+    """Persistent customer profile scoped to a business."""
+    customer_id = models.UUIDField(primary_key=True, editable=False)
+    business = models.ForeignKey(
+        Business,
+        on_delete=models.PROTECT,
+        related_name="customer_profiles",
+        db_column="business_id",
+    )
+    display_name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=64, default="", blank=True)
+    email = models.CharField(max_length=255, default="", blank=True)
+    address = models.CharField(max_length=512, default="", blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=CustomerProfileStatus.choices,
+        default=CustomerProfileStatus.ACTIVE,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_identity_customer_profiles"
+        ordering = ["business_id", "display_name"]
+        indexes = [
+            models.Index(
+                fields=["business", "status"],
+                name="idx_custprof_biz_status",
+            ),
+            models.Index(
+                fields=["business", "phone"],
+                name="idx_custprof_biz_phone",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.customer_id} ({self.display_name})"
