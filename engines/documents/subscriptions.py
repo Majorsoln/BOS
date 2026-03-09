@@ -47,6 +47,7 @@ DOCUMENT_SUBSCRIPTIONS: Dict[str, str] = {
     "restaurant.bill.settled.v1":        "handle_restaurant_bill_settled",
     "restaurant.bill.split.v1":          "handle_restaurant_bill_split",
     "restaurant.kitchen.ticket.sent.v1": "handle_kitchen_ticket_sent",
+    "restaurant.order.cancelled.v1":     "handle_restaurant_order_cancelled",
 
     # Workshop
     "workshop.quote.generated.v1":         "handle_workshop_quote_generated",
@@ -56,6 +57,7 @@ DOCUMENT_SUBSCRIPTIONS: Dict[str, str] = {
     "workshop.cutlist.generated.v1":       "handle_workshop_cutlist_generated",
     "workshop.job.completed.v1":           "handle_workshop_job_completed",
     "workshop.job.invoiced.v1":            "handle_workshop_job_invoiced",
+    "workshop.material.requisition.v1":    "handle_workshop_material_requisition",
 
     # Hotel — Reservation
     "hotel.reservation.confirmed.v1":    "handle_hotel_reservation_confirmed",
@@ -278,8 +280,23 @@ class DocumentSubscriptionHandler:
         }
         self._issue_receipt(business_id=business_id, branch_id=branch_id, payload=receipt_payload)
 
-        # If on-account sale, also issue an invoice
+        # If on-account sale, also issue a SALES_ORDER + INVOICE
         if p.get("on_account"):
+            sales_order_payload = {
+                **biz,
+                **customer,
+                "sale_id":        p.get("sale_id"),
+                "line_items":     p.get("lines", []),
+                "subtotal":       p.get("net_amount"),
+                "tax_total":      p.get("tax_amount", 0),
+                "discount_total": p.get("discount_amount", 0),
+                "grand_total":    p.get("total_amount"),
+                "currency":       p.get("currency"),
+                "payment_terms":  "DUE_ON_RECEIPT",
+                "issued_at":      p.get("completed_at"),
+            }
+            self._issue_doc("issue_sales_order", business_id=business_id, branch_id=branch_id, payload=sales_order_payload)
+
             invoice_payload = {
                 **biz,
                 **customer,
@@ -294,6 +311,20 @@ class DocumentSubscriptionHandler:
                 "issued_at":      p.get("completed_at"),
             }
             self._issue_invoice(business_id=business_id, branch_id=branch_id, payload=invoice_payload)
+
+        # If delivery required, issue a DELIVERY_NOTE
+        if p.get("requires_delivery"):
+            delivery_payload = {
+                **biz,
+                **customer,
+                "sale_id":        p.get("sale_id"),
+                "line_items":     p.get("lines", []),
+                "grand_total":    p.get("total_amount"),
+                "currency":       p.get("currency"),
+                "payment_method": p.get("payment_method"),
+                "issued_at":      p.get("completed_at"),
+            }
+            self._issue_doc("issue_delivery_note", business_id=business_id, branch_id=branch_id, payload=delivery_payload)
 
     def handle_retail_refund_issued(self, event_data: dict) -> None:
         """retail.refund.issued.v1 → REFUND_NOTE"""
@@ -351,7 +382,10 @@ class DocumentSubscriptionHandler:
     # ── RESTAURANT / BAR / BBQ ────────────────────────────────────
 
     def handle_restaurant_bill_settled(self, event_data: dict) -> None:
-        """restaurant.bill.settled.v1 → SALES_RECEIPT"""
+        """
+        restaurant.bill.settled.v1 → SALES_RECEIPT (always)
+                                    → INVOICE (if on_account=True)
+        """
         p = event_data.get("payload", {})
         business_id = p.get("business_id")
         branch_id = p.get("branch_id")
@@ -359,9 +393,11 @@ class DocumentSubscriptionHandler:
             return
 
         biz = self._resolve_biz(str(business_id))
+        customer = self._resolve_cust(p.get("customer_id"))
 
         payload = {
             **biz,
+            **customer,
             "bill_id":        p.get("bill_id"),
             "table_id":       p.get("table_id"),
             "table_name":     p.get("table_name", ""),
@@ -369,6 +405,7 @@ class DocumentSubscriptionHandler:
             "server_id":      p.get("server_id", ""),
             "line_items":     p.get("order_lines", []),
             "subtotal":       p.get("total_amount", 0),
+            "discount_total": p.get("discount_amount", 0),
             "tax_total":      p.get("tax_amount", 0),
             "tip":            p.get("tip_amount", 0),
             "grand_total":    (p.get("total_amount", 0) + p.get("tip_amount", 0)),
@@ -377,6 +414,23 @@ class DocumentSubscriptionHandler:
             "issued_at":      p.get("settled_at"),
         }
         self._issue_receipt(business_id=business_id, branch_id=branch_id, payload=payload)
+
+        # Corporate / on-account bills also get a formal INVOICE
+        if p.get("on_account"):
+            invoice_payload = {
+                **biz,
+                **customer,
+                "bill_id":        p.get("bill_id"),
+                "line_items":     p.get("order_lines", []),
+                "subtotal":       p.get("total_amount", 0),
+                "discount_total": p.get("discount_amount", 0),
+                "tax_total":      p.get("tax_amount", 0),
+                "grand_total":    (p.get("total_amount", 0) + p.get("tip_amount", 0)),
+                "currency":       p.get("currency"),
+                "payment_terms":  "DUE_ON_RECEIPT",
+                "issued_at":      p.get("settled_at"),
+            }
+            self._issue_invoice(business_id=business_id, branch_id=branch_id, payload=invoice_payload)
 
     def handle_restaurant_bill_split(self, event_data: dict) -> None:
         """restaurant.bill.split.v1 → SALES_RECEIPT per split party"""
@@ -422,6 +476,30 @@ class DocumentSubscriptionHandler:
             "issued_at":  p.get("sent_at"),
         }
         self._issue_doc("issue_kitchen_order_ticket", business_id=business_id, branch_id=branch_id, payload=payload)
+
+    def handle_restaurant_order_cancelled(self, event_data: dict) -> None:
+        """restaurant.order.cancelled.v1 → CREDIT_NOTE (if refund_amount > 0)"""
+        p = event_data.get("payload", {})
+        business_id = p.get("business_id")
+        branch_id = p.get("branch_id")
+        if not business_id:
+            return
+
+        refund_amount = p.get("refund_amount", 0)
+        if not refund_amount:
+            return  # no refund = no credit note needed
+
+        biz = self._resolve_biz(str(business_id))
+
+        payload = {
+            **biz,
+            "order_id":     p.get("order_id"),
+            "reason":       p.get("reason", ""),
+            "grand_total":  refund_amount,
+            "currency":     p.get("currency", ""),
+            "issued_at":    p.get("cancelled_at"),
+        }
+        self._issue_doc("issue_credit_note", business_id=business_id, branch_id=branch_id, payload=payload)
 
     # ── WORKSHOP ──────────────────────────────────────────────────
 
@@ -617,6 +695,24 @@ class DocumentSubscriptionHandler:
             "issued_at":      p.get("invoiced_at"),
         }
         self._issue_invoice(business_id=business_id, branch_id=branch_id, payload=payload)
+
+    def handle_workshop_material_requisition(self, event_data: dict) -> None:
+        """workshop.material.requisition.v1 → MATERIAL_REQUISITION"""
+        p = event_data.get("payload", {})
+        business_id = p.get("business_id")
+        branch_id = p.get("branch_id")
+        if not business_id:
+            return
+
+        payload = {
+            "requisition_id": p.get("requisition_id"),
+            "job_id":          p.get("job_id"),
+            "requested_by":    p.get("requested_by", ""),
+            "line_items":      p.get("items", []),
+            "notes":           p.get("notes", ""),
+            "issued_at":       p.get("requested_at"),
+        }
+        self._issue_doc("issue_material_requisition", business_id=business_id, branch_id=branch_id, payload=payload)
 
     # ── HOTEL — RESERVATION ───────────────────────────────────────
 

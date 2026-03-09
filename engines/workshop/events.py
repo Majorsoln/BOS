@@ -28,6 +28,9 @@ WORKSHOP_QUOTE_REJECTED_V1 = "workshop.quote.rejected.v1"
 # Phase 17 — Multi-Item Project Quotes
 WORKSHOP_PROJECT_QUOTE_GENERATED_V1 = "workshop.project.quote.generated.v1"
 
+# Material Requisition
+WORKSHOP_MATERIAL_REQUISITION_V1 = "workshop.material.requisition.v1"
+
 WORKSHOP_EVENT_TYPES = (
     WORKSHOP_JOB_CREATED_V1,
     WORKSHOP_JOB_ASSIGNED_V1,
@@ -44,6 +47,7 @@ WORKSHOP_EVENT_TYPES = (
     WORKSHOP_QUOTE_ACCEPTED_V1,
     WORKSHOP_QUOTE_REJECTED_V1,
     WORKSHOP_PROJECT_QUOTE_GENERATED_V1,
+    WORKSHOP_MATERIAL_REQUISITION_V1,
 )
 
 COMMAND_TO_EVENT_TYPE = {
@@ -60,6 +64,7 @@ COMMAND_TO_EVENT_TYPE = {
     "workshop.style.deactivate.request": WORKSHOP_STYLE_DEACTIVATED_V1,
     "workshop.quote.accept.request":     WORKSHOP_QUOTE_ACCEPTED_V1,
     "workshop.quote.reject.request":     WORKSHOP_QUOTE_REJECTED_V1,
+    "workshop.material.requisition.request": WORKSHOP_MATERIAL_REQUISITION_V1,
     # Note: workshop.quote.generate.request is handled specially in service
     # (requires formula computation before event creation)
 }
@@ -325,5 +330,21 @@ def build_quote_rejected_payload(command: Command) -> dict:
         "customer_id": command.payload.get("customer_id"),
         "reason":      command.payload.get("reason", ""),
         "rejected_at": command.issued_at,
+    })
+    return p
+
+
+# ── Material Requisition ────────────────────────────────────────────────────
+
+def build_material_requisition_payload(command: Command) -> dict:
+    """Technician requests materials from store for a job."""
+    p = _base_payload(command)
+    p.update({
+        "requisition_id": command.payload["requisition_id"],
+        "job_id":          command.payload["job_id"],
+        "requested_by":    command.payload.get("requested_by", command.actor_id),
+        "items":           command.payload.get("items", []),
+        "notes":           command.payload.get("notes", ""),
+        "requested_at":    command.issued_at,
     })
     return p

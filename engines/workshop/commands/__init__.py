@@ -35,6 +35,9 @@ WORKSHOP_PROJECT_QUOTE_REQUEST = "workshop.project.quote.request"
 WORKSHOP_QUOTE_ACCEPT_REQUEST = "workshop.quote.accept.request"
 WORKSHOP_QUOTE_REJECT_REQUEST = "workshop.quote.reject.request"
 
+# Material Requisition
+WORKSHOP_MATERIAL_REQUISITION_REQUEST = "workshop.material.requisition.request"
+
 WORKSHOP_COMMAND_TYPES = frozenset({
     WORKSHOP_JOB_CREATE_REQUEST,
     WORKSHOP_JOB_ASSIGN_REQUEST,
@@ -51,6 +54,7 @@ WORKSHOP_COMMAND_TYPES = frozenset({
     WORKSHOP_PROJECT_QUOTE_REQUEST,
     WORKSHOP_QUOTE_ACCEPT_REQUEST,
     WORKSHOP_QUOTE_REJECT_REQUEST,
+    WORKSHOP_MATERIAL_REQUISITION_REQUEST,
 })
 
 VALID_MATERIAL_UNITS = frozenset({"MM", "M", "SQM", "SHT", "PC", "KG"})
@@ -581,4 +585,32 @@ class QuoteRejectRequest:
             "job_id":      self.job_id,
             "customer_id": self.customer_id,
             "reason":      self.reason,
+        }, branch_id=self.branch_id, **kw)
+
+
+@dataclass(frozen=True)
+class MaterialRequisitionRequest:
+    """Technician requests materials from store for a job."""
+    requisition_id: str
+    job_id: str
+    items: tuple
+    requested_by: str = ""
+    notes: str = ""
+    branch_id: Optional[uuid.UUID] = None
+
+    def __post_init__(self):
+        if not self.requisition_id:
+            raise ValueError("requisition_id must be non-empty.")
+        if not self.job_id:
+            raise ValueError("job_id must be non-empty.")
+        if not isinstance(self.items, tuple) or not self.items:
+            raise ValueError("items must be a non-empty tuple.")
+
+    def to_command(self, **kw) -> Command:
+        return _cmd(WORKSHOP_MATERIAL_REQUISITION_REQUEST, {
+            "requisition_id": self.requisition_id,
+            "job_id":          self.job_id,
+            "items":           list(self.items),
+            "requested_by":    self.requested_by,
+            "notes":           self.notes,
         }, branch_id=self.branch_id, **kw)

@@ -26,6 +26,7 @@ from engines.workshop.events import (
     build_style_deactivated_payload, build_quote_generated_payload,
     build_project_quote_payload,
     build_quote_accepted_payload, build_quote_rejected_payload,
+    build_material_requisition_payload,
     WORKSHOP_STYLE_REGISTERED_V1, WORKSHOP_STYLE_UPDATED_V1,
     WORKSHOP_STYLE_DEACTIVATED_V1, WORKSHOP_QUOTE_GENERATED_V1,
     WORKSHOP_PROJECT_QUOTE_GENERATED_V1,
@@ -180,6 +181,7 @@ PAYLOAD_BUILDERS = {
     "workshop.style.deactivate.request": build_style_deactivated_payload,
     "workshop.quote.accept.request": build_quote_accepted_payload,
     "workshop.quote.reject.request": build_quote_rejected_payload,
+    "workshop.material.requisition.request": build_material_requisition_payload,
 }
 
 

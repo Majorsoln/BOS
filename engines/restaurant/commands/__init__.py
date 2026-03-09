@@ -165,6 +165,14 @@ class BillSettleRequest:
     currency: str
     payment_method: str
     tip_amount: int = 0
+    table_name: str = ""
+    covers: int = 0
+    server_id: str = ""
+    customer_id: Optional[str] = None
+    order_lines: tuple = ()
+    tax_amount: int = 0
+    discount_amount: int = 0
+    on_account: bool = False
     branch_id: Optional[uuid.UUID] = None
 
     def __post_init__(self):
@@ -182,10 +190,21 @@ class BillSettleRequest:
             raise ValueError("tip_amount must be non-negative integer.")
 
     def to_command(self, **kw) -> Command:
-        return _cmd(RESTAURANT_BILL_SETTLE_REQUEST,
-                     {"bill_id": self.bill_id, "table_id": self.table_id,
-                      "total_amount": self.total_amount, "tip_amount": self.tip_amount,
-                      "currency": self.currency, "payment_method": self.payment_method},
+        payload = {
+            "bill_id": self.bill_id, "table_id": self.table_id,
+            "total_amount": self.total_amount, "tip_amount": self.tip_amount,
+            "currency": self.currency, "payment_method": self.payment_method,
+            "table_name": self.table_name, "covers": self.covers,
+            "tax_amount": self.tax_amount, "discount_amount": self.discount_amount,
+            "on_account": self.on_account,
+        }
+        if self.server_id:
+            payload["server_id"] = self.server_id
+        if self.customer_id:
+            payload["customer_id"] = self.customer_id
+        if self.order_lines:
+            payload["order_lines"] = list(self.order_lines)
+        return _cmd(RESTAURANT_BILL_SETTLE_REQUEST, payload,
                      branch_id=self.branch_id, **kw)
 
 

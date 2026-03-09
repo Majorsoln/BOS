@@ -477,9 +477,9 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | R-04 | Business info absent from all event payloads | Required for tax-compliant receipts | HIGH |
 | R-05 | No auto-refund note after `retail.refund.issued.v1` | Customer needs proof of refund | MEDIUM |
 | R-06 | `build_sale_voided_payload` has no lines or amount | Void/credit note cannot be generated | MEDIUM |
-| R-07 | No `cashier_name` — only `actor_id` UUID | Receipt should show cashier name | LOW |
-| R-08 | No SALES_ORDER for on-account sales | On-account workflow incomplete | MEDIUM |
-| R-09 | No DELIVERY_NOTE trigger | Dispatched goods leave no document | MEDIUM |
+| R-07 | No `cashier_name` — only `actor_id` UUID | Receipt shows `cashier_id` (actor_id UUID); name resolved at render time via actor resolver | LOW | OPEN — by design (actor resolver resolves display name) |
+| R-08 | ~~No SALES_ORDER for on-account sales~~ | **FIXED** — `handle_retail_sale_completed` now issues SALES_ORDER when `on_account=True` | MEDIUM | **FIXED** |
+| R-09 | ~~No DELIVERY_NOTE trigger~~ | **FIXED** — `handle_retail_sale_completed` now issues DELIVERY_NOTE when `requires_delivery=True` | MEDIUM | **FIXED** |
 
 ### GAP SET 3: Restaurant / Bar / BBQ Document Gaps
 | ID | Gap | Detail | Severity |
@@ -490,8 +490,8 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | RE-04 | No per-split receipts after `restaurant.bill.split.v1` | Each party needs their own receipt | HIGH |
 | RE-05 | No KOT document from kitchen ticket event | Kitchen lacks printable/displayable ticket | MEDIUM |
 | RE-06 | `covers` and `table_name` absent from bill_settled | Bill doesn't show table or guest count | MEDIUM |
-| RE-07 | No `server_id` on bill payload | Restaurant receipt should show server | LOW |
-| RE-08 | No void/cancel slip document | Audit trail for voided items missing | MEDIUM |
+| RE-07 | ~~No `server_id` on bill payload~~ | **FIXED** — `BillSettleRequest` now has `server_id`, `table_name`, `covers`, `customer_id`, `order_lines`, `tax_amount`, `discount_amount`, `on_account` optional fields; event builder falls back to `actor_id` for server; restaurant bill settled handler resolves customer + issues INVOICE for on-account | LOW | **FIXED** |
+| RE-08 | ~~No void/cancel slip document~~ | **FIXED** — `handle_restaurant_order_cancelled` added; subscribes `restaurant.order.cancelled.v1`; issues CREDIT_NOTE when `refund_amount > 0` | MEDIUM | **FIXED** |
 
 ### GAP SET 4: Workshop Document Gaps
 | ID | Gap | Detail | Severity |
@@ -509,7 +509,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | WS-11 | No COMPLETION_CERTIFICATE event/document | No formal handover document | MEDIUM |
 | WS-12 | No `payment_terms` / `due_date` in invoice payload | Invoice must specify payment deadline | MEDIUM |
 | WS-13 | No CUTTING_LIST document trigger | Cutting list stored but not issued as doc | MEDIUM |
-| WS-14 | No MATERIAL_REQUISITION event/document | No formal material pickup from store | MEDIUM |
+| WS-14 | ~~No MATERIAL_REQUISITION event/document~~ | **FIXED** — `workshop.material.requisition.v1` event + `MaterialRequisitionRequest` command + `build_material_requisition_payload` + `handle_workshop_material_requisition` doc handler wired; COMMAND_FLAG_MAP + PAYLOAD_BUILDERS updated | MEDIUM | **FIXED** |
 
 ### GAP SET 5: Hotel Document Gaps
 | ID | Gap | Detail | Severity |

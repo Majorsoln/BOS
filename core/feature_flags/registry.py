@@ -153,6 +153,8 @@ COMMAND_FLAG_MAP: dict[str, str] = {
     # Phase 18 — Quote Acceptance / Rejection
     "workshop.quote.accept.request": FLAG_ENABLE_WORKSHOP_ENGINE,
     "workshop.quote.reject.request": FLAG_ENABLE_WORKSHOP_ENGINE,
+    # Material Requisition
+    "workshop.material.requisition.request": FLAG_ENABLE_WORKSHOP_ENGINE,
 
     # ── Restaurant Engine (additional) ───────────────────────
     "restaurant.bill.present.request": FLAG_ENABLE_RESTAURANT_ENGINE,
