@@ -964,3 +964,49 @@ Admin creates MigrationJob (POST /admin/migration/create-job)
 3. **Tenant-scoped** — business_id required on every operation
 4. **Errors don't stop batch** — each row processed individually
 5. **ID mapping preserved** — external_id → BOS UUID stored for cross-reference
+
+---
+
+### GAP SET 23: SaaS HTTP Endpoint Gaps
+**Session:** 2026-03-09 SaaS Endpoint Wiring
+| ID | Gap | File(s) | Severity | Status |
+|----|-----|---------|----------|--------|
+| SAAS-01 | SaaS domain logic fully implemented but ZERO HTTP endpoints — engine combos, pricing, trials, promos, referrals, resellers, subscriptions all unreachable | `core/saas/*.py` (6 modules) vs `adapters/django_api/urls.py` (no saas routes) | **SYSTEM-BREAKING** | **FIXED** — 35 endpoints added |
+| SAAS-02 | No wiring of SaaS projections/services in adapter layer | `adapters/django_api/wiring.py` | HIGH | **FIXED** — lazy-loaded singleton pattern in views (same as migration) |
+
+### SaaS HTTP Endpoints (35 total)
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/saas/engines` | List all registered engines |
+| POST | `/saas/engines/register` | Register an engine in the catalog |
+| GET | `/saas/combos` | List all active combos |
+| POST | `/saas/combos/define` | Define a new engine combo |
+| POST | `/saas/combos/update` | Update an existing combo |
+| POST | `/saas/combos/deactivate` | Deactivate a combo |
+| POST | `/saas/combos/set-rate` | Set monthly price for a combo in a region |
+| GET | `/saas/pricing?region_code=KE&business_model=B2C` | User-facing pricing catalog |
+| GET | `/saas/trial-policy` | Get current trial policy |
+| POST | `/saas/trial-policy/set` | Set platform-wide trial policy |
+| POST | `/saas/trials/create` | Create immutable trial agreement |
+| POST | `/saas/trials/extend` | Extend an active trial |
+| POST | `/saas/trials/convert` | Convert trial to paying |
+| GET | `/saas/trials/agreement?business_id=` | Get trial agreement for a business |
+| POST | `/saas/rates/publish-change` | Publish rate change (90-day notice enforced) |
+| GET | `/saas/rates/effective?business_id=` | Get current effective rate for a tenant |
+| GET | `/saas/promos` | List active promotions |
+| POST | `/saas/promos/create` | Create a promotion |
+| POST | `/saas/promos/redeem` | Redeem a promo code |
+| POST | `/saas/referrals/set-policy` | Set referral program policy |
+| POST | `/saas/referrals/generate-code` | Generate referral code for a tenant |
+| POST | `/saas/referrals/submit` | Submit a referral during signup |
+| POST | `/saas/referrals/qualify` | Mark referral as qualified (system) |
+| GET | `/saas/resellers` | List active resellers |
+| POST | `/saas/resellers/register` | Register a new reseller |
+| POST | `/saas/resellers/link-tenant` | Link a tenant to a reseller |
+| POST | `/saas/resellers/accrue-commission` | Record commission for a paying tenant |
+| POST | `/saas/resellers/request-payout` | Request a commission payout |
+| GET | `/saas/subscriptions?business_id=` | Get subscription for a business |
+| POST | `/saas/subscriptions/start-trial` | Start trial subscription |
+| POST | `/saas/subscriptions/activate` | Activate subscription (trial → paying) |
+| POST | `/saas/subscriptions/cancel` | Cancel a subscription |
+| POST | `/saas/subscriptions/change-combo` | Switch to a different engine combo |

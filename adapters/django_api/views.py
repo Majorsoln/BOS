@@ -1167,3 +1167,1028 @@ def migration_mappings_view(request: HttpRequest) -> JsonResponse:
             for m in mappings
         ],
     })
+
+
+# ---------------------------------------------------------------------------
+# SaaS — Engine Combos, Pricing, Trials, Promotions, Referrals, Resellers
+# ---------------------------------------------------------------------------
+
+def _get_saas_services():
+    """Lazy-load SaaS service singletons."""
+    if not hasattr(_get_saas_services, "_loaded"):
+        from core.saas.plans import PlanProjection, PlanManager
+        from core.saas.rate_governance import RateGovernanceProjection, RateGovernanceService
+        from core.saas.promotions import PromotionProjection, PromotionService
+        from core.saas.referrals import ReferralProjection, ReferralService
+        from core.saas.resellers import ResellerProjection, ResellerService
+        from core.saas.subscriptions import SubscriptionProjection, SubscriptionManager
+
+        plan_proj = PlanProjection()
+        rate_proj = RateGovernanceProjection()
+        promo_proj = PromotionProjection()
+        referral_proj = ReferralProjection()
+        reseller_proj = ResellerProjection()
+        subscription_proj = SubscriptionProjection()
+
+        _get_saas_services._plan_manager = PlanManager(plan_proj)
+        _get_saas_services._rate_service = RateGovernanceService(rate_proj)
+        _get_saas_services._promo_service = PromotionService(promo_proj)
+        _get_saas_services._referral_service = ReferralService(referral_proj)
+        _get_saas_services._reseller_service = ResellerService(reseller_proj)
+        _get_saas_services._sub_manager = SubscriptionManager(subscription_proj)
+        _get_saas_services._plan_proj = plan_proj
+        _get_saas_services._rate_proj = rate_proj
+        _get_saas_services._promo_proj = promo_proj
+        _get_saas_services._referral_proj = referral_proj
+        _get_saas_services._reseller_proj = reseller_proj
+        _get_saas_services._sub_proj = subscription_proj
+        _get_saas_services._loaded = True
+    return _get_saas_services
+
+
+def _saas_rejection_response(result: dict) -> JsonResponse:
+    """If result has 'rejected' key, return error response."""
+    rej = result.get("rejected")
+    if rej is None:
+        return None
+    return _json_error(rej.code, rej.message, status=400)
+
+
+def _dt_from_body(body: dict, key: str = "issued_at"):
+    """Parse datetime from body, defaulting to now."""
+    from datetime import datetime, timezone
+    raw = body.get(key)
+    if raw is None:
+        return datetime.now(tz=timezone.utc)
+    if isinstance(raw, datetime):
+        return raw
+    return datetime.fromisoformat(str(raw))
+
+
+# ── Engine Catalog ──────────────────────────────────────────
+
+@csrf_exempt
+def saas_register_engine_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/engines/register — Register an engine in the catalog."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.plans import RegisterEngineRequest
+        req = RegisterEngineRequest(
+            engine_key=body["engine_key"],
+            display_name=body["display_name"],
+            category=body.get("category", "PAID"),
+            description=body.get("description", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._plan_manager.register_engine(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({"status": "ok", "engine_key": result["engine_key"]})
+
+
+@csrf_exempt
+def saas_engines_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/engines — List all registered engines."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    engines = svcs._plan_proj.list_engines()
+    return JsonResponse({
+        "status": "ok",
+        "engines": [
+            {
+                "engine_key": e.engine_key,
+                "display_name": e.display_name,
+                "category": e.category.value,
+                "description": e.description,
+            }
+            for e in engines
+        ],
+    })
+
+
+# ── Combos ──────────────────────────────────────────────────
+
+@csrf_exempt
+def saas_define_combo_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/combos/define — Define a new engine combo."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.plans import DefineComboRequest
+        req = DefineComboRequest(
+            name=body["name"],
+            slug=body["slug"],
+            description=body.get("description", ""),
+            business_model=body.get("business_model", "BOTH"),
+            paid_engines=tuple(body.get("paid_engines", [])),
+            max_branches=body.get("max_branches", 1),
+            max_users=body.get("max_users", 3),
+            max_api_calls_per_month=body.get("max_api_calls_per_month", 5000),
+            max_documents_per_month=body.get("max_documents_per_month", 500),
+            sort_order=body.get("sort_order", 0),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._plan_manager.define_combo(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "combo_id": str(result["combo_id"]),
+    })
+
+
+@csrf_exempt
+def saas_update_combo_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/combos/update — Update an existing combo."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.plans import UpdateComboRequest
+        combo_id = _parse_uuid(body["combo_id"], "combo_id")
+        req = UpdateComboRequest(
+            combo_id=combo_id,
+            name=body.get("name"),
+            description=body.get("description"),
+            paid_engines=tuple(body["paid_engines"]) if "paid_engines" in body else None,
+            max_branches=body.get("max_branches"),
+            max_users=body.get("max_users"),
+            max_api_calls_per_month=body.get("max_api_calls_per_month"),
+            max_documents_per_month=body.get("max_documents_per_month"),
+            sort_order=body.get("sort_order"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    rejection = svcs._plan_manager.update_combo(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok", "combo_id": str(body["combo_id"])})
+
+
+@csrf_exempt
+def saas_deactivate_combo_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/combos/deactivate — Deactivate a combo."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.plans import DeactivateComboRequest
+        req = DeactivateComboRequest(
+            combo_id=_parse_uuid(body["combo_id"], "combo_id"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+            reason=body.get("reason", ""),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    rejection = svcs._plan_manager.deactivate_combo(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_combos_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/combos — List all active combos."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    combos = svcs._plan_proj.list_combos(active_only=True)
+    return JsonResponse({
+        "status": "ok",
+        "combos": [
+            {
+                "combo_id": str(c.combo_id),
+                "name": c.name,
+                "slug": c.slug,
+                "description": c.description,
+                "business_model": c.business_model.value,
+                "paid_engines": sorted(c.paid_engines),
+                "all_engines": sorted(c.all_engines),
+                "sort_order": c.sort_order,
+                "quota": {
+                    "max_branches": c.quota.max_branches,
+                    "max_users": c.quota.max_users,
+                    "max_api_calls_per_month": c.quota.max_api_calls_per_month,
+                    "max_documents_per_month": c.quota.max_documents_per_month,
+                },
+            }
+            for c in combos
+        ],
+    })
+
+
+# ── Combo Rates / Pricing ──────────────────────────────────
+
+@csrf_exempt
+def saas_set_combo_rate_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/combos/set-rate — Set monthly price for a combo in a region."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from decimal import Decimal
+        from core.saas.plans import SetComboRateRequest
+        req = SetComboRateRequest(
+            combo_id=_parse_uuid(body["combo_id"], "combo_id"),
+            region_code=body["region_code"],
+            currency=body["currency"],
+            monthly_amount=Decimal(str(body["monthly_amount"])),
+            effective_from=_dt_from_body(body, "effective_from") if "effective_from" in body else None,
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._plan_manager.set_combo_rate(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_pricing_catalog_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/pricing?region_code=KE&business_model=B2C — User-facing catalog."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    region_code = request.GET.get("region_code", "")
+    if not region_code:
+        return _json_error("INVALID_REQUEST", "region_code is required.", status=400)
+    business_model = request.GET.get("business_model")
+
+    svcs = _get_saas_services()
+    catalog = svcs._plan_manager.get_pricing_catalog(
+        region_code=region_code,
+        business_model=business_model,
+    )
+    return JsonResponse({"status": "ok", "plans": catalog})
+
+
+# ── Trial Policy & Agreements ──────────────────────────────
+
+@csrf_exempt
+def saas_set_trial_policy_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/trial-policy/set — Set platform-wide trial policy."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.rate_governance import SetTrialPolicyRequest
+        req = SetTrialPolicyRequest(
+            default_trial_days=body["default_trial_days"],
+            max_trial_days=body["max_trial_days"],
+            grace_period_days=body.get("grace_period_days", 7),
+            rate_notice_days=body.get("rate_notice_days", 90),
+            version=body.get("version", "v1"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    svcs._rate_service.set_trial_policy(req)
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_trial_policy_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/trial-policy — Get current trial policy."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    policy = svcs._rate_proj.get_trial_policy()
+    if policy is None:
+        return JsonResponse({
+            "status": "ok",
+            "policy": {"default_trial_days": 180, "max_trial_days": 365,
+                       "grace_period_days": 7, "rate_notice_days": 90, "version": "default"},
+        })
+    return JsonResponse({
+        "status": "ok",
+        "policy": {
+            "default_trial_days": policy.default_trial_days,
+            "max_trial_days": policy.max_trial_days,
+            "grace_period_days": policy.grace_period_days,
+            "rate_notice_days": policy.rate_notice_days,
+            "version": policy.version,
+        },
+    })
+
+
+@csrf_exempt
+def saas_create_trial_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/trials/create — Create immutable trial agreement for a tenant."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from decimal import Decimal
+        from core.saas.rate_governance import CreateTrialAgreementRequest
+        req = CreateTrialAgreementRequest(
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            combo_id=_parse_uuid(body["combo_id"], "combo_id"),
+            region_code=body["region_code"],
+            currency=body["currency"],
+            monthly_amount=Decimal(str(body["monthly_amount"])),
+            rate_version=body.get("rate_version", 1),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+            referral_bonus_days=body.get("referral_bonus_days", 0),
+            promo_code=body.get("promo_code", ""),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._rate_service.create_trial_agreement(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "agreement_id": str(result["agreement_id"]),
+        "trial_days": result["trial_days"],
+        "trial_ends_at": result["trial_ends_at"].isoformat() if result.get("trial_ends_at") else None,
+        "billing_starts_at": result["billing_starts_at"].isoformat() if result.get("billing_starts_at") else None,
+        "monthly_amount": result["monthly_amount"],
+        "currency": result["currency"],
+    })
+
+
+@csrf_exempt
+def saas_extend_trial_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/trials/extend — Extend an active trial."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.rate_governance import ExtendTrialRequest
+        req = ExtendTrialRequest(
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            extra_days=body["extra_days"],
+            reason=body.get("reason", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    rejection = svcs._rate_service.extend_trial(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_convert_trial_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/trials/convert — Mark trial as converted (user started paying)."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.rate_governance import ConvertTrialRequest
+        req = ConvertTrialRequest(
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    rejection = svcs._rate_service.convert_trial(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_trial_agreement_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/trials/agreement?business_id=... — Get trial agreement for a business."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    try:
+        business_id = _parse_uuid(request.GET.get("business_id", ""), "business_id")
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    agreement = svcs._rate_proj.get_agreement(business_id)
+    if agreement is None:
+        return _json_error("NOT_FOUND", "No trial agreement found.", status=404)
+    return JsonResponse({
+        "status": "ok",
+        "agreement": {
+            "agreement_id": str(agreement.agreement_id),
+            "business_id": str(agreement.business_id),
+            "combo_id": str(agreement.combo_id),
+            "region_code": agreement.region_code,
+            "trial_days": agreement.trial_days,
+            "bonus_days": agreement.bonus_days,
+            "trial_starts_at": agreement.trial_starts_at.isoformat(),
+            "trial_ends_at": agreement.trial_ends_at.isoformat(),
+            "billing_starts_at": agreement.billing_starts_at.isoformat(),
+            "status": agreement.status.value,
+            "rate_snapshot": {
+                "currency": agreement.rate_snapshot.currency,
+                "monthly_amount": str(agreement.rate_snapshot.monthly_amount),
+                "rate_version": agreement.rate_snapshot.rate_version,
+            },
+            "terms_version": agreement.terms_version,
+            "promo_code": agreement.promo_code,
+        },
+    })
+
+
+# ── Rate Changes ───────────────────────────────────────────
+
+@csrf_exempt
+def saas_publish_rate_change_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/rates/publish-change — Publish a rate change (90-day notice)."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from decimal import Decimal
+        from core.saas.rate_governance import PublishRateChangeRequest
+        req = PublishRateChangeRequest(
+            combo_id=_parse_uuid(body["combo_id"], "combo_id"),
+            region_code=body["region_code"],
+            old_amount=Decimal(str(body["old_amount"])),
+            new_amount=Decimal(str(body["new_amount"])),
+            old_version=body.get("old_version", 0),
+            new_version=body.get("new_version", 0),
+            currency=body["currency"],
+            effective_from=_dt_from_body(body, "effective_from"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._rate_service.publish_rate_change(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "change_id": str(result["change_id"]),
+        "tenants_to_notify": [str(t) for t in result.get("tenants_to_notify", [])],
+    })
+
+
+@csrf_exempt
+def saas_effective_rate_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/rates/effective?business_id=... — Get current effective rate."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    try:
+        business_id = _parse_uuid(request.GET.get("business_id", ""), "business_id")
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    from datetime import datetime, timezone
+    svcs = _get_saas_services()
+    result = svcs._rate_service.get_effective_rate(business_id, datetime.now(tz=timezone.utc))
+    if result is None:
+        return _json_error("NOT_FOUND", "No agreement found.", status=404)
+    return JsonResponse({"status": "ok", "rate": result})
+
+
+# ── Promotions ─────────────────────────────────────────────
+
+@csrf_exempt
+def saas_create_promo_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/promos/create — Create a promotion."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from decimal import Decimal
+        from core.saas.promotions import CreatePromoRequest
+        req = CreatePromoRequest(
+            promo_code=body["promo_code"],
+            promo_type=body["promo_type"],
+            description=body.get("description", ""),
+            valid_from=_dt_from_body(body, "valid_from"),
+            valid_until=_dt_from_body(body, "valid_until"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+            max_redemptions=body.get("max_redemptions", 0),
+            region_codes=tuple(body.get("region_codes", [])),
+            combo_ids=tuple(body.get("combo_ids", [])),
+            discount_pct=Decimal(str(body.get("discount_pct", "0"))),
+            discount_months=body.get("discount_months", 0),
+            credit_amount=Decimal(str(body.get("credit_amount", "0"))),
+            credit_currency=body.get("credit_currency", ""),
+            credit_expires_months=body.get("credit_expires_months", 6),
+            extra_trial_days=body.get("extra_trial_days", 0),
+            bonus_engine=body.get("bonus_engine", ""),
+            bonus_months=body.get("bonus_months", 0),
+            bonus_after=body.get("bonus_after", "auto_remove"),
+            bundle_engines=tuple(body.get("bundle_engines", [])),
+            bundle_discount_pct=Decimal(str(body.get("bundle_discount_pct", "0"))),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._promo_service.create_promo(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "promo_id": str(result["promo_id"]),
+        "promo_code": result["promo_code"],
+    })
+
+
+@csrf_exempt
+def saas_redeem_promo_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/promos/redeem — Redeem a promo code."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.promotions import RedeemPromoRequest
+        req = RedeemPromoRequest(
+            promo_code=body["promo_code"],
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            region_code=body["region_code"],
+            combo_id=_parse_uuid(body["combo_id"], "combo_id"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._promo_service.redeem_promo(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "redemption_id": str(result["redemption_id"]),
+        "promo_type": result["promo_type"],
+        "details": result["details"],
+    })
+
+
+@csrf_exempt
+def saas_promos_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/promos — List active promotions."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    promos = svcs._promo_proj.list_active_promos()
+    return JsonResponse({
+        "status": "ok",
+        "promotions": [
+            {
+                "promo_id": str(p.promo_id),
+                "promo_code": p.promo_code,
+                "promo_type": p.promo_type.value,
+                "description": p.description,
+                "valid_from": p.valid_from.isoformat() if p.valid_from else None,
+                "valid_until": p.valid_until.isoformat() if p.valid_until else None,
+                "max_redemptions": p.max_redemptions,
+                "current_redemptions": p.current_redemptions,
+                "status": p.status.value,
+            }
+            for p in promos
+        ],
+    })
+
+
+# ── Referrals ("Alika Rafiki") ─────────────────────────────
+
+@csrf_exempt
+def saas_set_referral_policy_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/referrals/set-policy — Set referral program policy."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.referrals import SetReferralPolicyRequest
+        req = SetReferralPolicyRequest(
+            referrer_reward_days=body.get("referrer_reward_days", 30),
+            referee_bonus_days=body.get("referee_bonus_days", 30),
+            qualification_days=body.get("qualification_days", 30),
+            qualification_min_transactions=body.get("qualification_min_transactions", 10),
+            max_referrals_per_year=body.get("max_referrals_per_year", 12),
+            champion_threshold=body.get("champion_threshold", 10),
+            version=body.get("version", "v1"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    svcs._referral_service.set_policy(req)
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_generate_referral_code_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/referrals/generate-code — Generate referral code for a tenant."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.referrals import GenerateReferralCodeRequest
+        req = GenerateReferralCodeRequest(
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            business_name=body.get("business_name", "BOS"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._referral_service.generate_code(req)
+    return JsonResponse({"status": "ok", "referral_code": result["code"]})
+
+
+@csrf_exempt
+def saas_submit_referral_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/referrals/submit — Submit a referral during signup."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.referrals import SubmitReferralRequest
+        req = SubmitReferralRequest(
+            referral_code=body["referral_code"],
+            referee_business_id=_parse_uuid(body["referee_business_id"], "referee_business_id"),
+            referee_phone=body.get("referee_phone", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._referral_service.submit_referral(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "referral_id": str(result["referral_id"]),
+        "referee_bonus_days": result["referee_bonus_days"],
+    })
+
+
+@csrf_exempt
+def saas_qualify_referral_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/referrals/qualify — Mark referral as qualified (system call)."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.referrals import QualifyReferralRequest
+        req = QualifyReferralRequest(
+            referee_business_id=_parse_uuid(body["referee_business_id"], "referee_business_id"),
+            actor_id=body.get("actor_id", "SYSTEM"),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._referral_service.qualify_referral(req)
+    return JsonResponse({
+        "status": "ok",
+        "qualified": result["qualified"],
+        "referrer_business_id": str(result.get("referrer_business_id", "")),
+        "reward_days": result.get("reward_days", 0),
+        "is_champion": result.get("is_champion", False),
+    })
+
+
+# ── Resellers ("Wakala wa BOS") ────────────────────────────
+
+@csrf_exempt
+def saas_register_reseller_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/register — Register a new reseller."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.resellers import RegisterResellerRequest
+        req = RegisterResellerRequest(
+            company_name=body["company_name"],
+            contact_person=body.get("contact_person", ""),
+            phone=body.get("phone", ""),
+            email=body.get("email", ""),
+            region_codes=tuple(body.get("region_codes", [])),
+            payout_method=body.get("payout_method", "MPESA"),
+            payout_phone=body.get("payout_phone", ""),
+            payout_bank_name=body.get("payout_bank_name", ""),
+            payout_account_number=body.get("payout_account_number", ""),
+            payout_account_name=body.get("payout_account_name", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.register_reseller(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "reseller_id": str(result["reseller_id"]),
+        "tier": result["tier"],
+        "commission_rate": result["commission_rate"],
+    })
+
+
+@csrf_exempt
+def saas_link_tenant_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/link-tenant — Link a tenant to a reseller."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.resellers import LinkTenantRequest
+        req = LinkTenantRequest(
+            reseller_id=_parse_uuid(body["reseller_id"], "reseller_id"),
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.link_tenant(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "new_tier": result["new_tier"],
+        "active_tenant_count": result["active_tenant_count"],
+    })
+
+
+@csrf_exempt
+def saas_accrue_commission_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/accrue-commission — Record commission for a paying tenant."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from decimal import Decimal
+        from core.saas.resellers import AccrueCommissionRequest
+        req = AccrueCommissionRequest(
+            reseller_id=_parse_uuid(body["reseller_id"], "reseller_id"),
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            tenant_monthly_amount=Decimal(str(body["tenant_monthly_amount"])),
+            currency=body["currency"],
+            period=body["period"],
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.accrue_commission(req)
+    return JsonResponse({
+        "status": "ok",
+        "accrued": result["accrued"],
+        "commission": result.get("commission", "0"),
+        "rate": result.get("rate", "0"),
+    })
+
+
+@csrf_exempt
+def saas_request_payout_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/request-payout — Request a commission payout."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from decimal import Decimal
+        from core.saas.resellers import RequestPayoutRequest
+        req = RequestPayoutRequest(
+            reseller_id=_parse_uuid(body["reseller_id"], "reseller_id"),
+            amount=Decimal(str(body["amount"])),
+            currency=body["currency"],
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.request_payout(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "payout_id": str(result["payout_id"]),
+    })
+
+
+@csrf_exempt
+def saas_resellers_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/resellers — List active resellers."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    resellers = svcs._reseller_proj.list_resellers(active_only=True)
+    return JsonResponse({
+        "status": "ok",
+        "resellers": [
+            {
+                "reseller_id": str(r.reseller_id),
+                "company_name": r.company_name,
+                "contact_person": r.contact_person,
+                "tier": r.tier.value,
+                "status": r.status.value,
+                "commission_rate": str(r.commission_rate),
+                "active_tenant_count": r.active_tenant_count,
+                "total_commission_earned": str(r.total_commission_earned),
+                "pending_commission": str(r.pending_commission),
+                "region_codes": list(r.region_codes),
+            }
+            for r in resellers
+        ],
+    })
+
+
+# ── Subscriptions ──────────────────────────────────────────
+
+@csrf_exempt
+def saas_start_trial_sub_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/subscriptions/start-trial — Start trial subscription."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.subscriptions import StartTrialRequest
+        req = StartTrialRequest(
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            combo_id=_parse_uuid(body["combo_id"], "combo_id"),
+            trial_agreement_id=_parse_uuid(body["trial_agreement_id"], "trial_agreement_id"),
+            billing_starts_at=_dt_from_body(body, "billing_starts_at"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._sub_manager.start_trial(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "subscription_id": str(result["subscription_id"]),
+        "subscription_status": result["status"],
+    })
+
+
+@csrf_exempt
+def saas_activate_sub_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/subscriptions/activate — Activate subscription (trial→paying)."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.subscriptions import ActivateSubscriptionRequest
+        combo_id_raw = body.get("combo_id")
+        req = ActivateSubscriptionRequest(
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            plan_id=_parse_uuid(body.get("plan_id", body.get("combo_id", "")), "plan_id"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+            combo_id=_parse_uuid(combo_id_raw, "combo_id") if combo_id_raw else None,
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._sub_manager.activate(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "subscription_id": str(result["subscription_id"]),
+    })
+
+
+@csrf_exempt
+def saas_cancel_sub_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/subscriptions/cancel — Cancel a subscription."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.subscriptions import CancelSubscriptionRequest
+        req = CancelSubscriptionRequest(
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+            reason=body.get("reason", ""),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    rejection = svcs._sub_manager.cancel(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_subscription_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/subscriptions?business_id=... — Get subscription for a business."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    try:
+        business_id = _parse_uuid(request.GET.get("business_id", ""), "business_id")
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    sub = svcs._sub_proj.get_subscription(business_id)
+    if sub is None:
+        return _json_error("NOT_FOUND", "No subscription found.", status=404)
+    return JsonResponse({
+        "status": "ok",
+        "subscription": {
+            "subscription_id": str(sub.subscription_id),
+            "business_id": str(sub.business_id),
+            "combo_id": str(sub.combo_id) if sub.combo_id else None,
+            "status": sub.status.value,
+            "activated_at": sub.activated_at.isoformat() if sub.activated_at else None,
+            "billing_starts_at": sub.billing_starts_at.isoformat() if sub.billing_starts_at else None,
+            "renewal_count": sub.renewal_count,
+        },
+    })
+
+
+@csrf_exempt
+def saas_change_combo_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/subscriptions/change-combo — Switch to a different combo."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.subscriptions import ChangeComboRequest
+        req = ChangeComboRequest(
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            new_combo_id=_parse_uuid(body["new_combo_id"], "new_combo_id"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    rejection = svcs._sub_manager.change_combo(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok"})
