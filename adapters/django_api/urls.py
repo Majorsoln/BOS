@@ -58,4 +58,11 @@ urlpatterns = [
     path("docs/<uuid:document_id>/render-html", views.document_render_html_view),
     path("docs/<uuid:document_id>/render-pdf", views.document_render_pdf_view),
     path("docs/<uuid:document_id>/verify", views.document_verify_view),
+    # Data Migration ("Hamisha Data") endpoints
+    path("admin/migration/create-job", views.migration_create_job_view),
+    path("admin/migration/upload", views.migration_upload_view),
+    path("admin/migration/complete", views.migration_complete_view),
+    path("admin/migration/cancel", views.migration_cancel_view),
+    path("admin/migration/jobs", views.migration_jobs_list_view),
+    path("admin/migration/mappings", views.migration_mappings_view),
 ]

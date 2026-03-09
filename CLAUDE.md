@@ -908,3 +908,59 @@ Branch override:      {business_id}.{branch_id}.{doc_type_lower}.v{n}
 - Commission on PAYING tenants only (not trial)
 - 90-day churn clawback
 - Payout via M-Pesa, Mobile Money, Bank Transfer
+
+---
+
+## DATA MIGRATION MODULE — "Hamisha Data" (2026-03-09)
+
+### Purpose
+Enables businesses migrating from other ERP systems (QuickBooks, Xero, Sage, Odoo, Tally, etc.) to bulk-import existing data into BOS.
+
+### Architecture
+```
+Admin creates MigrationJob (POST /admin/migration/create-job)
+    └─► Admin uploads rows in batches (POST /admin/migration/upload)
+              └─► MigrationService validates + dedup-checks each row
+                        └─► Entity importer creates via BOS service layer
+                                  └─► IdMapping stored (external_id → BOS UUID)
+                                            └─► Admin marks job complete (POST /admin/migration/complete)
+```
+
+### Files
+| File | Purpose |
+|------|---------|
+| `core/migration/__init__.py` | Module docstring |
+| `core/migration/models.py` | EntityType, JobStatus, RowStatus enums; MigrationJob, ImportRowResult, IdMapping, MigrationBatchRequest/Result |
+| `core/migration/importers.py` | Entity-specific importers: import_customer, import_supplier, import_product, import_opening_balance |
+| `core/migration/service.py` | MigrationService orchestrator + InMemoryIdMappingStore |
+| `adapters/django_api/views.py` | HTTP endpoints (6 views) |
+| `adapters/django_api/urls.py` | URL routing for migration endpoints |
+
+### Supported Entity Types
+| Type | Importer | Required Fields |
+|------|----------|----------------|
+| CUSTOMER | `import_customer` | `external_id`, `display_name` |
+| SUPPLIER | `import_supplier` | `external_id`, `name` |
+| PRODUCT | `import_product` | `external_id`, `name`, `sku`, `unit_price` |
+| OPENING_BALANCE | `import_opening_balance` | `external_id`, `account_code`, `balance` |
+| TRANSACTION | — | Not yet implemented (historical records) |
+
+### Supported Source Systems
+`quickbooks`, `xero`, `sage`, `odoo`, `erpnext`, `tally`, `wave`, `zoho_books`, `freshbooks`, `csv_generic`, `json_generic`, `excel_generic`, `custom`
+
+### HTTP Endpoints
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/admin/migration/create-job` | Create a migration job (specify source_system + entity_type) |
+| POST | `/admin/migration/upload` | Upload a batch of rows for import |
+| POST | `/admin/migration/complete` | Mark job as completed after all batches |
+| POST | `/admin/migration/cancel` | Cancel an in-progress job |
+| GET | `/admin/migration/jobs?business_id=` | List all migration jobs for a business |
+| GET | `/admin/migration/mappings?business_id=&source_system=&entity_type=` | List external_id → BOS UUID mappings |
+
+### Doctrine
+1. **All imports via BOS service layer** — no direct DB writes
+2. **Idempotent** — re-uploading same external_id skips (no duplicates)
+3. **Tenant-scoped** — business_id required on every operation
+4. **Errors don't stop batch** — each row processed individually
+5. **ID mapping preserved** — external_id → BOS UUID stored for cross-reference

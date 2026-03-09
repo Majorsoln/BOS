@@ -957,3 +957,213 @@ def customers_update_view(request: HttpRequest) -> JsonResponse:
         _customer_update_contract_factory,
         request,
     )
+
+
+# ---------------------------------------------------------------------------
+# Data Migration ("Hamisha Data") endpoints
+# ---------------------------------------------------------------------------
+
+def _get_migration_service():
+    """Lazy-load MigrationService singleton."""
+    from core.migration.service import MigrationService
+    if not hasattr(_get_migration_service, "_instance"):
+        _get_migration_service._instance = MigrationService()
+    return _get_migration_service._instance
+
+
+@csrf_exempt
+def migration_create_job_view(request: HttpRequest) -> JsonResponse:
+    """POST /admin/migration/create-job — Create a new migration job."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        business_id = _parse_uuid(body["business_id"], "business_id")
+        source_system = body["source_system"]
+        entity_type = body["entity_type"]
+        actor_id = body.get("actor_id", "")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svc = _get_migration_service()
+    try:
+        job = svc.create_job(
+            business_id=business_id,
+            source_system=source_system,
+            entity_type=entity_type,
+            actor_id=actor_id,
+        )
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    return JsonResponse({
+        "status": "ok",
+        "job_id": str(job.job_id),
+        "entity_type": job.entity_type,
+        "source_system": job.source_system,
+        "job_status": job.status,
+    })
+
+
+@csrf_exempt
+def migration_upload_view(request: HttpRequest) -> JsonResponse:
+    """POST /admin/migration/upload — Upload a batch of rows for import."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        job_id = _parse_uuid(body["job_id"], "job_id")
+        business_id = _parse_uuid(body["business_id"], "business_id")
+        entity_type = body["entity_type"]
+        rows = body.get("rows", [])
+        if not isinstance(rows, list) or not rows:
+            raise ValueError("rows must be a non-empty list of objects.")
+        actor_id = body.get("actor_id", "")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    from core.migration.models import MigrationBatchRequest
+
+    svc = _get_migration_service()
+    try:
+        batch_req = MigrationBatchRequest(
+            job_id=job_id,
+            business_id=business_id,
+            entity_type=entity_type,
+            rows=tuple(rows),
+            actor_id=actor_id,
+        )
+        result = svc.import_batch(batch_req)
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    return JsonResponse({
+        "status": "ok",
+        "job_id": str(result.job_id),
+        "total": result.total,
+        "imported": result.imported,
+        "skipped": result.skipped,
+        "errors": result.errors,
+        "row_results": [
+            {
+                "row_index": r.row_index,
+                "external_id": r.external_id,
+                "status": r.status,
+                "bos_id": r.bos_id,
+                "error_message": r.error_message,
+            }
+            for r in result.row_results
+        ],
+    })
+
+
+@csrf_exempt
+def migration_complete_view(request: HttpRequest) -> JsonResponse:
+    """POST /admin/migration/complete — Mark a migration job as completed."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        job_id = _parse_uuid(body["job_id"], "job_id")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svc = _get_migration_service()
+    ok = svc.complete_job(job_id)
+    if not ok:
+        return _json_error("INVALID_STATE", "Job not found or not in progress.", status=400)
+    job = svc.get_job(job_id)
+    return JsonResponse({
+        "status": "ok",
+        "job_id": str(job_id),
+        "job_status": job.status if job else "COMPLETED",
+        "total_rows": job.total_rows if job else 0,
+        "imported_rows": job.imported_rows if job else 0,
+        "skipped_rows": job.skipped_rows if job else 0,
+        "error_rows": job.error_rows if job else 0,
+    })
+
+
+@csrf_exempt
+def migration_cancel_view(request: HttpRequest) -> JsonResponse:
+    """POST /admin/migration/cancel — Cancel a migration job."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        job_id = _parse_uuid(body["job_id"], "job_id")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svc = _get_migration_service()
+    ok = svc.cancel_job(job_id)
+    if not ok:
+        return _json_error("INVALID_STATE", "Job not found or already completed/cancelled.", status=400)
+    return JsonResponse({"status": "ok", "job_id": str(job_id), "job_status": "CANCELLED"})
+
+
+@csrf_exempt
+def migration_jobs_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /admin/migration/jobs?business_id=... — List migration jobs."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    try:
+        business_id_raw = request.GET.get("business_id")
+        if not business_id_raw:
+            raise ValueError("business_id is required.")
+        business_id = _parse_uuid(business_id_raw, "business_id")
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svc = _get_migration_service()
+    jobs = svc.list_jobs(business_id)
+    return JsonResponse({
+        "status": "ok",
+        "jobs": [
+            {
+                "job_id": str(j.job_id),
+                "source_system": j.source_system,
+                "entity_type": j.entity_type,
+                "job_status": j.status,
+                "total_rows": j.total_rows,
+                "imported_rows": j.imported_rows,
+                "skipped_rows": j.skipped_rows,
+                "error_rows": j.error_rows,
+                "created_at": j.created_at.isoformat() if j.created_at else None,
+                "completed_at": j.completed_at.isoformat() if j.completed_at else None,
+            }
+            for j in jobs
+        ],
+    })
+
+
+@csrf_exempt
+def migration_mappings_view(request: HttpRequest) -> JsonResponse:
+    """GET /admin/migration/mappings?business_id=...&source_system=...&entity_type=..."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    try:
+        business_id = _parse_uuid(request.GET.get("business_id", ""), "business_id")
+        source_system = request.GET.get("source_system", "")
+        entity_type = request.GET.get("entity_type", "")
+        if not source_system:
+            raise ValueError("source_system is required.")
+        if not entity_type:
+            raise ValueError("entity_type is required.")
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svc = _get_migration_service()
+    mappings = svc.list_mappings(business_id, source_system, entity_type)
+    return JsonResponse({
+        "status": "ok",
+        "mappings": [
+            {
+                "external_id": m.external_id,
+                "bos_id": str(m.bos_id),
+                "entity_type": m.entity_type,
+                "imported_at": m.imported_at.isoformat() if m.imported_at else None,
+            }
+            for m in mappings
+        ],
+    })
