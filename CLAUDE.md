@@ -461,8 +461,8 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 ### GAP SET 1: Infrastructure / Wiring (CRITICAL — System Broken)
 | ID | Gap | File | Severity |
 |----|-----|------|----------|
-| W-01 | `RetailSubscriptionHandler` not registered in bootstrap | `core/bootstrap/subscription_wiring.py` | CRITICAL |
-| W-02 | `actor_type="System"` wrong case in retail subscriptions | `engines/retail/subscriptions.py:70` | CRITICAL |
+| W-01 | ~~`RetailSubscriptionHandler` not registered in bootstrap~~ | **RESOLVED** — `core/bootstrap/subscription_wiring.py` | ~~CRITICAL~~ |
+| W-02 | ~~`actor_type="System"` wrong case in retail subscriptions~~ | **RESOLVED** — uses "SYSTEM" | ~~CRITICAL~~ |
 | W-03 | ~~No `DocumentSubscriptionHandler` class anywhere~~ | **RESOLVED** — `engines/documents/subscriptions.py` 29 handlers wired | ~~CRITICAL~~ |
 | W-04 | ~~`DocumentIssuanceService` HTTP-only, no event path~~ | **RESOLVED** — DocumentSubscriptionHandler calls service; `document_service` passed in bootstrap | ~~CRITICAL~~ |
 | W-05 | ~~`VALID_DOCUMENT_TYPES` only allows RECEIPT/QUOTE/INVOICE~~ | **RESOLVED** — all 25 doc types in `VALID_DOCUMENT_TYPES` | ~~CRITICAL~~ |
@@ -471,12 +471,12 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 ### GAP SET 2: Retail POS Document Gaps
 | ID | Gap | Detail | Severity |
 |----|-----|--------|----------|
-| R-01 | No auto-receipt after `retail.sale.completed.v1` | Receipt must fire on sale close | CRITICAL |
-| R-02 | `customer_id` dropped from sale_completed payload | Receipt can't address customer | HIGH |
-| R-03 | No sequential receipt number | Legal receipts need RCP-2024-0001 | HIGH |
-| R-04 | Business info absent from all event payloads | Required for tax-compliant receipts | HIGH |
-| R-05 | No auto-refund note after `retail.refund.issued.v1` | Customer needs proof of refund | MEDIUM |
-| R-06 | `build_sale_voided_payload` has no lines or amount | Void/credit note cannot be generated | MEDIUM |
+| R-01 | ~~No auto-receipt after `retail.sale.completed.v1`~~ | **FIXED** — `handle_retail_sale_completed` auto-issues SALES_RECEIPT | ~~CRITICAL~~ |
+| R-02 | ~~`customer_id` dropped from sale_completed payload~~ | **FIXED** — `customer_id` in `build_sale_completed_payload` + `SaleCompleteRequest` | ~~HIGH~~ |
+| R-03 | ~~No sequential receipt number~~ | **FIXED** — `InMemoryNumberingProvider` wired with RCP- prefix | ~~HIGH~~ |
+| R-04 | ~~Business info absent from all event payloads~~ | **FIXED** — `business_info_resolver` enriches all documents at issuance | ~~HIGH~~ |
+| R-05 | ~~No auto-refund note after `retail.refund.issued.v1`~~ | **FIXED** — `handle_retail_refund_issued` auto-issues REFUND_NOTE | ~~MEDIUM~~ |
+| R-06 | ~~`build_sale_voided_payload` has no lines or amount~~ | **FIXED** — `lines`, `total_amount`, `currency`, `original_receipt_id` all in payload | ~~MEDIUM~~ |
 | R-07 | No `cashier_name` — only `actor_id` UUID | Receipt shows `cashier_id` (actor_id UUID); name resolved at render time via actor resolver | LOW | OPEN — by design (actor resolver resolves display name) |
 | R-08 | ~~No SALES_ORDER for on-account sales~~ | **FIXED** — `handle_retail_sale_completed` now issues SALES_ORDER when `on_account=True` | MEDIUM | **FIXED** |
 | R-09 | ~~No DELIVERY_NOTE trigger~~ | **FIXED** — `handle_retail_sale_completed` now issues DELIVERY_NOTE when `requires_delivery=True` | MEDIUM | **FIXED** |
@@ -484,51 +484,51 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 ### GAP SET 3: Restaurant / Bar / BBQ Document Gaps
 | ID | Gap | Detail | Severity |
 |----|-----|--------|----------|
-| RE-01 | No auto-receipt after `restaurant.bill.settled.v1` | Bill document never auto-generated | CRITICAL |
-| RE-02 | `build_bill_settled_payload` missing order line items | Bill has no itemised food/drinks list | CRITICAL |
-| RE-03 | No `restaurant.bill.presented.v1` event | Gap between "check please" and settlement | HIGH |
-| RE-04 | No per-split receipts after `restaurant.bill.split.v1` | Each party needs their own receipt | HIGH |
-| RE-05 | No KOT document from kitchen ticket event | Kitchen lacks printable/displayable ticket | MEDIUM |
-| RE-06 | `covers` and `table_name` absent from bill_settled | Bill doesn't show table or guest count | MEDIUM |
+| RE-01 | ~~No auto-receipt after `restaurant.bill.settled.v1`~~ | **FIXED** — `handle_restaurant_bill_settled` auto-issues SALES_RECEIPT (+ INVOICE for on-account) | ~~CRITICAL~~ |
+| RE-02 | ~~`build_bill_settled_payload` missing order line items~~ | **FIXED** — `order_lines`, `table_name`, `covers`, `server_id`, `tax_amount`, `discount_amount` all in payload | ~~CRITICAL~~ |
+| RE-03 | ~~No `restaurant.bill.presented.v1` event~~ | **FIXED** — `BillPresentRequest` + `build_bill_presented_payload` + event type wired | ~~HIGH~~ |
+| RE-04 | ~~No per-split receipts after `restaurant.bill.split.v1`~~ | **FIXED** — `handle_restaurant_bill_split` issues SALES_RECEIPT per split party | ~~HIGH~~ |
+| RE-05 | ~~No KOT document from kitchen ticket event~~ | **FIXED** — `handle_kitchen_ticket_sent` issues KITCHEN_ORDER_TICKET | ~~MEDIUM~~ |
+| RE-06 | ~~`covers` and `table_name` absent from bill_settled~~ | **FIXED** — `BillSettleRequest` now has `covers`, `table_name` optional fields; event builder reads them | ~~MEDIUM~~ |
 | RE-07 | ~~No `server_id` on bill payload~~ | **FIXED** — `BillSettleRequest` now has `server_id`, `table_name`, `covers`, `customer_id`, `order_lines`, `tax_amount`, `discount_amount`, `on_account` optional fields; event builder falls back to `actor_id` for server; restaurant bill settled handler resolves customer + issues INVOICE for on-account | LOW | **FIXED** |
 | RE-08 | ~~No void/cancel slip document~~ | **FIXED** — `handle_restaurant_order_cancelled` added; subscribes `restaurant.order.cancelled.v1`; issues CREDIT_NOTE when `refund_amount > 0` | MEDIUM | **FIXED** |
 
 ### GAP SET 4: Workshop Document Gaps
 | ID | Gap | Detail | Severity |
 |----|-----|--------|----------|
-| WS-01 | No auto-quote document after `workshop.quote.generated.v1` | Quote stored internally, no customer doc | CRITICAL |
-| WS-02 | No auto-invoice document after `workshop.job.invoiced.v1` | Customer gets no invoice document | CRITICAL |
-| WS-03 | `build_quote_generated_payload` has NO price | Quote has materials but zero cost data | CRITICAL |
-| WS-04 | `customer_id` not in quote payload | Quote addressed to nobody | HIGH |
-| WS-05 | No `valid_until` on quotes | Legal quotes must have an expiry | HIGH |
-| WS-06 | No `workshop.quote.accepted.v1` event | Quote acceptance not tracked | HIGH |
-| WS-07 | No `workshop.quote.rejected.v1` event | Quote rejection not tracked | MEDIUM |
-| WS-08 | `build_job_invoiced_payload` has no line breakdown | Invoice shows total only, no labor/parts | HIGH |
-| WS-09 | No `tax_amount` or `discount_amount` in invoice payload | Tax invoice compliance broken | HIGH |
-| WS-10 | No WORK_ORDER document on job assignment | Technician has no formal work document | MEDIUM |
-| WS-11 | No COMPLETION_CERTIFICATE event/document | No formal handover document | MEDIUM |
-| WS-12 | No `payment_terms` / `due_date` in invoice payload | Invoice must specify payment deadline | MEDIUM |
-| WS-13 | No CUTTING_LIST document trigger | Cutting list stored but not issued as doc | MEDIUM |
+| WS-01 | ~~No auto-quote document after `workshop.quote.generated.v1`~~ | **FIXED** — `handle_workshop_quote_generated` auto-issues QUOTE | ~~CRITICAL~~ |
+| WS-02 | ~~No auto-invoice document after `workshop.job.invoiced.v1`~~ | **FIXED** — `handle_workshop_job_invoiced` auto-issues INVOICE with full line breakdown | ~~CRITICAL~~ |
+| WS-03 | ~~`build_quote_generated_payload` has NO price~~ | **FIXED** — `total_price`, `labour_cost`, `material_cost`, `tax_amount`, `currency` in payload | ~~CRITICAL~~ |
+| WS-04 | ~~`customer_id` not in quote payload~~ | **FIXED** — `customer_id` in `build_quote_generated_payload` | ~~HIGH~~ |
+| WS-05 | ~~No `valid_until` on quotes~~ | **FIXED** — `valid_until` in quote payload + rendered in doc | ~~HIGH~~ |
+| WS-06 | ~~No `workshop.quote.accepted.v1` event~~ | **FIXED** — event type + `build_quote_accepted_payload` + `handle_workshop_quote_accepted` → PROFORMA_INVOICE | ~~HIGH~~ |
+| WS-07 | ~~No `workshop.quote.rejected.v1` event~~ | **FIXED** — event type + `build_quote_rejected_payload` (tracking only, no document) | ~~MEDIUM~~ |
+| WS-08 | ~~`build_job_invoiced_payload` has no line breakdown~~ | **FIXED** — `labour_hours/rate/total`, `parts_used` all in payload; doc handler builds line items | ~~HIGH~~ |
+| WS-09 | ~~No `tax_amount` or `discount_amount` in invoice payload~~ | **FIXED** — both fields in `build_job_invoiced_payload` + `JobInvoiceRequest` | ~~HIGH~~ |
+| WS-10 | ~~No WORK_ORDER document on job assignment~~ | **FIXED** — `handle_workshop_job_assigned` issues WORK_ORDER | ~~MEDIUM~~ |
+| WS-11 | ~~No COMPLETION_CERTIFICATE event/document~~ | **FIXED** — `handle_workshop_job_completed` issues COMPLETION_CERTIFICATE | ~~MEDIUM~~ |
+| WS-12 | ~~No `payment_terms` / `due_date` in invoice payload~~ | **FIXED** — both fields in `build_job_invoiced_payload` + `JobInvoiceRequest` | ~~MEDIUM~~ |
+| WS-13 | ~~No CUTTING_LIST document trigger~~ | **FIXED** — `handle_workshop_cutlist_generated` issues CUTTING_LIST | ~~MEDIUM~~ |
 | WS-14 | ~~No MATERIAL_REQUISITION event/document~~ | **FIXED** — `workshop.material.requisition.v1` event + `MaterialRequisitionRequest` command + `build_material_requisition_payload` + `handle_workshop_material_requisition` doc handler wired; COMMAND_FLAG_MAP + PAYLOAD_BUILDERS updated | MEDIUM | **FIXED** |
 
 ### GAP SET 5: Hotel Document Gaps
 | ID | Gap | Detail | Severity |
 |----|-----|--------|----------|
-| H-01 | No RESERVATION_CONFIRMATION after `hotel.reservation.confirmed.v1` | Guest has no booking confirmation doc | CRITICAL |
-| H-02 | No FOLIO document after `hotel.folio.settled.v1` | Checkout gives no guest bill | CRITICAL |
-| H-03 | `build_folio_settled_payload` missing charge line items | Folio bill has no itemised charges | CRITICAL |
-| H-04 | No REGISTRATION_CARD after `hotel.guest.checked_in.v1` | Front desk check-in has no document | HIGH |
-| H-05 | No CANCELLATION_NOTE after `hotel.reservation.cancelled.v1` | Guest has no cancellation confirmation | HIGH |
-| H-06 | No INVOICE after checkout for company billing | Corporate bookings get no tax invoice | HIGH |
-| H-07 | No CREDIT_NOTE after `hotel.folio.adjusted.v1` (credit) | Adjustment not documented for guest | MEDIUM |
-| H-08 | No DEBIT_NOTE after `hotel.folio.adjusted.v1` (debit) | Extra charges not formally documented | MEDIUM |
+| H-01 | ~~No RESERVATION_CONFIRMATION after `hotel.reservation.confirmed.v1`~~ | **FIXED** — `handle_hotel_reservation_confirmed` auto-issues with guest/stay data | ~~CRITICAL~~ |
+| H-02 | ~~No FOLIO document after `hotel.folio.settled.v1`~~ | **FIXED** — `handle_hotel_folio_settled` auto-issues FOLIO with charge lines | ~~CRITICAL~~ |
+| H-03 | ~~`build_folio_settled_payload` missing charge line items~~ | **FIXED** — `charge_lines`, `guest_name`, `room_number`, `arrival/departure_date`, `nights`, `tax_amount` added | ~~CRITICAL~~ |
+| H-04 | ~~No REGISTRATION_CARD after `hotel.guest.checked_in.v1`~~ | **FIXED** — `handle_hotel_guest_checked_in` auto-issues REGISTRATION_CARD | ~~HIGH~~ |
+| H-05 | ~~No CANCELLATION_NOTE after `hotel.reservation.cancelled.v1`~~ | **FIXED** — `handle_hotel_reservation_cancelled` + `handle_hotel_reservation_no_show` | ~~HIGH~~ |
+| H-06 | ~~No INVOICE after checkout for company billing~~ | **FIXED** — `handle_hotel_guest_checked_out` issues INVOICE when `company_id` present | ~~HIGH~~ |
+| H-07 | ~~No CREDIT_NOTE after `hotel.folio.adjusted.v1` (credit)~~ | **FIXED** — `handle_hotel_folio_adjusted` issues CREDIT_NOTE for adjustment_type=CREDIT | ~~MEDIUM~~ |
+| H-08 | ~~No DEBIT_NOTE after `hotel.folio.adjusted.v1` (debit)~~ | **FIXED** — `handle_hotel_folio_adjusted` issues DEBIT_NOTE for adjustment_type=DEBIT | ~~MEDIUM~~ |
 
 ### GAP SET 6: Procurement Document Gaps
 | ID | Gap | Detail | Severity |
 |----|-----|--------|----------|
-| P-01 | No PURCHASE_ORDER document after `procurement.order.created.v1` | PO created but never sent to supplier | HIGH |
-| P-02 | No GOODS_RECEIPT_NOTE after `procurement.order.received.v1` | Stock received without GRN | HIGH |
-| P-03 | No PAYMENT_VOUCHER after `procurement.payment.released.v1` | Supplier payment lacks voucher | MEDIUM |
+| P-01 | ~~No PURCHASE_ORDER document after `procurement.order.created.v1`~~ | **FIXED** — `handle_procurement_order_created` auto-issues PURCHASE_ORDER | ~~HIGH~~ |
+| P-02 | ~~No GOODS_RECEIPT_NOTE after `procurement.order.received.v1`~~ | **FIXED** — `handle_procurement_order_received` auto-issues GOODS_RECEIPT_NOTE | ~~HIGH~~ |
+| P-03 | ~~No PAYMENT_VOUCHER after `procurement.payment.released.v1`~~ | **FIXED** — `handle_procurement_payment_released` auto-issues PAYMENT_VOUCHER | ~~MEDIUM~~ |
 
 ### GAP SET 7: Cross-Cutting Gaps (All Engines)
 | ID | Gap | Detail | Severity |
@@ -540,7 +540,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 | X-05 | ~~PDF/HTML renderers not exposed via API~~ | **RESOLVED** — `GET /docs/{id}/render-pdf` and `/render-html` routes exist in `urls.py` | ~~HIGH~~ |
 | X-06 | ~~No i18n/locale support in templates~~ | **FIXED** — `core/documents/translations.py` with 100+ label keys, default bundles (en, sw, fr, ar), field-to-key mapping; both renderers accept `locale`/`translations` params; `DocumentRenderRequest` accepts `?locale=` query param; falls back to `Business.default_language` | ~~HIGH~~ |
 | X-07 | No document delivery (email/SMS/WhatsApp) | Docs generated but never sent to customer | MEDIUM | **FIXED** — `DocumentDeliveryService` + `DeliveryRequest`/`DeliveryResult` + stub channels (EmailDeliveryChannel, SMSDeliveryChannel, WhatsAppDeliveryChannel) in `core/documents/delivery.py` |
-| X-08 | No per-engine document template differentiation | Same receipt template for all contexts | MEDIUM |
+| X-08 | ~~No per-engine document template differentiation~~ | **FIXED** — `ENGINE_LAYOUT_OVERRIDES` in `core/documents/defaults.py` keyed by `(source_engine, doc_type)`; engine-specific layouts for RECEIPT (retail/restaurant/hotel), INVOICE (workshop/hotel/restaurant), QUOTE (workshop); `get_default_layout_spec()` + `build_default_template()` accept `source_engine` param; handlers inject `source_engine` into payload | ~~MEDIUM~~ |
 
 ### GAP SET 8: Accounting Engine Gaps
 **Session:** 2026-03-04 Deep Dive

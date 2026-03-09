@@ -227,7 +227,73 @@ DEFAULT_LAYOUT_SPECS = {
 }
 
 
-def _clone_value(value):
+# ══════════════════════════════════════════════════════════════
+# ENGINE-SPECIFIC LAYOUT OVERRIDES
+# ══════════════════════════════════════════════════════════════
+# Key: (source_engine, doc_type) → layout_spec
+# When a document is issued from a specific engine context, use
+# the engine-specific layout if available, else fall back to the
+# generic DEFAULT_LAYOUT_SPECS.
+# ══════════════════════════════════════════════════════════════
+
+ENGINE_LAYOUT_OVERRIDES: dict[tuple[str, str], dict] = {
+    # Retail receipt — cashier-centric, payment method prominent
+    ("retail", DOCUMENT_RECEIPT): {
+        "header_fields": ("receipt_no", "issued_at", "cashier_id", "customer_name", "payment_method"),
+        "line_items_path": "line_items",
+        "line_item_fields": ("name", "quantity", "unit_price", "line_total"),
+        "total_fields": ("subtotal", "discount_total", "tax_total", "grand_total"),
+        "footer_fields": ("notes",),
+    },
+    # Restaurant receipt — table, covers, server, tip
+    ("restaurant", DOCUMENT_RECEIPT): {
+        "header_fields": ("receipt_no", "issued_at", "table_name", "covers", "server_id", "customer_name"),
+        "line_items_path": "line_items",
+        "line_item_fields": ("item", "quantity", "unit_price", "line_total"),
+        "total_fields": ("subtotal", "discount_total", "tax_total", "tip", "grand_total"),
+        "footer_fields": ("payment_method", "notes"),
+    },
+    # Hotel receipt (folio settlement) — guest, room, stay dates
+    ("hotel", DOCUMENT_RECEIPT): {
+        "header_fields": ("receipt_no", "issued_at", "guest_name", "room_number", "arrival_date", "departure_date"),
+        "line_items_path": "line_items",
+        "line_item_fields": ("date", "description", "amount"),
+        "total_fields": ("subtotal", "tax_total", "grand_total"),
+        "footer_fields": ("payment_method", "notes"),
+    },
+    # Workshop invoice — labour/materials breakdown, payment terms
+    ("workshop", DOCUMENT_INVOICE): {
+        "header_fields": ("invoice_no", "issued_at", "customer_name", "job_id", "due_date", "payment_terms"),
+        "line_items_path": "line_items",
+        "line_item_fields": ("description", "quantity", "unit_price", "line_total"),
+        "total_fields": ("subtotal", "tax_total", "discount_total", "grand_total"),
+        "footer_fields": ("payment_terms", "bank_details", "notes"),
+    },
+    # Hotel invoice — corporate billing, folio reference
+    ("hotel", DOCUMENT_INVOICE): {
+        "header_fields": ("invoice_no", "issued_at", "customer_name", "reservation_id", "folio_id"),
+        "line_items_path": "line_items",
+        "line_item_fields": ("description", "quantity", "unit_price", "line_total"),
+        "total_fields": ("subtotal", "tax_total", "grand_total"),
+        "footer_fields": ("payment_terms", "bank_details", "notes"),
+    },
+    # Restaurant invoice — on-account corporate dining
+    ("restaurant", DOCUMENT_INVOICE): {
+        "header_fields": ("invoice_no", "issued_at", "customer_name", "bill_id", "table_name"),
+        "line_items_path": "line_items",
+        "line_item_fields": ("item", "quantity", "unit_price", "line_total"),
+        "total_fields": ("subtotal", "discount_total", "tax_total", "grand_total"),
+        "footer_fields": ("payment_terms", "notes"),
+    },
+    # Workshop quote — valid_until, labour/material split
+    ("workshop", DOCUMENT_QUOTE): {
+        "header_fields": ("quote_no", "issued_at", "customer_name", "job_id", "valid_until"),
+        "line_items_path": "line_items",
+        "line_item_fields": ("description", "quantity", "unit_price", "line_total"),
+        "total_fields": ("labour_cost", "subtotal", "discount_total", "tax_total", "grand_total"),
+        "footer_fields": ("valid_until", "deposit_terms", "notes"),
+    },
+}
     if isinstance(value, dict):
         return {key: _clone_value(item) for key, item in value.items()}
     if isinstance(value, tuple):
@@ -237,7 +303,19 @@ def _clone_value(value):
     return value
 
 
-def get_default_layout_spec(doc_type: str) -> Optional[dict]:
+def get_default_layout_spec(doc_type: str, source_engine: Optional[str] = None) -> Optional[dict]:
+    """
+    Return layout spec for doc_type, preferring engine-specific override if available.
+
+    Args:
+        doc_type: Document type constant (e.g. DOCUMENT_RECEIPT)
+        source_engine: Optional engine name (e.g. "retail", "restaurant", "workshop", "hotel")
+                       When provided, returns engine-specific layout if one exists.
+    """
+    if source_engine:
+        engine_layout = ENGINE_LAYOUT_OVERRIDES.get((source_engine, doc_type))
+        if engine_layout is not None:
+            return _clone_value(engine_layout)
     layout = DEFAULT_LAYOUT_SPECS.get(doc_type)
     if layout is None:
         return None
@@ -247,13 +325,18 @@ def get_default_layout_spec(doc_type: str) -> Optional[dict]:
 def build_default_template(
     business_id: uuid.UUID,
     doc_type: str,
+    source_engine: Optional[str] = None,
 ) -> Optional[DocumentTemplate]:
-    layout = get_default_layout_spec(doc_type)
+    layout = get_default_layout_spec(doc_type, source_engine=source_engine)
     if layout is None:
         return None
 
+    template_id = f"default.{doc_type.lower()}.v1"
+    if source_engine:
+        template_id = f"default.{doc_type.lower()}.{source_engine}.v1"
+
     return DocumentTemplate(
-        template_id=f"default.{doc_type.lower()}.v1",
+        template_id=template_id,
         business_id=business_id,
         branch_id=None,
         doc_type=doc_type,

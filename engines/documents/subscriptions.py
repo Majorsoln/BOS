@@ -267,6 +267,7 @@ class DocumentSubscriptionHandler:
         receipt_payload = {
             **biz,
             **customer,
+            "source_engine":  "retail",
             "sale_id":        p.get("sale_id"),
             "cashier_id":     p.get("actor_id"),
             "date":           p.get("completed_at"),
@@ -398,6 +399,7 @@ class DocumentSubscriptionHandler:
         payload = {
             **biz,
             **customer,
+            "source_engine":  "restaurant",
             "bill_id":        p.get("bill_id"),
             "table_id":       p.get("table_id"),
             "table_name":     p.get("table_name", ""),
@@ -420,6 +422,7 @@ class DocumentSubscriptionHandler:
             invoice_payload = {
                 **biz,
                 **customer,
+                "source_engine":  "restaurant",
                 "bill_id":        p.get("bill_id"),
                 "line_items":     p.get("order_lines", []),
                 "subtotal":       p.get("total_amount", 0),
@@ -517,6 +520,7 @@ class DocumentSubscriptionHandler:
         payload = {
             **biz,
             **customer,
+            "source_engine":  "workshop",
             "quote_id":       p.get("quote_id"),
             "job_id":         p.get("job_id"),
             "style_id":       p.get("style_id"),
@@ -682,6 +686,7 @@ class DocumentSubscriptionHandler:
         payload = {
             **biz,
             **customer,
+            "source_engine":  "workshop",
             "job_id":         p.get("job_id"),
             "invoice_id":     p.get("invoice_id"),
             "line_items":     line_items,
@@ -864,6 +869,7 @@ class DocumentSubscriptionHandler:
         payload = {
             **biz,
             **company_info,
+            "source_engine":  "hotel",
             "reservation_id": p.get("reservation_id"),
             "folio_id":       p.get("folio_id"),
             "line_items":     line_items,
