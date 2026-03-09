@@ -399,6 +399,122 @@ def import_opening_balance(
 
 
 # ══════════════════════════════════════════════════════════════
+# TRANSACTION (HISTORICAL) IMPORTER
+# ══════════════════════════════════════════════════════════════
+
+def _validate_transaction_row(row: dict) -> Optional[str]:
+    if not row.get("external_id"):
+        return "external_id is required"
+    if not row.get("transaction_type"):
+        return "transaction_type is required (SALE, PURCHASE, REFUND, PAYMENT)"
+    if "total_amount" not in row:
+        return "total_amount is required"
+    if not isinstance(row["total_amount"], (int, float)):
+        return "total_amount must be a number"
+    if not row.get("transaction_date"):
+        return "transaction_date is required (ISO format)"
+    return None
+
+
+VALID_TRANSACTION_TYPES = frozenset({
+    "SALE", "PURCHASE", "REFUND", "PAYMENT", "EXPENSE",
+    "JOURNAL", "CREDIT_NOTE", "DEBIT_NOTE",
+})
+
+
+def import_transaction(
+    *,
+    business_id: uuid.UUID,
+    source_system: str,
+    row: dict,
+    row_index: int,
+    id_store: IdMappingStore,
+    create_fn,
+) -> ImportRowResult:
+    """
+    Import a single historical transaction row.
+
+    Expected row format:
+        {
+            "external_id": "TXN-001",
+            "transaction_type": "SALE",       # SALE, PURCHASE, REFUND, PAYMENT, EXPENSE, JOURNAL
+            "transaction_date": "2024-01-15", # ISO date
+            "total_amount": 23200,            # minor currency units
+            "tax_amount": 3200,               # optional
+            "currency": "KES",
+            "description": "Walk-in sale",
+            "customer_id": "CUST-001",        # optional — external_id reference
+            "supplier_id": "SUP-001",         # optional — external_id reference
+            "payment_method": "CASH",         # optional
+            "line_items": [                   # optional
+                {"description": "Item A", "qty": 2, "unit_price": 10000, "total": 20000}
+            ],
+            "reference": "INV-2024-001",      # optional — original doc number
+        }
+
+    create_fn records the historical transaction in accounting/reporting.
+    """
+    external_id = str(row.get("external_id", ""))
+
+    error = _validate_transaction_row(row)
+    if error:
+        return ImportRowResult(
+            row_index=row_index, external_id=external_id,
+            status=RowStatus.ERROR.value, error_message=error,
+        )
+
+    txn_type = row["transaction_type"].upper()
+    if txn_type not in VALID_TRANSACTION_TYPES:
+        return ImportRowResult(
+            row_index=row_index, external_id=external_id,
+            status=RowStatus.ERROR.value,
+            error_message=f"Invalid transaction_type: {txn_type}. Valid: {sorted(VALID_TRANSACTION_TYPES)}",
+        )
+
+    existing = id_store.get(business_id, source_system, EntityType.TRANSACTION.value, external_id)
+    if existing:
+        return ImportRowResult(
+            row_index=row_index, external_id=external_id,
+            status=RowStatus.SKIPPED.value, bos_id=str(existing.bos_id),
+            error_message="Already imported",
+        )
+
+    try:
+        result = create_fn(
+            business_id=business_id,
+            transaction_type=txn_type,
+            transaction_date=row["transaction_date"],
+            total_amount=row["total_amount"],
+            tax_amount=row.get("tax_amount", 0),
+            currency=row.get("currency", "KES"),
+            description=row.get("description", ""),
+            customer_id=row.get("customer_id", ""),
+            supplier_id=row.get("supplier_id", ""),
+            payment_method=row.get("payment_method", ""),
+            line_items=row.get("line_items", []),
+            reference=row.get("reference", ""),
+        )
+        bos_id = uuid.UUID(str(result.get("transaction_id", result.get("journal_id", uuid.uuid4()))))
+
+        id_store.put(IdMapping(
+            business_id=business_id, source_system=source_system,
+            entity_type=EntityType.TRANSACTION.value, external_id=external_id,
+            bos_id=bos_id, imported_at=datetime.now(tz=timezone.utc),
+        ))
+
+        return ImportRowResult(
+            row_index=row_index, external_id=external_id,
+            status=RowStatus.SUCCESS.value, bos_id=str(bos_id),
+        )
+    except Exception as e:
+        logger.warning("Transaction import failed row=%d ext_id=%s: %s", row_index, external_id, e)
+        return ImportRowResult(
+            row_index=row_index, external_id=external_id,
+            status=RowStatus.ERROR.value, error_message=str(e),
+        )
+
+
+# ══════════════════════════════════════════════════════════════
 # IMPORTER REGISTRY
 # ══════════════════════════════════════════════════════════════
 
@@ -407,4 +523,5 @@ ENTITY_IMPORTERS = {
     EntityType.SUPPLIER.value: import_supplier,
     EntityType.PRODUCT.value: import_product,
     EntityType.OPENING_BALANCE.value: import_opening_balance,
+    EntityType.TRANSACTION.value: import_transaction,
 }

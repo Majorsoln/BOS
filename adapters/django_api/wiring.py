@@ -410,8 +410,21 @@ def _create_dependencies() -> HttpApiDependencies:
     def _customer_info_resolver(customer_id: str | None) -> dict:
         if not customer_id:
             return {"customer_name": "Walk-in Customer"}
-        # Persistent customer profile DB not yet implemented.
-        # Returns minimal dict; extend when CustomerProfileService is available.
+        try:
+            from core.identity_store.models import CustomerProfile
+            profile = CustomerProfile.objects.filter(
+                customer_id=customer_id,
+            ).first()
+            if profile:
+                return {
+                    "customer_name": profile.display_name,
+                    "customer_address": profile.address,
+                    "customer_phone": profile.phone,
+                    "customer_email": profile.email,
+                    "customer_id": str(profile.customer_id),
+                }
+        except Exception:
+            pass
         return {"customer_name": "Customer", "customer_id": str(customer_id)}
 
     # Wire document subscription handler into the shared subscriber registry.

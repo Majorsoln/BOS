@@ -757,7 +757,7 @@ Already has: `guest_id`, `guest_name`, `room_id`, `currency`, `reservation_id`.
 - ✅ **Real CustomerInfoResolver** — wired in `adapters/django_api/wiring.py`; returns stub until CustomerProfileService is persistent — **DONE**
 - ✅ **`cash.withdrawal.recorded.v1`** — added to DOCUMENT_SUBSCRIPTIONS → `handle_cash_withdrawal_recorded` → PETTY_CASH_VOUCHER — **DONE**
 - ✅ **Business model fields** — `address`, `city`, `phone`, `email`, `tax_id`, `logo_url` all exist on `core/identity_store/models.py:Business` — **DONE**
-- **REMAINING: Persistent CustomerProfile DB** — currently only in-memory; add Django ORM table so `customer_info_resolver` can look up display_name by UUID
+- ✅ **Persistent CustomerProfile resolver** — `_customer_info_resolver` in `wiring.py` now queries `CustomerProfile` ORM by UUID; returns display_name, address, phone, email — **DONE (2026-03-09)**
 - ✅ **Workshop Phase 16/17/18 COMMAND_FLAG_MAP** — `workshop.style.register/update/deactivate.request`, `workshop.quote.generate/accept/reject.request`, `workshop.project.quote.generate.request` all added — **DONE (2026-03-05)**
 - ✅ **`restaurant.bill.present.request`** — added to COMMAND_FLAG_MAP — **DONE (2026-03-05)**
 - ✅ **`accounting.statement.generate.request`** — added to COMMAND_FLAG_MAP — **DONE (2026-03-05)**
@@ -943,7 +943,7 @@ Admin creates MigrationJob (POST /admin/migration/create-job)
 | SUPPLIER | `import_supplier` | `external_id`, `name` |
 | PRODUCT | `import_product` | `external_id`, `name`, `sku`, `unit_price` |
 | OPENING_BALANCE | `import_opening_balance` | `external_id`, `account_code`, `balance` |
-| TRANSACTION | — | Not yet implemented (historical records) |
+| TRANSACTION | `import_transaction` | `external_id`, `transaction_type`, `total_amount`, `transaction_date` |
 
 ### Supported Source Systems
 `quickbooks`, `xero`, `sage`, `odoo`, `erpnext`, `tally`, `wave`, `zoho_books`, `freshbooks`, `csv_generic`, `json_generic`, `excel_generic`, `custom`
