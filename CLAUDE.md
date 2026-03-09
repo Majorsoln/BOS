@@ -820,3 +820,91 @@ Branch override:      {business_id}.{branch_id}.{doc_type_lower}.v{n}
 | A-10 | No Business Profile UPDATE endpoint — bootstrap only, cannot change name/address/tax_id after creation | `core/identity_store/service.py`, `core/http_api/handlers.py` | CRITICAL | **FIXED** — `POST /admin/business/update` endpoint; `update_business_profile()` service function; partial update (only non-None fields changed) |
 | A-02 | No Customer CRUD — documents have customer_id but no way to manage customers | `core/identity_store/models.py`, `core/identity_store/service.py`, `core/http_api/handlers.py` | HIGH | **FIXED** — `CustomerProfile` Django ORM model added; `POST /admin/customers/create`, `POST /admin/customers/update`, `GET /admin/customers` endpoints; migration `0003_customerprofile` |
 | A-12 | No Custom Role creation — only 6 hardcoded default roles | `core/identity_store/service.py`, `core/http_api/handlers.py` | HIGH | **FIXED** — `POST /admin/roles/create` endpoint; `create_custom_role()` service function; validates permissions against `VALID_PERMISSIONS` |
+
+---
+
+## BOS SaaS DOCTRINE (2026-03-09)
+
+### Core Principles
+1. **Leadership defines engine combos** — users do NOT compose plans. They see named combos and pick one.
+2. **Some engines are FREE** — `cash`, `documents`, `reporting`, `customer` — every tenant gets these.
+3. **Region-specific pricing** — each combo has rates per region in local currency (KES, TZS, UGX, etc.).
+4. **B2B / B2C classification** — combos tagged as B2B, B2C, or BOTH; affects features and compliance.
+5. **Immutable trial agreements** — once signed, trial terms (days, rate snapshot) NEVER change.
+6. **Rate change governance** — 90-day minimum notice; original rates guaranteed through first billing cycle.
+
+### Architecture Overview
+```
+┌─ Platform Admin (Leadership) ──────────────────────────────────┐
+│                                                                │
+│  1. Register engines in catalog (FREE or PAID)                 │
+│  2. Define combos: "BOS Duka" = retail + inventory             │
+│  3. Set rates per combo per region: KE=KES 4,500, TZ=TZS 80k  │
+│  4. Set trial policy: default_trial_days=180, max=365          │
+│  5. Create promotions, referral policy, reseller program       │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+         ↓
+┌─ User Signup ──────────────────────────────────────────────────┐
+│                                                                │
+│  1. User sees combo list for their region (e.g., Kenya B2C)    │
+│  2. Picks "BOS Duka" → sees KES 4,500/mo                      │
+│  3. Enters referral code (optional) → gets +30 bonus days      │
+│  4. TrialAgreement created (IMMUTABLE):                        │
+│     - trial_days: 180 (from policy)                            │
+│     - bonus_days: 30 (from referral)                           │
+│     - rate_snapshot: KES 4,500 at rate_version v3              │
+│     - billing_starts_at: 210 days from now                     │
+│  5. Subscription starts as TRIAL                               │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### Files Implemented
+| File | Purpose |
+|------|---------|
+| `core/saas/plans.py` | Engine catalog, ComboDefinition, ComboRate, BusinessModel (B2B/B2C/BOTH), FREE_ENGINES, PlanManager |
+| `core/saas/rate_governance.py` | TrialPolicy, TrialAgreement (immutable), RateSnapshot, RateChangeRecord, notification rules, RateGovernanceService |
+| `core/saas/promotions.py` | 5 promo types (DISCOUNT, CREDIT, EXTENDED_TRIAL, ENGINE_BONUS, BUNDLE_DISCOUNT), stacking rules, PromotionService |
+| `core/saas/referrals.py` | "Alika Rafiki" referral program, qualification rules (30 days + 10 transactions), anti-fraud (max 12/year, phone uniqueness), ReferralService |
+| `core/saas/resellers.py` | "Wakala wa BOS" reseller program, 3 tiers (BRONZE 10% / SILVER 15% / GOLD 20%), commission accrual, clawback, payout tracking, ResellerService |
+| `core/saas/subscriptions.py` | Extended with TRIAL status, combo_id, trial_agreement_id, billing_starts_at, TRIAL→ACTIVE conversion |
+
+### Free Engines (Everyone Gets These)
+- `cash` — Cash drawer, sessions, float tracking
+- `documents` — Receipts, invoices, quotes — all document types
+- `reporting` — KPI recording and daily snapshots
+- `customer` — Basic customer tracking and lookup
+
+### Trial Agreement Rules (Sheria za Makubaliano)
+1. Trial days from policy at signup time → locked in agreement
+2. If platform changes default_trial_days later → existing agreements UNCHANGED
+3. Rate snapshot (combo price at signup) → locked; user pays this rate for first billing cycle
+4. Rate changes require ≥ 90-day advance notice
+5. Rate increases > 25% → double notification (immediate + 30 days before)
+6. Rate decreases → take effect on next cycle immediately
+7. Max trial (including bonuses): capped at max_trial_days (default 365)
+
+### Promotion Stacking Rules
+- DISCOUNT + CREDIT = ✅ allowed
+- DISCOUNT + DISCOUNT = ❌ best one wins
+- EXTENDED_TRIAL + REFERRAL_BONUS = ✅ days add up (capped)
+- ENGINE_BONUS + BUNDLE_DISCOUNT = ✅ allowed
+
+### Referral Qualification Rules
+- Referee must be active for 30 days with ≥ 10 transactions
+- Referrer gets 30 free days per qualified referral
+- Max 12 referrals per year per referrer (anti-fraud)
+- 10+ qualified referrals = "BOS Champion" badge
+- Phone uniqueness enforced (SHA-256 hash, no raw storage)
+
+### Reseller Tiers
+| Tier | Active Tenants | Commission | Payout |
+|------|---------------|------------|--------|
+| BRONZE | 0–10 | 10% | Monthly |
+| SILVER | 11–50 | 15% | Monthly |
+| GOLD | 51+ | 20% | Weekly |
+
+- Commission on PAYING tenants only (not trial)
+- 90-day churn clawback
+- Payout via M-Pesa, Mobile Money, Bank Transfer
