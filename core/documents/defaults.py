@@ -294,6 +294,10 @@ ENGINE_LAYOUT_OVERRIDES: dict[tuple[str, str], dict] = {
         "footer_fields": ("valid_until", "deposit_terms", "notes"),
     },
 }
+
+
+def _clone_value(value):
+    """Deep-clone a layout spec value (dict/tuple/list) to prevent mutation."""
     if isinstance(value, dict):
         return {key: _clone_value(item) for key, item in value.items()}
     if isinstance(value, tuple):
