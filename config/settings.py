@@ -21,7 +21,7 @@ SECRET_KEY = "bos-dev-key-replace-before-deployment"
 
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0"]
 
 # ── Installed Apps ────────────────────────────────────────────
 # Django infrastructure only. BOS modules are added as they are built.
@@ -40,6 +40,7 @@ INSTALLED_APPS = [
 # ── Middleware ────────────────────────────────────────────────
 # Minimal middleware. BOS-specific middleware added per phase.
 MIDDLEWARE = [
+    "core.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
 ]
