@@ -26,8 +26,8 @@ export default function LoginPage() {
 
       const { data } = await api.get("/admin/business");
 
-      if (data.status === "ok") {
-        const biz = data.business || data.data || data;
+      if (data.ok === true) {
+        const biz = data.data || {};
         login(
           apiKey,
           businessId,

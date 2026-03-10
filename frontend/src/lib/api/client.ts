@@ -15,7 +15,13 @@ api.interceptors.request.use((config) => {
     const branchId = localStorage.getItem("bos_branch_id");
 
     if (apiKey) {
-      config.headers["Authorization"] = `Bearer ${apiKey}`;
+      config.headers["X-API-KEY"] = apiKey;
+    }
+    if (businessId) {
+      config.headers["X-BUSINESS-ID"] = businessId;
+    }
+    if (branchId) {
+      config.headers["X-BRANCH-ID"] = branchId;
     }
 
     // For POST requests, inject business_id + actor into body
