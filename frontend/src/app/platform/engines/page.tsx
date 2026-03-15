@@ -4,124 +4,197 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { FormDialog } from "@/components/shared/form-dialog";
-import { Button, Card, CardContent, Input, Label, Select, Textarea, Toast } from "@/components/ui";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { Button, Card, CardContent, Toast, Badge } from "@/components/ui";
 import { getEngines, registerEngine } from "@/lib/api/saas";
-import { Cog, Plus } from "lucide-react";
+import { BACKEND_ENGINES } from "@/lib/constants";
+import { Cog, Plus, Check, CircleDashed } from "lucide-react";
 
 export default function EnginesPage() {
   const queryClient = useQueryClient();
-  const [showRegister, setShowRegister] = useState(false);
+  const [registerKey, setRegisterKey] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
 
   const engines = useQuery({ queryKey: ["saas", "engines"], queryFn: getEngines });
+
+  // Set of engine_keys already registered in backend SaaS catalog
+  const registeredKeys = new Set(
+    (engines.data?.data ?? []).map((e: { engine_key: string }) => e.engine_key)
+  );
 
   const registerMut = useMutation({
     mutationFn: registerEngine,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["saas", "engines"] });
-      setShowRegister(false);
+      setRegisterKey(null);
       setToast({ message: "Engine registered successfully", variant: "success" });
     },
     onError: () => {
+      setRegisterKey(null);
       setToast({ message: "Failed to register engine", variant: "error" });
     },
   });
 
-  function handleRegister(e: React.FormEvent) {
-    e.preventDefault();
-    const form = e.target as HTMLFormElement;
-    const data = new FormData(form);
+  function handleRegister() {
+    if (!registerKey) return;
+    const eng = BACKEND_ENGINES.find((e) => e.key === registerKey);
+    if (!eng) return;
     registerMut.mutate({
-      engine_key: data.get("engine_key") as string,
-      display_name: data.get("display_name") as string,
-      category: data.get("category") as "FREE" | "PAID",
-      description: data.get("description") as string,
+      engine_key: eng.key,
+      display_name: eng.displayName,
+      category: eng.category,
+      description: eng.description,
     });
   }
 
-  const engineList = engines.data?.data ?? [];
+  function handleRegisterAll() {
+    const unregistered = BACKEND_ENGINES.filter((e) => !registeredKeys.has(e.key));
+    if (unregistered.length === 0) return;
+    // Register one by one sequentially
+    const chain = unregistered.reduce(
+      (p, eng) =>
+        p.then(() =>
+          registerEngine({
+            engine_key: eng.key,
+            display_name: eng.displayName,
+            category: eng.category,
+            description: eng.description,
+          })
+        ),
+      Promise.resolve({} as ReturnType<typeof registerEngine> extends Promise<infer T> ? T : never)
+    );
+    chain.then(() => {
+      queryClient.invalidateQueries({ queryKey: ["saas", "engines"] });
+      setToast({ message: `${unregistered.length} engines registered`, variant: "success" });
+    }).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["saas", "engines"] });
+      setToast({ message: "Some engines failed to register", variant: "error" });
+    });
+  }
+
+  const freeEngines = BACKEND_ENGINES.filter((e) => e.category === "FREE");
+  const paidEngines = BACKEND_ENGINES.filter((e) => e.category === "PAID");
+  const unregisteredCount = BACKEND_ENGINES.filter((e) => !registeredKeys.has(e.key)).length;
 
   return (
     <div>
       <PageHeader
         title="Engine Catalog"
-        description="Engines zote za BOS platform. Ongeza engine mpya kwa catalog."
+        description="Engines zote za BOS platform — zinazounganishwa na backend codebase"
         actions={
-          <Button onClick={() => setShowRegister(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Register Engine
-          </Button>
+          unregisteredCount > 0 ? (
+            <Button onClick={handleRegisterAll} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Register All ({unregisteredCount})
+            </Button>
+          ) : (
+            <Badge variant="success" className="px-3 py-1.5">All engines registered</Badge>
+          )
         }
       />
 
-      {engines.isLoading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Card key={i} className="animate-pulse p-5">
-              <div className="h-4 w-24 rounded bg-neutral-200" />
-              <div className="mt-2 h-3 w-40 rounded bg-neutral-200" />
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {engineList.map((engine: { engine_key: string; display_name: string; category: string; description?: string }) => (
-            <Card key={engine.engine_key} className="transition-shadow hover:shadow-md">
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-bos-purple-light">
-                      <Cog className="h-4 w-4 text-bos-purple" />
-                    </div>
-                    <div>
-                      <p className="font-mono text-sm font-medium">{engine.engine_key}</p>
-                      <p className="text-xs text-bos-silver-dark">{engine.display_name}</p>
-                    </div>
-                  </div>
-                  <StatusBadge status={engine.category} />
-                </div>
-                {engine.description && (
-                  <p className="mt-3 text-xs text-bos-silver-dark">{engine.description}</p>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      {/* FREE Engines */}
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-bos-silver-dark">
+        Free Engines — Kila tenant anapata hizi
+      </h2>
+      <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {freeEngines.map((eng) => (
+          <EngineCard
+            key={eng.key}
+            engineKey={eng.key}
+            displayName={eng.displayName}
+            description={eng.description}
+            category="FREE"
+            registered={registeredKeys.has(eng.key)}
+            onRegister={() => setRegisterKey(eng.key)}
+          />
+        ))}
+      </div>
 
-      {/* Register Engine Dialog */}
-      <FormDialog
-        open={showRegister}
-        onClose={() => setShowRegister(false)}
+      {/* PAID Engines */}
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-bos-silver-dark">
+        Paid Engines — Zinapatikana kupitia combo/plan
+      </h2>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {paidEngines.map((eng) => (
+          <EngineCard
+            key={eng.key}
+            engineKey={eng.key}
+            displayName={eng.displayName}
+            description={eng.description}
+            category="PAID"
+            registered={registeredKeys.has(eng.key)}
+            onRegister={() => setRegisterKey(eng.key)}
+          />
+        ))}
+      </div>
+
+      {/* Register Confirmation */}
+      <ConfirmDialog
+        open={!!registerKey}
+        onClose={() => setRegisterKey(null)}
+        onConfirm={handleRegister}
         title="Register Engine"
-        description="Ongeza engine mpya kwa BOS platform catalog"
-        onSubmit={handleRegister}
-        submitLabel="Register"
+        description={`Sajili "${BACKEND_ENGINES.find((e) => e.key === registerKey)?.displayName ?? registerKey}" kwenye SaaS engine catalog?`}
+        confirmLabel="Register"
         loading={registerMut.isPending}
-      >
-        <div>
-          <Label htmlFor="engine_key">Engine Key</Label>
-          <Input id="engine_key" name="engine_key" placeholder="e.g. retail" required className="mt-1" />
-        </div>
-        <div>
-          <Label htmlFor="display_name">Display Name</Label>
-          <Input id="display_name" name="display_name" placeholder="e.g. Retail (POS/Shop)" required className="mt-1" />
-        </div>
-        <div>
-          <Label htmlFor="category">Category</Label>
-          <Select id="category" name="category" className="mt-1">
-            <option value="PAID">PAID</option>
-            <option value="FREE">FREE</option>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="description">Description</Label>
-          <Textarea id="description" name="description" placeholder="Short description..." className="mt-1" />
-        </div>
-      </FormDialog>
+      />
 
       {toast && <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />}
     </div>
+  );
+}
+
+function EngineCard({
+  engineKey,
+  displayName,
+  description,
+  category,
+  registered,
+  onRegister,
+}: {
+  engineKey: string;
+  displayName: string;
+  description: string;
+  category: "FREE" | "PAID";
+  registered: boolean;
+  onRegister: () => void;
+}) {
+  return (
+    <Card className={`transition-shadow hover:shadow-md ${registered ? "" : "border-dashed"}`}>
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+              registered ? "bg-bos-purple-light" : "bg-neutral-100 dark:bg-neutral-800"
+            }`}>
+              <Cog className={`h-4 w-4 ${registered ? "text-bos-purple" : "text-bos-silver-dark"}`} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">{displayName}</p>
+              <code className="text-[10px] text-bos-silver-dark">{engineKey}</code>
+            </div>
+          </div>
+          <StatusBadge status={category} />
+        </div>
+        <p className="mt-2 text-xs text-bos-silver-dark leading-relaxed">{description}</p>
+        <div className="mt-3">
+          {registered ? (
+            <div className="flex items-center gap-1.5 text-xs font-medium text-green-600">
+              <Check className="h-3.5 w-3.5" />
+              Registered
+            </div>
+          ) : (
+            <button
+              onClick={onRegister}
+              className="flex items-center gap-1.5 text-xs font-medium text-bos-purple hover:text-bos-purple-dark transition-colors"
+            >
+              <CircleDashed className="h-3.5 w-3.5" />
+              Click to register
+            </button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

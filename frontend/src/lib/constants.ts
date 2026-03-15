@@ -83,3 +83,44 @@ export const PAYOUT_METHODS = [
   { value: "MOBILE_MONEY", label: "Mobile Money" },
   { value: "BANK_TRANSFER", label: "Bank Transfer" },
 ] as const;
+
+/**
+ * All backend engines mapped from `engines/` directories.
+ * category: FREE engines are included in every tenant plan automatically.
+ * category: PAID engines require a combo subscription.
+ */
+export const BACKEND_ENGINES = [
+  // FREE — every tenant gets these
+  { key: "cash", displayName: "Cash", category: "FREE" as const, description: "Cash drawer, sessions, float tracking" },
+  { key: "documents", displayName: "Documents", category: "FREE" as const, description: "Receipts, invoices, quotes — all document types" },
+  { key: "reporting", displayName: "Reporting", category: "FREE" as const, description: "KPI recording and daily snapshots" },
+  { key: "customer", displayName: "Customer", category: "FREE" as const, description: "Customer profiles and lookup" },
+
+  // PAID — Retail & Commerce
+  { key: "retail", displayName: "Retail (POS/Duka)", category: "PAID" as const, description: "Point of sale, shop management, sales, refunds" },
+  { key: "restaurant", displayName: "Restaurant (F&B)", category: "PAID" as const, description: "Orders, tables, kitchen tickets, bills, splits" },
+  { key: "inventory", displayName: "Inventory", category: "PAID" as const, description: "Stock tracking, transfers, adjustments" },
+  { key: "procurement", displayName: "Procurement", category: "PAID" as const, description: "Purchase orders, goods receipt, supplier payments" },
+
+  // PAID — Workshop / Fabrication
+  { key: "workshop", displayName: "Workshop (Fundi)", category: "PAID" as const, description: "Quotes, jobs, cutting lists, invoicing, installations" },
+
+  // PAID — Hotel & Hospitality
+  { key: "hotel_reservation", displayName: "Hotel Reservation", category: "PAID" as const, description: "Bookings, check-in/out, guest registration" },
+  { key: "hotel_folio", displayName: "Hotel Folio", category: "PAID" as const, description: "Guest charges, folio settlement, company billing" },
+  { key: "hotel_property", displayName: "Hotel Property", category: "PAID" as const, description: "Room types, rates, property configuration" },
+  { key: "hotel_housekeeping", displayName: "Hotel Housekeeping", category: "PAID" as const, description: "Room status, cleaning schedules, inspections" },
+  { key: "hotel_booking_engine", displayName: "Hotel Booking Engine", category: "PAID" as const, description: "Online booking widget for direct reservations" },
+  { key: "hotel_channel", displayName: "Hotel Channel Manager", category: "PAID" as const, description: "OTA integrations (Booking.com, Expedia, etc.)" },
+
+  // PAID — Finance & HR
+  { key: "accounting", displayName: "Accounting", category: "PAID" as const, description: "Journals, ledger, obligations, AR aging" },
+  { key: "hr", displayName: "HR & Payroll", category: "PAID" as const, description: "Employee records, payroll, deductions" },
+
+  // PAID — Engagement
+  { key: "promotion", displayName: "Promotions", category: "PAID" as const, description: "Discounts, credit notes, promo campaigns" },
+  { key: "loyalty", displayName: "Loyalty", category: "PAID" as const, description: "Points, rewards, customer retention" },
+  { key: "wallet", displayName: "Wallet", category: "PAID" as const, description: "Customer wallet, top-ups, payments" },
+  { key: "qr_menu", displayName: "QR Menu", category: "PAID" as const, description: "Digital menu for restaurants via QR code" },
+  { key: "cart_qr", displayName: "Cart QR", category: "PAID" as const, description: "QR-based cart for self-service ordering" },
+] as const;

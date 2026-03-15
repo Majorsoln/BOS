@@ -10,8 +10,8 @@ import {
   Button, Card, CardContent, Input, Label, Select, Textarea, Toast,
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Badge,
 } from "@/components/ui";
-import { getCombos, getEngines, defineCombo, updateCombo, deactivateCombo, setComboRate } from "@/lib/api/saas";
-import { REGIONS } from "@/lib/constants";
+import { getCombos, defineCombo, updateCombo, deactivateCombo, setComboRate } from "@/lib/api/saas";
+import { REGIONS, BACKEND_ENGINES } from "@/lib/constants";
 import { Plus, Edit, DollarSign, XCircle } from "lucide-react";
 
 export default function CombosPage() {
@@ -23,7 +23,6 @@ export default function CombosPage() {
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
 
   const combos = useQuery({ queryKey: ["saas", "combos"], queryFn: getCombos });
-  const engines = useQuery({ queryKey: ["saas", "engines"], queryFn: getEngines });
 
   const defineMut = useMutation({
     mutationFn: defineCombo,
@@ -50,7 +49,7 @@ export default function CombosPage() {
   });
 
   const comboList = combos.data?.data ?? [];
-  const paidEngines = (engines.data?.data ?? []).filter((e: { category: string }) => e.category === "PAID");
+  const paidEngines = BACKEND_ENGINES.filter((e) => e.category === "PAID");
   const editingCombo = comboList.find((c: { combo_id: string }) => c.combo_id === showEdit);
 
   function handleDefine(e: React.FormEvent) {
@@ -209,13 +208,13 @@ export default function CombosPage() {
         <div>
           <Label>Paid Engines</Label>
           <div className="mt-1 grid grid-cols-2 gap-2 rounded-md border border-bos-silver/30 p-3">
-            {paidEngines.map((eng: { engine_key: string; display_name: string }) => (
-              <label key={eng.engine_key} className="flex items-center gap-2 text-sm">
-                <input type="checkbox" name="paid_engines" value={eng.engine_key} className="rounded" />
-                {eng.display_name}
+            {paidEngines.map((eng) => (
+              <label key={eng.key} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="paid_engines" value={eng.key} className="rounded" />
+                <span>{eng.displayName}</span>
+                <code className="text-[10px] text-bos-silver-dark">({eng.key})</code>
               </label>
             ))}
-            {paidEngines.length === 0 && <p className="text-xs text-bos-silver-dark col-span-2">No paid engines registered yet</p>}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
