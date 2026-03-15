@@ -56,3 +56,30 @@ export const DEFAULT_ROLES = [
   "REPORTER",
   "GUEST",
 ] as const;
+
+export const REGIONS = [
+  { code: "KE", name: "Kenya", currency: "KES" },
+  { code: "TZ", name: "Tanzania", currency: "TZS" },
+  { code: "UG", name: "Uganda", currency: "UGX" },
+  { code: "RW", name: "Rwanda", currency: "RWF" },
+  { code: "NG", name: "Nigeria", currency: "NGN" },
+  { code: "GH", name: "Ghana", currency: "GHS" },
+  { code: "ZA", name: "South Africa", currency: "ZAR" },
+  { code: "CI", name: "Côte d'Ivoire", currency: "XOF" },
+  { code: "EG", name: "Egypt", currency: "EGP" },
+  { code: "ET", name: "Ethiopia", currency: "ETB" },
+] as const;
+
+export const PROMO_TYPES = [
+  { value: "DISCOUNT", label: "Discount", description: "Percentage off monthly rate" },
+  { value: "CREDIT", label: "Credit", description: "Account credit in local currency" },
+  { value: "EXTENDED_TRIAL", label: "Extended Trial", description: "Extra trial days" },
+  { value: "ENGINE_BONUS", label: "Engine Bonus", description: "Free engine for limited time" },
+  { value: "BUNDLE_DISCOUNT", label: "Bundle Discount", description: "Discount for engine bundle" },
+] as const;
+
+export const PAYOUT_METHODS = [
+  { value: "MPESA", label: "M-Pesa" },
+  { value: "MOBILE_MONEY", label: "Mobile Money" },
+  { value: "BANK_TRANSFER", label: "Bank Transfer" },
+] as const;

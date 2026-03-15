@@ -3,11 +3,33 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* BOS Brand Colors */
+  --bos-purple: #7851A9;
+  --bos-purple-light: #F3EEFA;
+  --bos-purple-dark: #5C3D87;
+  --bos-purple-hover: #6A4896;
+  --bos-gold: #D4AF37;
+  --bos-gold-light: #FDF8E8;
+  --bos-gold-dark: #B8961F;
+  --bos-silver: #C4C4C4;
+  --bos-silver-light: #F5F5F5;
+  --bos-silver-dark: #8A8A8A;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-bos-purple: var(--bos-purple);
+  --color-bos-purple-light: var(--bos-purple-light);
+  --color-bos-purple-dark: var(--bos-purple-dark);
+  --color-bos-purple-hover: var(--bos-purple-hover);
+  --color-bos-gold: var(--bos-gold);
+  --color-bos-gold-light: var(--bos-gold-light);
+  --color-bos-gold-dark: var(--bos-gold-dark);
+  --color-bos-silver: var(--bos-silver);
+  --color-bos-silver-light: var(--bos-silver-light);
+  --color-bos-silver-dark: var(--bos-silver-dark);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -16,6 +38,17 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    --bos-purple: #9B7BC7;
+    --bos-purple-light: #2D1F45;
+    --bos-purple-dark: #B494DB;
+    --bos-purple-hover: #8A6AB8;
+    --bos-gold: #E8C84A;
+    --bos-gold-light: #3D3418;
+    --bos-gold-dark: #D4AF37;
+    --bos-silver: #6B6B6B;
+    --bos-silver-light: #1A1A1A;
+    --bos-silver-dark: #9E9E9E;
   }
 }
 
