@@ -81,7 +81,7 @@ export default function TrialsPage() {
     <div>
       <PageHeader
         title="Active Trials"
-        description="Tafuta na kusimamia trial agreements za tenants"
+        description="Search and manage tenant trial agreements"
       />
 
       {/* Search */}
@@ -161,7 +161,7 @@ export default function TrialsPage() {
         open={showExtend}
         onClose={() => setShowExtend(false)}
         title="Extend Trial"
-        description="Ongeza siku za trial kwa tenant hii"
+        description="Add extra trial days for this tenant"
         onSubmit={handleExtend}
         submitLabel="Extend"
         loading={extendMut.isPending}
@@ -182,7 +182,7 @@ export default function TrialsPage() {
         onClose={() => setShowConvert(false)}
         onConfirm={() => convertMut.mutate({ business_id: businessId })}
         title="Convert Trial to Paying"
-        description="Tenant itaanza kulipa kutoka siku inayofuata. Hii haiwezi kurudishwa."
+        description="Tenant will start paying from the next billing day. This action cannot be undone."
         confirmLabel="Convert"
         loading={convertMut.isPending}
       />

@@ -114,8 +114,8 @@ export default function ResellersPage() {
   return (
     <div>
       <PageHeader
-        title="Resellers — Wakala wa BOS"
-        description="Simamia wakala na commission zao"
+        title="Resellers"
+        description="Manage reseller agents and their commissions"
         actions={
           <Button onClick={() => setShowRegister(true)} className="gap-2">
             <UserPlus className="h-4 w-4" />
@@ -200,7 +200,7 @@ export default function ResellersPage() {
         open={showRegister}
         onClose={() => setShowRegister(false)}
         title="Register Reseller"
-        description="Sajili wakala mpya wa BOS"
+        description="Register a new BOS reseller agent"
         onSubmit={handleRegister}
         submitLabel="Register"
         loading={registerMut.isPending}

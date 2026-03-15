@@ -5,48 +5,174 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
-  Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Toast,
+  Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Toast, Badge,
 } from "@/components/ui";
 import { getEffectiveRate, publishRateChange, getCombos } from "@/lib/api/saas";
-import { REGIONS } from "@/lib/constants";
+import { REGIONS, COUNTRY_TAX_RULES, BUYER_TYPES, PAYER_MODELS } from "@/lib/constants";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Search, TrendingUp, AlertTriangle } from "lucide-react";
+import {
+  Search, TrendingUp, AlertTriangle, Shield, FileText, Building2, Scale,
+} from "lucide-react";
 
-export default function RatesPage() {
-  const [activeTab, setActiveTab] = useState<"check" | "publish">("check");
+export default function BillingTaxGovernancePage() {
+  const [activeTab, setActiveTab] = useState<"check" | "publish" | "tax" | "doctrine">("doctrine");
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
+
+  const tabs = [
+    { key: "doctrine" as const, label: "Billing Doctrine" },
+    { key: "tax" as const, label: "Tax Rules by Country" },
+    { key: "check" as const, label: "Check Effective Rate" },
+    { key: "publish" as const, label: "Publish Rate Change" },
+  ];
 
   return (
     <div>
       <PageHeader
-        title="Rate Governance"
-        description="Simamia mabadiliko ya bei na kulinda tenants"
+        title="Billing & Tax Governance"
+        description="Pricing doctrine, tax rules, rate changes, and tenant billing management"
       />
 
       {/* Tabs */}
-      <div className="mb-6 flex gap-1 rounded-lg bg-bos-silver-light p-1 dark:bg-neutral-800 w-fit">
-        <button
-          onClick={() => setActiveTab("check")}
-          className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${activeTab === "check" ? "bg-white text-bos-purple shadow-sm dark:bg-neutral-900" : "text-bos-silver-dark hover:text-neutral-900"}`}
-        >
-          Check Effective Rate
-        </button>
-        <button
-          onClick={() => setActiveTab("publish")}
-          className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${activeTab === "publish" ? "bg-white text-bos-purple shadow-sm dark:bg-neutral-900" : "text-bos-silver-dark hover:text-neutral-900"}`}
-        >
-          Publish Rate Change
-        </button>
+      <div className="mb-6 flex gap-1 rounded-lg bg-bos-silver-light p-1 dark:bg-neutral-800 w-fit flex-wrap">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === tab.key
+                ? "bg-white text-bos-purple shadow-sm dark:bg-neutral-900"
+                : "text-bos-silver-dark hover:text-neutral-900"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {activeTab === "check" ? (
-        <EffectiveRateChecker />
-      ) : (
-        <RateChangePublisher onSuccess={() => setToast({ message: "Rate change published", variant: "success" })} onError={() => setToast({ message: "Failed to publish", variant: "error" })} />
+      {activeTab === "doctrine" && <BillingDoctrine />}
+      {activeTab === "tax" && <TaxRulesTable />}
+      {activeTab === "check" && <EffectiveRateChecker />}
+      {activeTab === "publish" && (
+        <RateChangePublisher
+          onSuccess={() => setToast({ message: "Rate change published", variant: "success" })}
+          onError={() => setToast({ message: "Failed to publish", variant: "error" })}
+        />
       )}
 
       {toast && <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />}
     </div>
+  );
+}
+
+function BillingDoctrine() {
+  const rules = [
+    {
+      icon: Building2,
+      title: "Billing Country Determines Tax",
+      description: "The payer's country determines which tax rules apply. Not branch footprint.",
+      detail: "HQ Pays → HQ country tax. Branch Pays → each branch's country tax.",
+    },
+    {
+      icon: Scale,
+      title: "B2B/B2C Qualification",
+      description: "B2B customers with verified tax registration may qualify for reverse charge (0% VAT).",
+      detail: "Safe default: charge VAT when verification is incomplete, mark as provisional, issue credit note on verification.",
+    },
+    {
+      icon: Shield,
+      title: "Safe Default Doctrine",
+      description: "When in doubt, charge VAT. Never undercharge — always allow correction later.",
+      detail: "Provisional VAT → verification → credit note or adjustment invoice. No silent edits, no backdating.",
+    },
+    {
+      icon: FileText,
+      title: "No Silent Edits or Backdating",
+      description: "Invoices are immutable once issued. Corrections via credit note + new invoice only.",
+      detail: "Record first, decide later. Every correction creates an auditable paper trail.",
+    },
+    {
+      icon: TrendingUp,
+      title: "Rate Change Governance",
+      description: "Rate changes require minimum 90 days advance notice. Increases >25% trigger double notification.",
+      detail: "Existing rate guaranteed through current billing cycle. Rate decreases take effect immediately.",
+    },
+    {
+      icon: AlertTriangle,
+      title: "4-Gate Region Expansion",
+      description: "New countries require 4 gates to pass: Country Logic, B2B/B2C Rules, Registration Path, Correction Path.",
+      detail: "See Region Expansion Gates page for detailed gate status per country.",
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {rules.map((rule) => {
+        const Icon = rule.icon;
+        return (
+          <Card key={rule.title}>
+            <CardContent className="p-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-bos-purple-light">
+                  <Icon className="h-4.5 w-4.5 text-bos-purple" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold">{rule.title}</h3>
+                  <p className="mt-0.5 text-xs text-bos-silver-dark">{rule.description}</p>
+                  <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">{rule.detail}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function TaxRulesTable() {
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-bos-silver/20 bg-bos-silver-light dark:bg-neutral-900">
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-bos-silver-dark">Country</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-bos-silver-dark">Currency</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-bos-silver-dark">Tax Name</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase text-bos-silver-dark">VAT Rate</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase text-bos-silver-dark">Digital Tax</th>
+                <th className="px-4 py-3 text-center text-xs font-semibold uppercase text-bos-silver-dark">B2B Reverse Charge</th>
+                <th className="px-4 py-3 text-center text-xs font-semibold uppercase text-bos-silver-dark">Registration Required</th>
+              </tr>
+            </thead>
+            <tbody>
+              {REGIONS.map((region) => {
+                const rules = COUNTRY_TAX_RULES[region.code];
+                if (!rules) return null;
+                return (
+                  <tr key={region.code} className="border-b border-bos-silver/10 hover:bg-bos-silver-light/50 dark:hover:bg-neutral-900/50">
+                    <td className="px-4 py-3 font-medium">{region.name}</td>
+                    <td className="px-4 py-3"><Badge variant="outline">{region.currency}</Badge></td>
+                    <td className="px-4 py-3">{rules.tax_name}</td>
+                    <td className="px-4 py-3 text-right font-mono">{Math.round(rules.vat_rate * 100)}%</td>
+                    <td className="px-4 py-3 text-right font-mono">
+                      {rules.digital_tax_rate > 0 ? `${(rules.digital_tax_rate * 100).toFixed(1)}%` : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <StatusBadge status={rules.b2b_reverse_charge ? "ACTIVE" : "INACTIVE"} />
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <StatusBadge status={rules.registration_required ? "ACTIVE" : "INACTIVE"} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -152,7 +278,6 @@ function RateChangePublisher({ onSuccess, onError }: { onSuccess: () => void; on
     });
   }
 
-  // Min date = 90 days from now
   const minDate = new Date();
   minDate.setDate(minDate.getDate() + 90);
   const minDateStr = minDate.toISOString().split("T")[0];

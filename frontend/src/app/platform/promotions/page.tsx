@@ -85,7 +85,7 @@ export default function PromotionsPage() {
     <div>
       <PageHeader
         title="Promotions"
-        description="Unda na simamia promo codes"
+        description="Create and manage promotional codes"
         actions={
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setShowRedeem(true)} className="gap-2">

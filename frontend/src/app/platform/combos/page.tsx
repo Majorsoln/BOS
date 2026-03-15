@@ -101,7 +101,7 @@ export default function CombosPage() {
     <div>
       <PageHeader
         title="Engine Combos"
-        description="Mipango ya engine combo ambayo tenants wanachagua"
+        description="Engine combo packages that tenants choose from"
         actions={
           <Button onClick={() => setShowDefine(true)} className="gap-2">
             <Plus className="h-4 w-4" />
@@ -177,7 +177,7 @@ export default function CombosPage() {
         open={showDefine}
         onClose={() => setShowDefine(false)}
         title="Define Engine Combo"
-        description="Tengeneza mpango mpya wa engine combo"
+        description="Create a new engine combo package"
         onSubmit={handleDefine}
         submitLabel="Define"
         loading={defineMut.isPending}
@@ -261,7 +261,7 @@ export default function CombosPage() {
         open={!!showRate}
         onClose={() => setShowRate(null)}
         title="Set Combo Rate"
-        description="Weka bei ya kila mwezi kwa region maalum"
+        description="Set a monthly price for a specific region"
         onSubmit={handleSetRate}
         submitLabel="Set Rate"
         loading={rateMut.isPending}
@@ -286,7 +286,7 @@ export default function CombosPage() {
         onClose={() => setShowDeactivate(null)}
         onConfirm={() => showDeactivate && deactivateMut.mutate({ combo_id: showDeactivate })}
         title="Deactivate Combo"
-        description="Combo hii itaondolewa kwa tenants wapya. Tenants waliopo hawataathiriwa. Huwezi kurudisha hali hii."
+        description="This combo will be removed for new tenants. Existing tenants will not be affected. This action cannot be undone."
         confirmLabel="Deactivate"
         confirmVariant="destructive"
         loading={deactivateMut.isPending}

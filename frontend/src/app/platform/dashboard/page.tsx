@@ -33,7 +33,7 @@ export default function PlatformDashboardPage() {
     <div>
       <PageHeader
         title="Platform Dashboard"
-        description="Muhtasari wa hali ya mfumo wa BOS"
+        description="Overview of BOS platform status and key metrics"
       />
 
       {/* Stat Cards Row 1 */}
@@ -93,19 +93,19 @@ export default function PlatformDashboardPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <QuickActionCard
           title="Define New Combo"
-          description="Tengeneza mpango mpya wa engine combo kwa tenants"
+          description="Create a new engine combo package for tenants"
           href="/platform/combos"
           icon={Plus}
         />
         <QuickActionCard
           title="Create Promotion"
-          description="Unda promo code mpya kwa kuvutia wateja"
+          description="Create a new promo code to attract customers"
           href="/platform/promotions"
           icon={Tag}
         />
         <QuickActionCard
           title="Register Reseller"
-          description="Sajili wakala mpya wa BOS (Wakala wa BOS)"
+          description="Register a new BOS reseller agent"
           href="/platform/resellers"
           icon={UserPlus}
         />

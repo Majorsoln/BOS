@@ -39,7 +39,7 @@ export default function TrialPolicyPage() {
     <div>
       <PageHeader
         title="Trial Policy"
-        description="Sera ya trial kwa platform nzima — inaathiri tenants wapya pekee"
+        description="Platform-wide trial policy — only affects new tenants"
       />
 
       <div className="mx-auto max-w-lg">
@@ -66,7 +66,7 @@ export default function TrialPolicyPage() {
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
                   <Label htmlFor="default_trial_days">Default Trial Days</Label>
-                  <p className="text-xs text-bos-silver-dark mb-1">Siku za trial kwa tenant mpya</p>
+                  <p className="text-xs text-bos-silver-dark mb-1">Trial days for new tenants</p>
                   <Input
                     id="default_trial_days"
                     name="default_trial_days"
@@ -78,7 +78,7 @@ export default function TrialPolicyPage() {
 
                 <div>
                   <Label htmlFor="max_trial_days">Max Trial Days</Label>
-                  <p className="text-xs text-bos-silver-dark mb-1">Kiwango cha juu (pamoja na referral + promo bonuses)</p>
+                  <p className="text-xs text-bos-silver-dark mb-1">Maximum allowed (including referral + promo bonuses)</p>
                   <Input
                     id="max_trial_days"
                     name="max_trial_days"
@@ -90,7 +90,7 @@ export default function TrialPolicyPage() {
 
                 <div>
                   <Label htmlFor="grace_period_days">Grace Period Days</Label>
-                  <p className="text-xs text-bos-silver-dark mb-1">Siku za neema baada ya trial kuisha</p>
+                  <p className="text-xs text-bos-silver-dark mb-1">Grace period days after trial expires</p>
                   <Input
                     id="grace_period_days"
                     name="grace_period_days"
@@ -102,7 +102,7 @@ export default function TrialPolicyPage() {
 
                 <div>
                   <Label htmlFor="rate_notice_days">Rate Notice Days</Label>
-                  <p className="text-xs text-bos-silver-dark mb-1">Siku za notisi kabla ya kubadilisha bei (min 90)</p>
+                  <p className="text-xs text-bos-silver-dark mb-1">Notice days before rate changes take effect (min 90)</p>
                   <Input
                     id="rate_notice_days"
                     name="rate_notice_days"

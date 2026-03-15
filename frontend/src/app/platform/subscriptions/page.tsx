@@ -96,7 +96,7 @@ export default function SubscriptionsPage() {
     <div>
       <PageHeader
         title="Subscriptions"
-        description="Tafuta na simamia subscriptions za tenants"
+        description="Search and manage tenant subscriptions"
         actions={
           <Button variant="outline" onClick={() => setShowStartTrial(true)} className="gap-2">
             <Plus className="h-4 w-4" />
@@ -181,7 +181,7 @@ export default function SubscriptionsPage() {
         onClose={() => setShowActivate(false)}
         onConfirm={() => activateMut.mutate({ business_id: businessId })}
         title="Activate Subscription"
-        description="Trial itabadilishwa kuwa subscription ya kulipa. Tenant itaanza kulipa."
+        description="Trial will be converted to a paid subscription. Tenant will start paying."
         confirmLabel="Activate"
         loading={activateMut.isPending}
       />
@@ -192,7 +192,7 @@ export default function SubscriptionsPage() {
         onClose={() => setShowCancel(false)}
         onConfirm={() => cancelMut.mutate({ business_id: businessId })}
         title="Cancel Subscription"
-        description="Subscription itasimamishwa kabisa. Hii ni hali ya mwisho — haiwezi kurudishwa."
+        description="Subscription will be permanently cancelled. This is a final state and cannot be reversed."
         confirmLabel="Cancel Subscription"
         confirmVariant="destructive"
         loading={cancelMut.isPending}
@@ -203,7 +203,7 @@ export default function SubscriptionsPage() {
         open={showChangeCombo}
         onClose={() => setShowChangeCombo(false)}
         title="Change Combo"
-        description="Badilisha engine combo kwa tenant hii"
+        description="Switch the engine combo for this tenant"
         onSubmit={handleChangeCombo}
         submitLabel="Change"
         loading={changeMut.isPending}
@@ -224,7 +224,7 @@ export default function SubscriptionsPage() {
         open={showStartTrial}
         onClose={() => setShowStartTrial(false)}
         title="Start Trial Subscription"
-        description="Anza trial subscription kwa tenant mpya"
+        description="Start a trial subscription for a new tenant"
         onSubmit={handleStartTrial}
         submitLabel="Start Trial"
         loading={trialMut.isPending}

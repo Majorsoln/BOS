@@ -17,6 +17,8 @@ import {
   Handshake,
   Users,
   ArrowLeft,
+  Globe,
+  Scale,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -42,16 +44,17 @@ const PLATFORM_NAV: NavGroup[] = [
     title: "Engine Catalog",
     items: [
       { label: "Engines", href: "/platform/engines", icon: Cog },
-      { label: "Combos (Plans)", href: "/platform/combos", icon: Layers },
-      { label: "Pricing", href: "/platform/pricing", icon: CreditCard },
+      { label: "Combos", href: "/platform/combos", icon: Layers },
+      { label: "Plan Builder", href: "/platform/pricing", icon: CreditCard },
     ],
   },
   {
-    title: "Trials & Billing",
+    title: "Billing & Tax",
     items: [
+      { label: "Billing & Tax Governance", href: "/platform/rates", icon: Scale },
       { label: "Trial Policy", href: "/platform/trial-policy", icon: ClipboardList },
       { label: "Active Trials", href: "/platform/trials", icon: Clock },
-      { label: "Rate Governance", href: "/platform/rates", icon: TrendingUp },
+      { label: "Expansion Gates", href: "/platform/expansion-gates", icon: Globe },
     ],
   },
   {

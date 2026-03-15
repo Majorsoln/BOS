@@ -80,7 +80,7 @@ export default function EnginesPage() {
     <div>
       <PageHeader
         title="Engine Catalog"
-        description="Engines zote za BOS platform — zinazounganishwa na backend codebase"
+        description="All BOS platform engines — connected to the backend codebase"
         actions={
           unregisteredCount > 0 ? (
             <Button onClick={handleRegisterAll} className="gap-2">
@@ -95,7 +95,7 @@ export default function EnginesPage() {
 
       {/* FREE Engines */}
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-bos-silver-dark">
-        Free Engines — Kila tenant anapata hizi
+        Free Engines — Every tenant gets these
       </h2>
       <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {freeEngines.map((eng) => (
@@ -113,7 +113,7 @@ export default function EnginesPage() {
 
       {/* PAID Engines */}
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-bos-silver-dark">
-        Paid Engines — Zinapatikana kupitia combo/plan
+        Paid Engines — Available through combo/plan subscriptions
       </h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {paidEngines.map((eng) => (
@@ -135,7 +135,7 @@ export default function EnginesPage() {
         onClose={() => setRegisterKey(null)}
         onConfirm={handleRegister}
         title="Register Engine"
-        description={`Sajili "${BACKEND_ENGINES.find((e) => e.key === registerKey)?.displayName ?? registerKey}" kwenye SaaS engine catalog?`}
+        description={`Register "${BACKEND_ENGINES.find((e) => e.key === registerKey)?.displayName ?? registerKey}" in the SaaS engine catalog?`}
         confirmLabel="Register"
         loading={registerMut.isPending}
       />

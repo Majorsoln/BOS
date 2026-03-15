@@ -99,8 +99,8 @@ export default function ReferralsPage() {
   return (
     <div>
       <PageHeader
-        title="Referral Program — Alika Rafiki"
-        description="Simamia programu ya rufaa kwa BOS"
+        title="Referral Program"
+        description="Manage the BOS referral program and track referrals"
         actions={
           <Button variant="outline" onClick={() => setShowUpdatePolicy(true)} className="gap-2">
             <Save className="h-4 w-4" />
