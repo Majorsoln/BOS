@@ -9,7 +9,7 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Toast, Badge,
 } from "@/components/ui";
-import { getTrialAgreement, extendTrial, convertTrial } from "@/lib/api/saas";
+import { getTrials, extendTrial, convertTrial } from "@/lib/api/saas";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { Search, Clock, CalendarDays, CreditCard, Plus, ArrowRightCircle } from "lucide-react";
 
@@ -30,9 +30,10 @@ export default function TrialsPage() {
     setError("");
     setAgreement(null);
     try {
-      const res = await getTrialAgreement(businessId.trim());
-      if (res.data) {
-        setAgreement(res.data);
+      const res = await getTrials({ status: undefined });
+      const found = (res.data ?? []).find((t: { business_id: string }) => t.business_id === businessId.trim());
+      if (found) {
+        setAgreement(found);
       } else {
         setError("No trial agreement found for this business");
       }

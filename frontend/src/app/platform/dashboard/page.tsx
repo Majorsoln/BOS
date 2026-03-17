@@ -5,14 +5,14 @@ import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent } from "@/components/ui";
-import { getCombos, getPromos } from "@/lib/api/saas";
+import { getPromos, getSubscriptions } from "@/lib/api/saas";
 import { getAgents } from "@/lib/api/agents";
 import {
   Users,
   Clock,
   UserCheck,
   Tag,
-  Layers,
+  Package,
   TrendingUp,
   Plus,
   UserPlus,
@@ -21,16 +21,19 @@ import {
 } from "lucide-react";
 
 export default function PlatformDashboardPage() {
-  const combos = useQuery({ queryKey: ["saas", "combos"], queryFn: getCombos });
   const promos = useQuery({ queryKey: ["saas", "promos"], queryFn: getPromos });
   const agents = useQuery({ queryKey: ["saas", "agents"], queryFn: () => getAgents() });
+  const subs = useQuery({ queryKey: ["saas", "subscriptions"], queryFn: () => getSubscriptions() });
 
-  const activeCombos = combos.data?.data?.filter((c: { status: string }) => c.status === "ACTIVE")?.length ?? "—";
   const activePromos = promos.data?.data?.filter((p: { status: string }) => p.status === "ACTIVE")?.length ?? "—";
   const allAgents = agents.data?.data ?? [];
   const activeAgents = allAgents.filter((a: { status: string }) => a.status === "ACTIVE" || a.status === "PROBATION")?.length ?? "—";
-  const globalAgents = allAgents.filter((a: { agent_type: string; status: string }) => a.agent_type === "GLOBAL" && (a.status === "ACTIVE" || a.status === "PROBATION"))?.length ?? "—";
-  const regionalAgents = allAgents.filter((a: { agent_type: string; status: string }) => a.agent_type === "REGIONAL" && (a.status === "ACTIVE" || a.status === "PROBATION"))?.length ?? "—";
+  const globalAgents = allAgents.filter((a: { agent_type: string; status: string }) => a.agent_type === "GLOBAL" && (a.status === "ACTIVE" || a.status === "PROBATION"))?.length ?? 0;
+  const regionalAgents = allAgents.filter((a: { agent_type: string; status: string }) => a.agent_type === "REGIONAL" && (a.status === "ACTIVE" || a.status === "PROBATION"))?.length ?? 0;
+
+  const allSubs = subs.data?.data ?? [];
+  const activeTenants = allSubs.filter((s: { status: string }) => s.status === "ACTIVE")?.length ?? "—";
+  const trialTenants = allSubs.filter((s: { status: string }) => s.status === "TRIAL")?.length ?? "—";
 
   return (
     <div>
@@ -39,79 +42,46 @@ export default function PlatformDashboardPage() {
         description="Overview of BOS platform status and key metrics"
       />
 
-      {/* Stat Cards Row 1 */}
+      {/* Row 1 */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Active Tenants"
-          value="—"
-          icon={Users}
-          description="Needs summary endpoint"
-        />
-        <StatCard
-          title="Tenants on Trial"
-          value="—"
-          icon={Clock}
-          description="Needs summary endpoint"
-        />
+        <StatCard title="Active Tenants" value={activeTenants} icon={Users} description="Paying subscribers" />
+        <StatCard title="Tenants on Trial" value={trialTenants} icon={Clock} description="Free trial period" />
         <StatCard
           title="Active Agents"
           value={activeAgents}
           icon={UserCheck}
           description={`${globalAgents} global, ${regionalAgents} regional`}
         />
-        <StatCard
-          title="Active Promotions"
-          value={activePromos}
-          icon={Tag}
-        />
+        <StatCard title="Active Promotions" value={activePromos} icon={Tag} />
       </div>
 
-      {/* Stat Cards Row 2 */}
+      {/* Row 2 */}
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Engine Combos"
-          value={activeCombos}
-          icon={Layers}
-        />
-        <StatCard
-          title="Pending Payouts"
-          value="—"
-          icon={DollarSign}
-          description="Agent commission payouts"
-        />
-        <StatCard
-          title="Monthly Revenue"
-          value="—"
-          icon={TrendingUp}
-          description="Estimated from active subs"
-        />
-        <StatCard
-          title="Trial Conversion"
-          value="—"
-          icon={TrendingUp}
-          description="Converted / total trials"
-        />
+        <StatCard title="Services" value="5" icon={Package} description="Retail, Restaurant, Hotel, Workshop, HR" />
+        <StatCard title="Pending Payouts" value="—" icon={DollarSign} description="Agent commission payouts" />
+        <StatCard title="Monthly Revenue" value="—" icon={TrendingUp} description="Estimated from active subs" />
+        <StatCard title="Trial Conversion" value="—" icon={TrendingUp} description="Converted / total trials" />
       </div>
 
       {/* Quick Actions */}
       <h2 className="mt-8 mb-4 text-lg font-semibold">Quick Actions</h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <QuickActionCard
+          title="Manage Service Pricing"
+          description="Set or update monthly rates for BOS services per region"
+          href="/platform/services"
+          icon={Package}
+        />
+        <QuickActionCard
           title="Register New Agent"
-          description="Register a new Global Agent for tenant acquisition"
+          description="Register a new agent for tenant acquisition"
           href="/platform/agents"
           icon={UserPlus}
         />
         <QuickActionCard
           title="Create Promotion"
-          description="Create a new promo code to attract customers"
+          description="Create a promo code for tenants"
           href="/platform/promotions"
-          icon={Tag}
-        />
-        <QuickActionCard
-          title="Define New Combo"
-          description="Create a new engine combo package for tenants"
-          href="/platform/combos"
           icon={Plus}
         />
       </div>

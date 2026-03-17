@@ -3,25 +3,19 @@
 import { useState } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui";
-import { REGIONS, COUNTRY_TAX_RULES, REGION_AFFORDABILITY_WEIGHTS, EXPANSION_GATES } from "@/lib/constants";
-import { CheckCircle2, XCircle, AlertCircle, Globe, Shield } from "lucide-react";
+import { REGIONS, COUNTRY_TAX_RULES, EXPANSION_GATES } from "@/lib/constants";
+import { CheckCircle2, XCircle, AlertCircle, Globe } from "lucide-react";
 
-/**
- * Evaluate gate status for a country.
- * In production this would come from backend configuration.
- * For now, we derive it from the constants we have.
- */
 function evaluateGates(countryCode: string) {
-  const hasWeight = !!REGION_AFFORDABILITY_WEIGHTS[countryCode];
   const hasTaxRules = !!COUNTRY_TAX_RULES[countryCode];
   const taxRules = COUNTRY_TAX_RULES[countryCode];
 
   return {
     country_logic: {
-      pass: hasWeight,
-      detail: hasWeight
-        ? `Weight: ${REGION_AFFORDABILITY_WEIGHTS[countryCode].weight}, USD rate: ${REGION_AFFORDABILITY_WEIGHTS[countryCode].usdToLocal}`
-        : "Affordability weight not configured",
+      pass: hasTaxRules,
+      detail: hasTaxRules
+        ? `Currency and tax configured`
+        : "Country logic not configured",
     },
     b2b_b2c_qualification: {
       pass: hasTaxRules,
@@ -30,15 +24,13 @@ function evaluateGates(countryCode: string) {
         : "Tax rules not configured",
     },
     registration_path: {
-      // For configured countries we assume registration path exists
-      pass: hasTaxRules && hasWeight,
+      pass: hasTaxRules,
       detail: hasTaxRules
         ? "Digital services tax registration pathway documented"
         : "Registration pathway not documented",
     },
     reporting_correction: {
-      // Assume configured countries have correction paths
-      pass: hasTaxRules && hasWeight,
+      pass: hasTaxRules,
       detail: hasTaxRules
         ? "Credit note and adjustment invoice workflows available"
         : "Correction workflows not configured",

@@ -9,17 +9,15 @@ import {
   Button, Card, CardContent, Input, Label, Select, Textarea, Toast,
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Badge,
 } from "@/components/ui";
-import { getPromos, createPromo, redeemPromo, getEngines } from "@/lib/api/saas";
+import { getPromos, createPromo, redeemPromo } from "@/lib/api/saas";
 import { PROMO_TYPES, REGIONS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { Plus, Tag, Ticket } from "lucide-react";
 
-const PROMO_TYPE_BADGE: Record<string, "purple" | "gold" | "outline" | "success" | "warning"> = {
+const PROMO_TYPE_BADGE: Record<string, "purple" | "gold" | "outline"> = {
   DISCOUNT: "purple",
   CREDIT: "gold",
   EXTENDED_TRIAL: "outline",
-  ENGINE_BONUS: "success",
-  BUNDLE_DISCOUNT: "warning",
 };
 
 export default function PromotionsPage() {
@@ -30,7 +28,7 @@ export default function PromotionsPage() {
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
 
   const promos = useQuery({ queryKey: ["saas", "promos"], queryFn: getPromos });
-  const engines = useQuery({ queryKey: ["saas", "engines"], queryFn: getEngines });
+
 
   const createMut = useMutation({
     mutationFn: createPromo,
@@ -45,8 +43,6 @@ export default function PromotionsPage() {
   });
 
   const promoList = promos.data?.data ?? [];
-  const engineList = engines.data?.data ?? [];
-
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
@@ -62,11 +58,7 @@ export default function PromotionsPage() {
       discount_months: promoType === "DISCOUNT" ? Number(d.get("discount_months")) : undefined,
       credit_amount: promoType === "CREDIT" ? Number(d.get("credit_amount")) : undefined,
       credit_currency: promoType === "CREDIT" ? d.get("credit_currency") as string : undefined,
-      credit_expires_months: promoType === "CREDIT" ? Number(d.get("credit_expires_months")) : undefined,
       extra_trial_days: promoType === "EXTENDED_TRIAL" ? Number(d.get("extra_trial_days")) : undefined,
-      bonus_engine: promoType === "ENGINE_BONUS" ? d.get("bonus_engine") as string : undefined,
-      bonus_months: promoType === "ENGINE_BONUS" ? Number(d.get("bonus_months")) : undefined,
-      bundle_discount_pct: promoType === "BUNDLE_DISCOUNT" ? Number(d.get("bundle_discount_pct")) : undefined,
     });
   }
 
@@ -77,7 +69,6 @@ export default function PromotionsPage() {
     redeemMut.mutate({
       promo_code: d.get("promo_code") as string,
       business_id: d.get("business_id") as string,
-      region_code: d.get("region_code") as string || undefined,
     });
   }
 
@@ -250,29 +241,6 @@ export default function PromotionsPage() {
           </div>
         )}
 
-        {promoType === "ENGINE_BONUS" && (
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="bonus_engine">Bonus Engine</Label>
-              <Select id="bonus_engine" name="bonus_engine" className="mt-1">
-                {engineList.map((e: { engine_key: string; display_name: string }) => (
-                  <option key={e.engine_key} value={e.engine_key}>{e.display_name}</option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="bonus_months">For How Many Months</Label>
-              <Input id="bonus_months" name="bonus_months" type="number" placeholder="e.g. 2" required className="mt-1" />
-            </div>
-          </div>
-        )}
-
-        {promoType === "BUNDLE_DISCOUNT" && (
-          <div>
-            <Label htmlFor="bundle_discount_pct">Bundle Discount %</Label>
-            <Input id="bundle_discount_pct" name="bundle_discount_pct" type="number" min="1" max="100" placeholder="e.g. 10" required className="mt-1" />
-          </div>
-        )}
       </FormDialog>
 
       {/* Redeem Dialog */}

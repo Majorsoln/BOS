@@ -6,9 +6,9 @@ import { cn } from "@/lib/utils";
 import { useUIStore } from "@/stores/ui-store";
 import {
   LayoutDashboard,
-  Cog,
+  Package,
   Layers,
-  CreditCard,
+  Percent,
   ClipboardList,
   Clock,
   Tag,
@@ -39,17 +39,17 @@ const PLATFORM_NAV: NavGroup[] = [
     ],
   },
   {
-    title: "Engine Catalog",
+    title: "Pricing",
     items: [
-      { label: "Engines", href: "/platform/engines", icon: Cog },
-      { label: "Combos", href: "/platform/combos", icon: Layers },
-      { label: "Plan Builder", href: "/platform/pricing", icon: CreditCard },
+      { label: "Services", href: "/platform/services", icon: Package },
+      { label: "Capacity Tiers", href: "/platform/capacity", icon: Layers },
+      { label: "Reduction Rates", href: "/platform/reductions", icon: Percent },
     ],
   },
   {
     title: "Billing & Tax",
     items: [
-      { label: "Billing & Tax Governance", href: "/platform/rates", icon: Scale },
+      { label: "Rate Governance", href: "/platform/rates", icon: Scale },
       { label: "Trial Policy", href: "/platform/trial-policy", icon: ClipboardList },
       { label: "Active Trials", href: "/platform/trials", icon: Clock },
       { label: "Expansion Gates", href: "/platform/expansion-gates", icon: Globe },

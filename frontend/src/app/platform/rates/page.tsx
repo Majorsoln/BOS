@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
   Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Toast, Badge,
 } from "@/components/ui";
-import { getEffectiveRate, publishRateChange, getCombos } from "@/lib/api/saas";
-import { REGIONS, COUNTRY_TAX_RULES, BUYER_TYPES, PAYER_MODELS } from "@/lib/constants";
+import { getEffectiveRate, publishRateChange } from "@/lib/api/saas";
+import { REGIONS, COUNTRY_TAX_RULES, BOS_SERVICES } from "@/lib/constants";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   Search, TrendingUp, AlertTriangle, Shield, FileText, Building2, Scale,
@@ -69,20 +69,20 @@ function BillingDoctrine() {
     {
       icon: Building2,
       title: "Billing Country Determines Tax",
-      description: "The payer's country determines which tax rules apply. Not branch footprint.",
+      description: "The payer's country determines which tax rules apply.",
       detail: "HQ Pays → HQ country tax. Branch Pays → each branch's country tax.",
     },
     {
       icon: Scale,
       title: "B2B/B2C Qualification",
       description: "B2B customers with verified tax registration may qualify for reverse charge (0% VAT).",
-      detail: "Safe default: charge VAT when verification is incomplete, mark as provisional, issue credit note on verification.",
+      detail: "Safe default: charge VAT when verification is incomplete.",
     },
     {
       icon: Shield,
       title: "Safe Default Doctrine",
       description: "When in doubt, charge VAT. Never undercharge — always allow correction later.",
-      detail: "Provisional VAT → verification → credit note or adjustment invoice. No silent edits, no backdating.",
+      detail: "Provisional VAT → verification → credit note or adjustment invoice.",
     },
     {
       icon: FileText,
@@ -93,13 +93,13 @@ function BillingDoctrine() {
     {
       icon: TrendingUp,
       title: "Rate Change Governance",
-      description: "Rate changes require minimum 90 days advance notice. Increases >25% trigger double notification.",
-      detail: "Existing rate guaranteed through current billing cycle. Rate decreases take effect immediately.",
+      description: "Rate changes require minimum 90 days advance notice.",
+      detail: "Existing rate guaranteed through current billing cycle. Decreases take effect immediately.",
     },
     {
       icon: AlertTriangle,
       title: "4-Gate Region Expansion",
-      description: "New countries require 4 gates to pass: Country Logic, B2B/B2C Rules, Registration Path, Correction Path.",
+      description: "New countries require 4 gates: Country Logic, B2B/B2C Rules, Registration Path, Correction Path.",
       detail: "See Region Expansion Gates page for detailed gate status per country.",
     },
   ];
@@ -253,9 +253,6 @@ function EffectiveRateChecker() {
 }
 
 function RateChangePublisher({ onSuccess, onError }: { onSuccess: () => void; onError: () => void }) {
-  const combos = useQuery({ queryKey: ["saas", "combos"], queryFn: getCombos });
-  const comboList = (combos.data?.data ?? []).filter((c: { status: string }) => c.status === "ACTIVE");
-
   const publishMut = useMutation({
     mutationFn: publishRateChange,
     onSuccess,
@@ -269,7 +266,7 @@ function RateChangePublisher({ onSuccess, onError }: { onSuccess: () => void; on
     const regionCode = data.get("region_code") as string;
     const region = REGIONS.find((r) => r.code === regionCode);
     publishMut.mutate({
-      combo_id: data.get("combo_id") as string,
+      service_key: data.get("service_key") as string,
       region_code: regionCode,
       old_amount: Number(data.get("old_amount")),
       new_amount: Number(data.get("new_amount")),
@@ -294,16 +291,16 @@ function RateChangePublisher({ onSuccess, onError }: { onSuccess: () => void; on
         <CardContent>
           <div className="mb-4 flex items-start gap-2 rounded-lg bg-orange-50 p-3 text-sm text-orange-800 dark:bg-orange-950 dark:text-orange-200">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>Rate changes require minimum 90 days advance notice. Increases &gt;25% trigger elevated notifications.</span>
+            <span>Rate changes require minimum 90 days advance notice.</span>
           </div>
 
           <form onSubmit={handlePublish} className="space-y-4">
             <div>
-              <Label htmlFor="combo_id">Combo</Label>
-              <Select id="combo_id" name="combo_id" className="mt-1" required>
-                <option value="">Select combo...</option>
-                {comboList.map((c: { combo_id: string; name: string }) => (
-                  <option key={c.combo_id} value={c.combo_id}>{c.name}</option>
+              <Label htmlFor="service_key">Service</Label>
+              <Select id="service_key" name="service_key" className="mt-1" required>
+                <option value="">Select service...</option>
+                {BOS_SERVICES.map((s) => (
+                  <option key={s.key} value={s.key}>{s.name}</option>
                 ))}
               </Select>
             </div>

@@ -1,19 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { FormDialog } from "@/components/shared/form-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
-  Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Toast,
+  Button, Card, CardContent, CardHeader, CardTitle, Input, Toast,
 } from "@/components/ui";
 import {
-  getSubscription, activateSubscription, cancelSubscription, changeCombo, startTrial, getCombos,
+  getSubscriptions, activateSubscription, cancelSubscription,
 } from "@/lib/api/saas";
 import { formatDate } from "@/lib/utils";
-import { Search, Play, XCircle, RefreshCw, Plus } from "lucide-react";
+import { Search, Play, XCircle } from "lucide-react";
 
 export default function SubscriptionsPage() {
   const [businessId, setBusinessId] = useState("");
@@ -22,12 +21,7 @@ export default function SubscriptionsPage() {
   const [error, setError] = useState("");
   const [showActivate, setShowActivate] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
-  const [showChangeCombo, setShowChangeCombo] = useState(false);
-  const [showStartTrial, setShowStartTrial] = useState(false);
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
-
-  const combos = useQuery({ queryKey: ["saas", "combos"], queryFn: getCombos });
-  const comboList = (combos.data?.data ?? []).filter((c: { status: string }) => c.status === "ACTIVE");
 
   async function handleSearch(e?: React.FormEvent) {
     e?.preventDefault?.();
@@ -36,9 +30,10 @@ export default function SubscriptionsPage() {
     setError("");
     setSub(null);
     try {
-      const res = await getSubscription(businessId.trim());
-      if (res.data) {
-        setSub(res.data);
+      const res = await getSubscriptions({ status: undefined });
+      const found = (res.data ?? []).find((s: { business_id: string }) => s.business_id === businessId.trim());
+      if (found) {
+        setSub(found);
       } else {
         setError("No subscription found for this business");
       }
@@ -61,35 +56,6 @@ export default function SubscriptionsPage() {
     onError: () => setToast({ message: "Failed to cancel", variant: "error" }),
   });
 
-  const changeMut = useMutation({
-    mutationFn: changeCombo,
-    onSuccess: () => { setShowChangeCombo(false); setToast({ message: "Combo changed", variant: "success" }); handleSearch(); },
-    onError: () => setToast({ message: "Failed to change combo", variant: "error" }),
-  });
-
-  const trialMut = useMutation({
-    mutationFn: startTrial,
-    onSuccess: () => { setShowStartTrial(false); setToast({ message: "Trial started", variant: "success" }); handleSearch(); },
-    onError: () => setToast({ message: "Failed to start trial", variant: "error" }),
-  });
-
-  function handleChangeCombo(e: React.FormEvent) {
-    e.preventDefault();
-    const form = e.target as HTMLFormElement;
-    const d = new FormData(form);
-    changeMut.mutate({ business_id: businessId, new_combo_id: d.get("new_combo_id") as string });
-  }
-
-  function handleStartTrial(e: React.FormEvent) {
-    e.preventDefault();
-    const form = e.target as HTMLFormElement;
-    const d = new FormData(form);
-    trialMut.mutate({
-      business_id: d.get("business_id") as string,
-      combo_id: d.get("combo_id") as string,
-    });
-  }
-
   const s = sub;
 
   return (
@@ -97,12 +63,6 @@ export default function SubscriptionsPage() {
       <PageHeader
         title="Subscriptions"
         description="Search and manage tenant subscriptions"
-        actions={
-          <Button variant="outline" onClick={() => setShowStartTrial(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Start Trial
-          </Button>
-        }
       />
 
       {/* Search */}
@@ -143,11 +103,11 @@ export default function SubscriptionsPage() {
           <CardContent>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <InfoRow label="Business ID" value={(s.business_id as string) ?? "—"} mono />
-              <InfoRow label="Combo" value={(s.combo_id as string) ?? "—"} />
-              <InfoRow label="Plan" value={(s.plan_id as string) ?? "—"} />
+              <InfoRow label="Services" value={(s.services as string) ?? "—"} />
               <InfoRow label="Activated" value={s.activated_at ? formatDate(s.activated_at as string) : "—"} />
               <InfoRow label="Billing Starts" value={s.billing_starts_at ? formatDate(s.billing_starts_at as string) : "—"} />
               <InfoRow label="Renewals" value={String(s.renewal_count ?? 0)} />
+              <InfoRow label="Monthly Amount" value={(s.monthly_amount as string) ?? "—"} />
             </div>
 
             {/* Actions */}
@@ -156,12 +116,6 @@ export default function SubscriptionsPage() {
                 <Button onClick={() => setShowActivate(true)} className="gap-2">
                   <Play className="h-4 w-4" />
                   Activate
-                </Button>
-              )}
-              {(s.status === "TRIAL" || s.status === "ACTIVE") && (
-                <Button variant="outline" onClick={() => setShowChangeCombo(true)} className="gap-2">
-                  <RefreshCw className="h-4 w-4" />
-                  Change Combo
                 </Button>
               )}
               {s.status !== "CANCELLED" && (
@@ -192,57 +146,11 @@ export default function SubscriptionsPage() {
         onClose={() => setShowCancel(false)}
         onConfirm={() => cancelMut.mutate({ business_id: businessId })}
         title="Cancel Subscription"
-        description="Subscription will be permanently cancelled. This is a final state and cannot be reversed."
+        description="Subscription will be permanently cancelled."
         confirmLabel="Cancel Subscription"
         confirmVariant="destructive"
         loading={cancelMut.isPending}
       />
-
-      {/* Change Combo Dialog */}
-      <FormDialog
-        open={showChangeCombo}
-        onClose={() => setShowChangeCombo(false)}
-        title="Change Combo"
-        description="Switch the engine combo for this tenant"
-        onSubmit={handleChangeCombo}
-        submitLabel="Change"
-        loading={changeMut.isPending}
-      >
-        <div>
-          <Label htmlFor="new_combo_id">New Combo</Label>
-          <Select id="new_combo_id" name="new_combo_id" className="mt-1" required>
-            <option value="">Select combo...</option>
-            {comboList.map((c: { combo_id: string; name: string }) => (
-              <option key={c.combo_id} value={c.combo_id}>{c.name}</option>
-            ))}
-          </Select>
-        </div>
-      </FormDialog>
-
-      {/* Start Trial Dialog */}
-      <FormDialog
-        open={showStartTrial}
-        onClose={() => setShowStartTrial(false)}
-        title="Start Trial Subscription"
-        description="Start a trial subscription for a new tenant"
-        onSubmit={handleStartTrial}
-        submitLabel="Start Trial"
-        loading={trialMut.isPending}
-      >
-        <div>
-          <Label htmlFor="trial_biz_id">Business ID</Label>
-          <Input id="trial_biz_id" name="business_id" required className="mt-1" />
-        </div>
-        <div>
-          <Label htmlFor="trial_combo">Combo</Label>
-          <Select id="trial_combo" name="combo_id" className="mt-1" required>
-            <option value="">Select combo...</option>
-            {comboList.map((c: { combo_id: string; name: string }) => (
-              <option key={c.combo_id} value={c.combo_id}>{c.name}</option>
-            ))}
-          </Select>
-        </div>
-      </FormDialog>
 
       {toast && <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />}
     </div>

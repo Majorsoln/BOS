@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Label, Badge, Toast } from "@/components/ui";
 import { getTrialPolicy, setTrialPolicy } from "@/lib/api/saas";
-import { ClipboardList, Save } from "lucide-react";
+import { ClipboardList, Save, UserCheck } from "lucide-react";
 
 export default function TrialPolicyPage() {
   const queryClient = useQueryClient();
@@ -25,13 +25,11 @@ export default function TrialPolicyPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const form = e.target as HTMLFormElement;
-    const data = new FormData(form);
+    const data = new FormData(e.target as HTMLFormElement);
     saveMut.mutate({
       default_trial_days: Number(data.get("default_trial_days")),
       max_trial_days: Number(data.get("max_trial_days")),
       grace_period_days: Number(data.get("grace_period_days")),
-      rate_notice_days: Number(data.get("rate_notice_days")),
     });
   }
 
@@ -39,10 +37,24 @@ export default function TrialPolicyPage() {
     <div>
       <PageHeader
         title="Trial Policy"
-        description="Platform-wide trial policy — only affects new tenants"
+        description="Set trial limits — these are guidelines for Agents when onboarding tenants"
       />
 
-      <div className="mx-auto max-w-lg">
+      <div className="mx-auto max-w-xl">
+        {/* Agent Guidelines Info */}
+        <div className="mb-6 rounded-lg border border-bos-purple/20 bg-bos-purple/5 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <UserCheck className="h-5 w-5 text-bos-purple" />
+            <h3 className="text-sm font-semibold text-bos-purple">Agent Guidelines</h3>
+          </div>
+          <ul className="text-xs text-bos-silver-dark space-y-1 list-disc list-inside">
+            <li>First onboarding/training for new tenants is <strong>FREE</strong></li>
+            <li>Agents decide trial length within these limits when onboarding a tenant</li>
+            <li>Agents get commission only after platform collects payment from tenant</li>
+            <li>Changing these limits only affects new trials — existing trials are not modified</li>
+          </ul>
+        </div>
+
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -58,7 +70,7 @@ export default function TrialPolicyPage() {
           <CardContent>
             {policy.isLoading ? (
               <div className="space-y-4">
-                {[1, 2, 3, 4].map((i) => (
+                {[1, 2, 3].map((i) => (
                   <div key={i} className="h-10 animate-pulse rounded bg-neutral-200" />
                 ))}
               </div>
@@ -66,49 +78,45 @@ export default function TrialPolicyPage() {
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
                   <Label htmlFor="default_trial_days">Default Trial Days</Label>
-                  <p className="text-xs text-bos-silver-dark mb-1">Trial days for new tenants</p>
+                  <p className="text-xs text-bos-silver-dark mb-1">
+                    Recommended trial length for agents to offer new tenants
+                  </p>
                   <Input
                     id="default_trial_days"
                     name="default_trial_days"
                     type="number"
-                    defaultValue={policyData?.default_trial_days ?? 180}
+                    defaultValue={policyData?.default_trial_days ?? 30}
+                    min={7}
                     required
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="max_trial_days">Max Trial Days</Label>
-                  <p className="text-xs text-bos-silver-dark mb-1">Maximum allowed (including referral + promo bonuses)</p>
+                  <Label htmlFor="max_trial_days">Maximum Trial Days</Label>
+                  <p className="text-xs text-bos-silver-dark mb-1">
+                    Absolute maximum an agent can offer (including extensions)
+                  </p>
                   <Input
                     id="max_trial_days"
                     name="max_trial_days"
                     type="number"
-                    defaultValue={policyData?.max_trial_days ?? 365}
+                    defaultValue={policyData?.max_trial_days ?? 90}
+                    min={14}
                     required
                   />
                 </div>
 
                 <div>
                   <Label htmlFor="grace_period_days">Grace Period Days</Label>
-                  <p className="text-xs text-bos-silver-dark mb-1">Grace period days after trial expires</p>
+                  <p className="text-xs text-bos-silver-dark mb-1">
+                    Days after trial expires before service is suspended
+                  </p>
                   <Input
                     id="grace_period_days"
                     name="grace_period_days"
                     type="number"
                     defaultValue={policyData?.grace_period_days ?? 7}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="rate_notice_days">Rate Notice Days</Label>
-                  <p className="text-xs text-bos-silver-dark mb-1">Notice days before rate changes take effect (min 90)</p>
-                  <Input
-                    id="rate_notice_days"
-                    name="rate_notice_days"
-                    type="number"
-                    defaultValue={policyData?.rate_notice_days ?? 90}
-                    min={90}
+                    min={0}
                     required
                   />
                 </div>

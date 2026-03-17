@@ -74,8 +74,6 @@ export const PROMO_TYPES = [
   { value: "DISCOUNT", label: "Discount", description: "Percentage off monthly rate" },
   { value: "CREDIT", label: "Credit", description: "Account credit in local currency" },
   { value: "EXTENDED_TRIAL", label: "Extended Trial", description: "Extra trial days" },
-  { value: "ENGINE_BONUS", label: "Engine Bonus", description: "Free engine for limited time" },
-  { value: "BUNDLE_DISCOUNT", label: "Bundle Discount", description: "Discount for engine bundle" },
 ] as const;
 
 export const PAYOUT_METHODS = [
@@ -84,81 +82,97 @@ export const PAYOUT_METHODS = [
   { value: "BANK_TRANSFER", label: "Bank Transfer" },
 ] as const;
 
+// ─── BOS SERVICES ─────────────────────────────────────────────────────────────
+
 /**
- * All backend engines mapped from `engines/` directories.
- * category: FREE engines are included in every tenant plan automatically.
- * category: PAID engines require a combo subscription.
+ * The 5 core BOS services. Each gives the tenant FULL features
+ * for that business vertical — BOS is a Business Operation System.
+ * Free engines (cash, documents, reporting, customer) come with every service.
  */
-export const BACKEND_ENGINES = [
-  // FREE — every tenant gets these
-  { key: "cash", displayName: "Cash", category: "FREE" as const, description: "Cash drawer, sessions, float tracking" },
-  { key: "documents", displayName: "Documents", category: "FREE" as const, description: "Receipts, invoices, quotes — all document types" },
-  { key: "reporting", displayName: "Reporting", category: "FREE" as const, description: "KPI recording and daily snapshots" },
-  { key: "customer", displayName: "Customer", category: "FREE" as const, description: "Customer profiles and lookup" },
-
-  // PAID — Retail & Commerce
-  { key: "retail", displayName: "Retail (POS/Duka)", category: "PAID" as const, description: "Point of sale, shop management, sales, refunds" },
-  { key: "restaurant", displayName: "Restaurant (F&B)", category: "PAID" as const, description: "Orders, tables, kitchen tickets, bills, splits" },
-  { key: "inventory", displayName: "Inventory", category: "PAID" as const, description: "Stock tracking, transfers, adjustments" },
-  { key: "procurement", displayName: "Procurement", category: "PAID" as const, description: "Purchase orders, goods receipt, supplier payments" },
-
-  // PAID — Workshop / Fabrication
-  { key: "workshop", displayName: "Workshop (Fundi)", category: "PAID" as const, description: "Quotes, jobs, cutting lists, invoicing, installations" },
-
-  // PAID — Hotel & Hospitality
-  { key: "hotel_reservation", displayName: "Hotel Reservation", category: "PAID" as const, description: "Bookings, check-in/out, guest registration" },
-  { key: "hotel_folio", displayName: "Hotel Folio", category: "PAID" as const, description: "Guest charges, folio settlement, company billing" },
-  { key: "hotel_property", displayName: "Hotel Property", category: "PAID" as const, description: "Room types, rates, property configuration" },
-  { key: "hotel_housekeeping", displayName: "Hotel Housekeeping", category: "PAID" as const, description: "Room status, cleaning schedules, inspections" },
-  { key: "hotel_booking_engine", displayName: "Hotel Booking Engine", category: "PAID" as const, description: "Online booking widget for direct reservations" },
-  { key: "hotel_channel", displayName: "Hotel Channel Manager", category: "PAID" as const, description: "OTA integrations (Booking.com, Expedia, etc.)" },
-
-  // PAID — Finance & HR
-  { key: "accounting", displayName: "Accounting", category: "PAID" as const, description: "Journals, ledger, obligations, AR aging" },
-  { key: "hr", displayName: "HR & Payroll", category: "PAID" as const, description: "Employee records, payroll, deductions" },
-
-  // PAID — Engagement
-  { key: "promotion", displayName: "Promotions", category: "PAID" as const, description: "Discounts, credit notes, promo campaigns" },
-  { key: "loyalty", displayName: "Loyalty", category: "PAID" as const, description: "Points, rewards, customer retention" },
-  { key: "wallet", displayName: "Wallet", category: "PAID" as const, description: "Customer wallet, top-ups, payments" },
-  { key: "qr_menu", displayName: "QR Menu", category: "PAID" as const, description: "Digital menu for restaurants via QR code" },
-  { key: "cart_qr", displayName: "Cart QR", category: "PAID" as const, description: "QR-based cart for self-service ordering" },
+export const BOS_SERVICES = [
+  {
+    key: "RETAIL",
+    name: "BOS Retail",
+    description: "Full POS, inventory, sales, receipts, refunds, procurement, reporting",
+    engines: ["retail", "inventory", "procurement", "cash", "documents", "reporting", "customer"],
+  },
+  {
+    key: "RESTAURANT",
+    name: "BOS Restaurant",
+    description: "Tables, KOT, kitchen management, bills, splits, inventory, reporting",
+    engines: ["restaurant", "inventory", "cash", "documents", "reporting", "customer"],
+  },
+  {
+    key: "HOTEL",
+    name: "BOS Hotel",
+    description: "Reservations, folio, housekeeping, check-in/out, channel manager, reporting",
+    engines: ["hotel_reservation", "hotel_folio", "hotel_property", "hotel_housekeeping", "hotel_booking_engine", "hotel_channel", "cash", "documents", "reporting", "customer"],
+  },
+  {
+    key: "WORKSHOP",
+    name: "BOS Workshop",
+    description: "Quotes, jobs, cutting lists, invoicing, inventory, procurement, reporting",
+    engines: ["workshop", "inventory", "procurement", "cash", "documents", "reporting", "customer"],
+  },
+  {
+    key: "HR",
+    name: "BOS HR",
+    description: "Payroll, leave, attendance, deductions, employee records, reporting",
+    engines: ["hr", "accounting", "cash", "documents", "reporting", "customer"],
+  },
 ] as const;
 
-// ─── BOS PRICING DOCTRINE ─────────────────────────────────────────────────────
-
 /**
- * Global Reference Prices per engine (USD/month).
- * These are the base prices before region affordability weight is applied.
- * Internal only — never shown to users directly.
+ * Capacity dimensions — global tiers, prices set per region by Admin.
  */
-export const ENGINE_REFERENCE_PRICES: Record<string, number> = {
-  cash: 0, documents: 0, reporting: 0, customer: 0,
-  retail: 15, restaurant: 15, inventory: 10, procurement: 10,
-  workshop: 15,
-  hotel_reservation: 12, hotel_folio: 12, hotel_property: 8, hotel_housekeeping: 8,
-  hotel_booking_engine: 15, hotel_channel: 20,
-  accounting: 12, hr: 12,
-  promotion: 8, loyalty: 8, wallet: 10, qr_menu: 5, cart_qr: 5,
-};
-
-/**
- * Region Affordability Weights — INTERNAL/HIDDEN.
- * weight × USD reference price × usdToLocal = local currency price.
- * Never exposed in any user-facing UI.
- */
-export const REGION_AFFORDABILITY_WEIGHTS: Record<string, { weight: number; usdToLocal: number }> = {
-  KE: { weight: 0.35, usdToLocal: 130 },
-  TZ: { weight: 0.30, usdToLocal: 2500 },
-  UG: { weight: 0.30, usdToLocal: 3700 },
-  RW: { weight: 0.35, usdToLocal: 1300 },
-  NG: { weight: 0.30, usdToLocal: 1550 },
-  GH: { weight: 0.30, usdToLocal: 14 },
-  ZA: { weight: 0.60, usdToLocal: 18 },
-  CI: { weight: 0.30, usdToLocal: 600 },
-  EG: { weight: 0.40, usdToLocal: 50 },
-  ET: { weight: 0.25, usdToLocal: 57 },
-};
+export const CAPACITY_DIMENSIONS = [
+  {
+    key: "BRANCHES",
+    label: "Branches",
+    description: "Number of business locations",
+    tiers: [
+      { key: "BRANCH_1", label: "1 Branch", limit: 1 },
+      { key: "BRANCH_2_5", label: "2–5 Branches", limit: 5 },
+      { key: "BRANCH_6_20", label: "6–20 Branches", limit: 20 },
+      { key: "BRANCH_21_50", label: "21–50 Branches", limit: 50 },
+      { key: "BRANCH_UNLIMITED", label: "Unlimited", limit: -1 },
+    ],
+  },
+  {
+    key: "DOCUMENTS",
+    label: "Documents / month",
+    description: "Maximum documents generated per month",
+    tiers: [
+      { key: "DOC_500", label: "500/mo", limit: 500 },
+      { key: "DOC_2000", label: "2,000/mo", limit: 2000 },
+      { key: "DOC_10000", label: "10,000/mo", limit: 10000 },
+      { key: "DOC_UNLIMITED", label: "Unlimited", limit: -1 },
+    ],
+  },
+  {
+    key: "USERS",
+    label: "User Seats",
+    description: "Staff accounts / operator seats",
+    tiers: [
+      { key: "USER_3", label: "3 Users", limit: 3 },
+      { key: "USER_10", label: "10 Users", limit: 10 },
+      { key: "USER_25", label: "25 Users", limit: 25 },
+      { key: "USER_50", label: "50 Users", limit: 50 },
+      { key: "USER_UNLIMITED", label: "Unlimited", limit: -1 },
+    ],
+  },
+  {
+    key: "AI_TOKENS",
+    label: "AI Tokens",
+    description: "AI-powered analytics and automation",
+    tiers: [
+      { key: "AI_NONE", label: "No AI", limit: 0 },
+      { key: "AI_BASIC", label: "Basic (5K tokens)", limit: 5000 },
+      { key: "AI_STANDARD", label: "Standard (25K tokens)", limit: 25000 },
+      { key: "AI_PRO", label: "Pro (100K tokens)", limit: 100000 },
+    ],
+  },
+] as const;
 
 /**
  * Country Tax Rules — determines tax treatment per billing country.
@@ -184,54 +198,24 @@ export const COUNTRY_TAX_RULES: Record<string, {
   ET: { vat_rate: 0.15, digital_tax_rate: 0, has_vat: true, b2b_reverse_charge: false, registration_required: true, threshold_usd: 0, tax_name: "VAT" },
 };
 
-/** Business Type definitions — affects which engines are recommended. */
-export const BUSINESS_TYPES = [
-  { key: "retail", label: "Retail / Shop", engines: ["retail", "inventory", "procurement"] },
-  { key: "restaurant", label: "Restaurant / F&B", engines: ["restaurant", "inventory"] },
-  { key: "hotel", label: "Hotel / Hospitality", engines: ["hotel_reservation", "hotel_folio", "hotel_property", "hotel_housekeeping"] },
-  { key: "workshop", label: "Workshop / Fabrication", engines: ["workshop", "inventory", "procurement"] },
-  { key: "services", label: "Professional Services", engines: ["accounting", "hr"] },
-] as const;
-
-/** Add-on engines beyond business type defaults. */
-export const ADDON_ENGINES = [
-  { key: "accounting", label: "Accounting" },
-  { key: "hr", label: "HR & Payroll" },
-  { key: "promotion", label: "Promotions" },
-  { key: "loyalty", label: "Loyalty Program" },
-  { key: "wallet", label: "Customer Wallet" },
-  { key: "qr_menu", label: "QR Menu" },
-  { key: "cart_qr", label: "Cart QR" },
-  { key: "hotel_booking_engine", label: "Online Booking Engine" },
-  { key: "hotel_channel", label: "Channel Manager" },
-] as const;
-
 /** Payer model — who pays the bill. */
 export const PAYER_MODELS = [
-  { value: "HQ_PAYS", label: "HQ Pays", description: "Headquarters pays for all branches. Single invoice, one billing country." },
-  { value: "BRANCH_PAYS", label: "Branch Pays", description: "Each branch pays independently. Invoice per branch, tax per branch country." },
+  { value: "HQ_PAYS", label: "HQ Pays", description: "Headquarters pays for all branches. Single invoice." },
+  { value: "BRANCH_PAYS", label: "Branch Pays", description: "Each branch pays independently." },
 ] as const;
 
 /** B2B/B2C buyer qualification. */
 export const BUYER_TYPES = [
   { value: "B2C", label: "Individual / Consumer", description: "No tax registration. VAT always charged." },
-  { value: "B2B", label: "Registered Business", description: "Has tax registration number. Reverse charge may apply." },
-  { value: "PENDING", label: "Pending Verification", description: "Tax number submitted, awaiting verification. VAT charged provisionally." },
+  { value: "B2B", label: "Registered Business", description: "Has tax registration number." },
 ] as const;
 
 /** Region expansion gates — 4 gates before a country goes live. */
 export const EXPANSION_GATES = [
-  { key: "country_logic", label: "Country Logic Locked", description: "Currency, affordability weight, USD conversion rate configured" },
-  { key: "b2b_b2c_qualification", label: "B2B/B2C Qualification Locked", description: "Tax rules, reverse charge, registration requirements defined" },
-  { key: "registration_path", label: "Registration Path Exists", description: "Digital tax registration or subsidiary/branch pathway documented" },
-  { key: "reporting_correction", label: "Reporting & Correction Path", description: "Credit note, adjustment invoice, and tax correction workflows configured" },
-] as const;
-
-/** AI usage tiers for plan builder. */
-export const AI_USAGE_TIERS = [
-  { key: "none", label: "No AI", price_usd: 0, description: "No AI features" },
-  { key: "basic", label: "Basic AI", price_usd: 5, description: "AI-assisted reports and basic automation" },
-  { key: "advanced", label: "Advanced AI", price_usd: 15, description: "Full AI: predictions, anomaly detection, smart recommendations" },
+  { key: "country_logic", label: "Country Logic Locked", description: "Currency, rates configured" },
+  { key: "b2b_b2c_qualification", label: "B2B/B2C Qualification Locked", description: "Tax rules, registration defined" },
+  { key: "registration_path", label: "Registration Path Exists", description: "Tax registration pathway documented" },
+  { key: "reporting_correction", label: "Reporting & Correction Path", description: "Credit note, tax correction workflows configured" },
 ] as const;
 
 // ─── AGENT MODEL ──────────────────────────────────────────────────────────────
@@ -282,12 +266,4 @@ export const COMPLIANCE_DOC_TYPES = [
   { value: "DATA_RESIDENCY", label: "Data Residency Requirements" },
   { value: "PAYMENT_PROCESSORS", label: "Payment Processor Requirements" },
   { value: "REGULATORY_UPDATE", label: "Regulatory Update" },
-] as const;
-
-/** Document volume tiers for pricing */
-export const DOCUMENT_VOLUME_TIERS = [
-  { key: "tier1", label: "Starter (0–150 docs/mo)", range: "0-150" },
-  { key: "tier2", label: "Growing (151–500 docs/mo)", range: "151-500" },
-  { key: "tier3", label: "Business (501–2,000 docs/mo)", range: "501-2000" },
-  { key: "tier4", label: "Enterprise (2,000+ docs/mo)", range: "2000+" },
 ] as const;

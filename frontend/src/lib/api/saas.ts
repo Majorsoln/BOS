@@ -1,79 +1,81 @@
 import api from "./client";
 
-/* ── Engines ────────────────────────────────────────────── */
+/* ── Services (Huduma) ─────────────────────────────────────── */
 
-export async function getEngines() {
-  const res = await api.get("/saas/engines");
+export async function getServices() {
+  const res = await api.get("/saas/services");
   return res.data;
 }
 
-export async function registerEngine(data: {
-  engine_key: string;
-  display_name: string;
-  category: "FREE" | "PAID";
-  description?: string;
-}) {
-  const res = await api.post("/saas/engines/register", data);
-  return res.data;
-}
-
-/* ── Combos ─────────────────────────────────────────────── */
-
-export async function getCombos() {
-  const res = await api.get("/saas/combos");
-  return res.data;
-}
-
-export async function defineCombo(data: {
-  name: string;
-  slug: string;
-  description?: string;
-  business_model: "B2B" | "B2C" | "BOTH";
-  paid_engines: string[];
-  max_branches?: number;
-  max_users?: number;
-  max_api_calls_per_month?: number;
-  max_documents_per_month?: number;
-}) {
-  const res = await api.post("/saas/combos/define", data);
-  return res.data;
-}
-
-export async function updateCombo(data: {
-  combo_id: string;
-  name?: string;
-  description?: string;
-  paid_engines?: string[];
-  max_branches?: number;
-  max_users?: number;
-}) {
-  const res = await api.post("/saas/combos/update", data);
-  return res.data;
-}
-
-export async function deactivateCombo(data: { combo_id: string }) {
-  const res = await api.post("/saas/combos/deactivate", data);
-  return res.data;
-}
-
-export async function setComboRate(data: {
-  combo_id: string;
+export async function setServiceRate(data: {
+  service_key: string;
   region_code: string;
   currency: string;
   monthly_amount: number;
 }) {
-  const res = await api.post("/saas/combos/set-rate", data);
+  const res = await api.post("/saas/services/set-rate", data);
   return res.data;
 }
 
-/* ── Pricing ────────────────────────────────────────────── */
-
-export async function getPricing(params: { region_code?: string; business_model?: string }) {
-  const res = await api.get("/saas/pricing", { params });
+export async function toggleService(data: {
+  service_key: string;
+  active: boolean;
+}) {
+  const res = await api.post("/saas/services/toggle", data);
   return res.data;
 }
 
-/* ── Trial Policy ───────────────────────────────────────── */
+/* ── Capacity Tiers ────────────────────────────────────────── */
+
+export async function getCapacityPricing() {
+  const res = await api.get("/saas/capacity");
+  return res.data;
+}
+
+export async function setCapacityTierRate(data: {
+  dimension: string;
+  tier_key: string;
+  region_code: string;
+  currency: string;
+  monthly_amount: number;
+}) {
+  const res = await api.post("/saas/capacity/set-rate", data);
+  return res.data;
+}
+
+/* ── Multi-Service Reduction Rates ─────────────────────────── */
+
+export async function getReductionRates() {
+  const res = await api.get("/saas/reductions");
+  return res.data;
+}
+
+export async function setReductionRate(data: {
+  region_code: string;
+  service_count: number;
+  reduction_pct: number;
+}) {
+  const res = await api.post("/saas/reductions/set", data);
+  return res.data;
+}
+
+/* ── Price Calculator ──────────────────────────────────────── */
+
+export async function calculatePrice(data: {
+  region_code: string;
+  services: string[];
+  capacity: {
+    branches: string;
+    documents: string;
+    users: string;
+    ai_tokens: string;
+  };
+}) {
+  const res = await api.post("/saas/calculate-price", data);
+  return res.data;
+}
+
+/* ── Trial Policy ──────────────────────────────────────────── */
 
 export async function getTrialPolicy() {
   const res = await api.get("/saas/trial-policy");
@@ -84,26 +86,15 @@ export async function setTrialPolicy(data: {
   default_trial_days: number;
   max_trial_days: number;
   grace_period_days: number;
-  rate_notice_days: number;
 }) {
   const res = await api.post("/saas/trial-policy/set", data);
   return res.data;
 }
 
-/* ── Trials ─────────────────────────────────────────────── */
+/* ── Trials ────────────────────────────────────────────────── */
 
-export async function getTrialAgreement(businessId: string) {
-  const res = await api.get("/saas/trials/agreement", { params: { business_id: businessId } });
-  return res.data;
-}
-
-export async function createTrial(data: {
-  business_id: string;
-  combo_id: string;
-  region_code: string;
-  referral_code?: string;
-}) {
-  const res = await api.post("/saas/trials/create", data);
+export async function getTrials(params?: { status?: string }) {
+  const res = await api.get("/saas/trials", { params });
   return res.data;
 }
 
@@ -121,7 +112,7 @@ export async function convertTrial(data: { business_id: string }) {
   return res.data;
 }
 
-/* ── Rate Governance ────────────────────────────────────── */
+/* ── Rate Governance ───────────────────────────────────────── */
 
 export async function getEffectiveRate(businessId: string) {
   const res = await api.get("/saas/rates/effective", { params: { business_id: businessId } });
@@ -129,7 +120,7 @@ export async function getEffectiveRate(businessId: string) {
 }
 
 export async function publishRateChange(data: {
-  combo_id: string;
+  service_key: string;
   region_code: string;
   old_amount: number;
   new_amount: number;
@@ -140,7 +131,7 @@ export async function publishRateChange(data: {
   return res.data;
 }
 
-/* ── Promotions ─────────────────────────────────────────── */
+/* ── Promotions ────────────────────────────────────────────── */
 
 export async function getPromos() {
   const res = await api.get("/saas/promos");
@@ -155,17 +146,11 @@ export async function createPromo(data: {
   valid_until: string;
   max_redemptions?: number;
   region_codes?: string[];
-  combo_ids?: string[];
   discount_pct?: number;
   discount_months?: number;
   credit_amount?: number;
   credit_currency?: string;
-  credit_expires_months?: number;
   extra_trial_days?: number;
-  bonus_engine?: string;
-  bonus_months?: number;
-  bundle_engines?: string[];
-  bundle_discount_pct?: number;
 }) {
   const res = await api.post("/saas/promos/create", data);
   return res.data;
@@ -174,32 +159,20 @@ export async function createPromo(data: {
 export async function redeemPromo(data: {
   promo_code: string;
   business_id: string;
-  region_code?: string;
-  combo_id?: string;
 }) {
   const res = await api.post("/saas/promos/redeem", data);
   return res.data;
 }
 
-/* ── Subscriptions ──────────────────────────────────────── */
+/* ── Subscriptions ─────────────────────────────────────────── */
 
-export async function getSubscription(businessId: string) {
-  const res = await api.get("/saas/subscriptions", { params: { business_id: businessId } });
-  return res.data;
-}
-
-export async function startTrial(data: {
-  business_id: string;
-  combo_id: string;
-  trial_agreement_id?: string;
-}) {
-  const res = await api.post("/saas/subscriptions/start-trial", data);
+export async function getSubscriptions(params?: { status?: string }) {
+  const res = await api.get("/saas/subscriptions", { params });
   return res.data;
 }
 
 export async function activateSubscription(data: {
   business_id: string;
-  plan_id?: string;
 }) {
   const res = await api.post("/saas/subscriptions/activate", data);
   return res.data;
@@ -210,13 +183,5 @@ export async function cancelSubscription(data: {
   reason?: string;
 }) {
   const res = await api.post("/saas/subscriptions/cancel", data);
-  return res.data;
-}
-
-export async function changeCombo(data: {
-  business_id: string;
-  new_combo_id: string;
-}) {
-  const res = await api.post("/saas/subscriptions/change-combo", data);
   return res.data;
 }
