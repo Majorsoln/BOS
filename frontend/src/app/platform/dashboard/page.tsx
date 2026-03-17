@@ -5,29 +5,32 @@ import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent } from "@/components/ui";
-import { getCombos, getPromos, getResellers } from "@/lib/api/saas";
+import { getCombos, getPromos } from "@/lib/api/saas";
+import { getAgents } from "@/lib/api/agents";
 import {
   Users,
   Clock,
-  Handshake,
+  UserCheck,
   Tag,
   Layers,
-  Gift,
   TrendingUp,
   Plus,
   UserPlus,
   ArrowRight,
+  DollarSign,
 } from "lucide-react";
 
 export default function PlatformDashboardPage() {
   const combos = useQuery({ queryKey: ["saas", "combos"], queryFn: getCombos });
   const promos = useQuery({ queryKey: ["saas", "promos"], queryFn: getPromos });
-  const resellers = useQuery({ queryKey: ["saas", "resellers"], queryFn: getResellers });
+  const agents = useQuery({ queryKey: ["saas", "agents"], queryFn: () => getAgents() });
 
   const activeCombos = combos.data?.data?.filter((c: { status: string }) => c.status === "ACTIVE")?.length ?? "—";
   const activePromos = promos.data?.data?.filter((p: { status: string }) => p.status === "ACTIVE")?.length ?? "—";
-  const activeResellers = resellers.data?.data?.filter((r: { status: string }) => r.status === "ACTIVE")?.length ?? "—";
-  const pendingReferrals = "—"; // Needs list endpoint
+  const allAgents = agents.data?.data ?? [];
+  const activeAgents = allAgents.filter((a: { status: string }) => a.status === "ACTIVE" || a.status === "PROBATION")?.length ?? "—";
+  const globalAgents = allAgents.filter((a: { agent_type: string; status: string }) => a.agent_type === "GLOBAL" && (a.status === "ACTIVE" || a.status === "PROBATION"))?.length ?? "—";
+  const regionalAgents = allAgents.filter((a: { agent_type: string; status: string }) => a.agent_type === "REGIONAL" && (a.status === "ACTIVE" || a.status === "PROBATION"))?.length ?? "—";
 
   return (
     <div>
@@ -51,9 +54,10 @@ export default function PlatformDashboardPage() {
           description="Needs summary endpoint"
         />
         <StatCard
-          title="Active Resellers"
-          value={activeResellers}
-          icon={Handshake}
+          title="Active Agents"
+          value={activeAgents}
+          icon={UserCheck}
+          description={`${globalAgents} global, ${regionalAgents} regional`}
         />
         <StatCard
           title="Active Promotions"
@@ -70,9 +74,10 @@ export default function PlatformDashboardPage() {
           icon={Layers}
         />
         <StatCard
-          title="Pending Referrals"
-          value={pendingReferrals}
-          icon={Gift}
+          title="Pending Payouts"
+          value="—"
+          icon={DollarSign}
+          description="Agent commission payouts"
         />
         <StatCard
           title="Monthly Revenue"
@@ -92,10 +97,10 @@ export default function PlatformDashboardPage() {
       <h2 className="mt-8 mb-4 text-lg font-semibold">Quick Actions</h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <QuickActionCard
-          title="Define New Combo"
-          description="Create a new engine combo package for tenants"
-          href="/platform/combos"
-          icon={Plus}
+          title="Register New Agent"
+          description="Register a new Global Agent for tenant acquisition"
+          href="/platform/agents"
+          icon={UserPlus}
         />
         <QuickActionCard
           title="Create Promotion"
@@ -104,10 +109,10 @@ export default function PlatformDashboardPage() {
           icon={Tag}
         />
         <QuickActionCard
-          title="Register Reseller"
-          description="Register a new BOS reseller agent"
-          href="/platform/resellers"
-          icon={UserPlus}
+          title="Define New Combo"
+          description="Create a new engine combo package for tenants"
+          href="/platform/combos"
+          icon={Plus}
         />
       </div>
     </div>

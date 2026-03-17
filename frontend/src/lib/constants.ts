@@ -233,3 +233,61 @@ export const AI_USAGE_TIERS = [
   { key: "basic", label: "Basic AI", price_usd: 5, description: "AI-assisted reports and basic automation" },
   { key: "advanced", label: "Advanced AI", price_usd: 15, description: "Full AI: predictions, anomaly detection, smart recommendations" },
 ] as const;
+
+// ─── AGENT MODEL ──────────────────────────────────────────────────────────────
+
+/** Agent types */
+export const AGENT_TYPES = [
+  { value: "GLOBAL", label: "Global Agent", description: "Remote agent, no office required. Can acquire tenants worldwide." },
+  { value: "REGIONAL", label: "Regional Agent", description: "Office required. Handles regional compliance. Gets override on territory tenants." },
+] as const;
+
+/** Agent statuses */
+export const AGENT_STATUSES = [
+  { value: "PROBATION", label: "Probation", color: "warning" },
+  { value: "ACTIVE", label: "Active", color: "success" },
+  { value: "SUSPENDED", label: "Suspended", color: "outline" },
+  { value: "TERMINATED", label: "Terminated", color: "destructive" },
+] as const;
+
+/** Default commission ranges by tenant volume */
+export const DEFAULT_COMMISSION_RANGES = [
+  { min_tenants: 1, max_tenants: 20, rate_pct: 20 },
+  { min_tenants: 21, max_tenants: 50, rate_pct: 25 },
+  { min_tenants: 51, max_tenants: 100, rate_pct: 28 },
+  { min_tenants: 101, max_tenants: 999999, rate_pct: 30 },
+] as const;
+
+/** Support ticket categories (L1 — agent handles) */
+export const SUPPORT_CATEGORIES = [
+  { value: "ONBOARDING", label: "Onboarding" },
+  { value: "TRAINING", label: "Training" },
+  { value: "BILLING", label: "Billing" },
+  { value: "USAGE", label: "General Usage" },
+  { value: "TECHNICAL", label: "Technical Issue" },
+] as const;
+
+/** Support ticket priorities */
+export const SUPPORT_PRIORITIES = [
+  { value: "LOW", label: "Low" },
+  { value: "MEDIUM", label: "Medium" },
+  { value: "HIGH", label: "High" },
+  { value: "URGENT", label: "Urgent" },
+] as const;
+
+/** Compliance document types (Regional agents) */
+export const COMPLIANCE_DOC_TYPES = [
+  { value: "TAX_RULES", label: "Tax Rules Summary" },
+  { value: "BUSINESS_REGULATIONS", label: "Business Regulations" },
+  { value: "DATA_RESIDENCY", label: "Data Residency Requirements" },
+  { value: "PAYMENT_PROCESSORS", label: "Payment Processor Requirements" },
+  { value: "REGULATORY_UPDATE", label: "Regulatory Update" },
+] as const;
+
+/** Document volume tiers for pricing */
+export const DOCUMENT_VOLUME_TIERS = [
+  { key: "tier1", label: "Starter (0–150 docs/mo)", range: "0-150" },
+  { key: "tier2", label: "Growing (151–500 docs/mo)", range: "151-500" },
+  { key: "tier3", label: "Business (501–2,000 docs/mo)", range: "501-2000" },
+  { key: "tier4", label: "Enterprise (2,000+ docs/mo)", range: "2000+" },
+] as const;

@@ -6,17 +6,16 @@ import { cn } from "@/lib/utils";
 import { useUIStore } from "@/stores/ui-store";
 import {
   LayoutDashboard,
-  Cog,
-  Layers,
-  CreditCard,
-  ClipboardList,
-  Clock,
-  Tag,
+  UserPlus,
   Users,
+  DollarSign,
+  Tag,
+  LifeBuoy,
+  FileCheck,
+  GraduationCap,
+  FileText,
+  BarChart3,
   ArrowLeft,
-  Globe,
-  Scale,
-  UserCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -24,6 +23,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
+  regionalOnly?: boolean;
 }
 
 interface NavGroup {
@@ -31,46 +31,45 @@ interface NavGroup {
   items: NavItem[];
 }
 
-const PLATFORM_NAV: NavGroup[] = [
+const AGENT_NAV: NavGroup[] = [
   {
     title: "Overview",
     items: [
-      { label: "Dashboard", href: "/platform/dashboard", icon: LayoutDashboard },
-    ],
-  },
-  {
-    title: "Engine Catalog",
-    items: [
-      { label: "Engines", href: "/platform/engines", icon: Cog },
-      { label: "Combos", href: "/platform/combos", icon: Layers },
-      { label: "Plan Builder", href: "/platform/pricing", icon: CreditCard },
-    ],
-  },
-  {
-    title: "Billing & Tax",
-    items: [
-      { label: "Billing & Tax Governance", href: "/platform/rates", icon: Scale },
-      { label: "Trial Policy", href: "/platform/trial-policy", icon: ClipboardList },
-      { label: "Active Trials", href: "/platform/trials", icon: Clock },
-      { label: "Expansion Gates", href: "/platform/expansion-gates", icon: Globe },
-    ],
-  },
-  {
-    title: "Agents",
-    items: [
-      { label: "Agent Management", href: "/platform/agents", icon: UserCheck },
-      { label: "Promotions", href: "/platform/promotions", icon: Tag },
+      { label: "Dashboard", href: "/agent/dashboard", icon: LayoutDashboard },
     ],
   },
   {
     title: "Tenants",
     items: [
-      { label: "Subscriptions", href: "/platform/subscriptions", icon: Users },
+      { label: "Onboard Tenant", href: "/agent/onboard", icon: UserPlus },
+      { label: "My Tenants", href: "/agent/tenants", icon: Users },
+    ],
+  },
+  {
+    title: "Earnings",
+    items: [
+      { label: "Commission History", href: "/agent/commissions", icon: DollarSign },
+      { label: "My Promotions", href: "/agent/promotions", icon: Tag },
+    ],
+  },
+  {
+    title: "Operations",
+    items: [
+      { label: "Support Tickets", href: "/agent/support", icon: LifeBuoy },
+      { label: "Compliance", href: "/agent/compliance", icon: FileCheck, regionalOnly: true },
+      { label: "Training", href: "/agent/training", icon: GraduationCap },
+    ],
+  },
+  {
+    title: "Account",
+    items: [
+      { label: "My Agreement", href: "/agent/agreement", icon: FileText },
+      { label: "Market Intelligence", href: "/agent/market", icon: BarChart3 },
     ],
   },
 ];
 
-export function PlatformSidebar() {
+export function AgentSidebar() {
   const pathname = usePathname();
   const { sidebarOpen } = useUIStore();
 
@@ -78,20 +77,20 @@ export function PlatformSidebar() {
 
   return (
     <aside className="flex h-full w-60 flex-col border-r border-bos-silver/30 bg-white dark:border-bos-silver/20 dark:bg-neutral-950">
-      {/* Platform Logo */}
+      {/* Agent Logo */}
       <div className="flex h-14 items-center gap-2 border-b border-bos-silver/30 px-4 dark:border-bos-silver/20">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-bos-purple text-sm font-bold text-white">
           B
         </div>
         <div className="flex flex-col">
           <span className="text-sm font-bold leading-tight tracking-tight">BOS</span>
-          <span className="text-[10px] font-medium uppercase tracking-widest text-bos-gold">Platform</span>
+          <span className="text-[10px] font-medium uppercase tracking-widest text-bos-purple">Agent Portal</span>
         </div>
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
-        {PLATFORM_NAV.map((group) => (
+        {AGENT_NAV.map((group) => (
           <div key={group.title} className="mb-4">
             <div className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider text-bos-silver-dark">
               {group.title}
@@ -119,7 +118,7 @@ export function PlatformSidebar() {
         ))}
       </nav>
 
-      {/* Back to Tenant Admin */}
+      {/* Back Link */}
       <div className="border-t border-bos-silver/30 p-3 dark:border-bos-silver/20">
         <Link
           href="/dashboard"
