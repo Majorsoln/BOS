@@ -60,9 +60,9 @@ def _base_payload(cmd) -> dict:
         "business_id": cmd.business_id,
         "branch_id": cmd.branch_id,
         "actor_id": cmd.actor_id,
-        "actor_type": cmd.actor_type,
-        "correlation_id": cmd.correlation_id,
-        "command_id": cmd.command_id,
+        "actor_type": getattr(cmd, "actor_type", "SYSTEM"),
+        "correlation_id": getattr(cmd, "correlation_id", ""),
+        "command_id": getattr(cmd, "command_id", ""),
     }
 
 

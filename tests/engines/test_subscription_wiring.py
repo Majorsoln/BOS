@@ -201,7 +201,7 @@ class TestCashBranchFiltering:
                 "business_id": str(BIZ),
                 "branch_id": str(BRANCH_A),  # correct branch
                 "sale_id": "sale-001",
-                "net_amount": 5000,
+                "total_amount": 5000,
                 "currency": "KES",
                 "payment_method": "CASH",
                 "correlation_id": str(uuid.uuid4()),
