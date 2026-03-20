@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "core.identity_store.apps.CoreIdentityStoreConfig",
     "core.permissions_store.apps.CorePermissionsStoreConfig",
     "core.bootstrap",
+    "core.saas.apps.CoreSaaSConfig",
 ]
 
 # ── Middleware ────────────────────────────────────────────────

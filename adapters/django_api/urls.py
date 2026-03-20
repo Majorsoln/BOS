@@ -105,4 +105,8 @@ urlpatterns = [
     path("saas/subscriptions/activate", views.saas_activate_sub_view),
     path("saas/subscriptions/cancel", views.saas_cancel_sub_view),
     path("saas/subscriptions/change-combo", views.saas_change_combo_view),
+    # SaaS — Tenant Plan Builder (self-service)
+    path("saas/tenant/available-plans", views.saas_tenant_available_plans_view),
+    path("saas/tenant/my-plan", views.saas_tenant_my_plan_view),
+    path("saas/tenant/select-plan", views.saas_tenant_select_plan_view),
 ]

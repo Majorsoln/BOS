@@ -1174,7 +1174,7 @@ def migration_mappings_view(request: HttpRequest) -> JsonResponse:
 # ---------------------------------------------------------------------------
 
 def _get_saas_services():
-    """Lazy-load SaaS service singletons."""
+    """Lazy-load SaaS service singletons with DB-backed persistence."""
     if not hasattr(_get_saas_services, "_loaded"):
         from core.saas.plans import PlanProjection, PlanManager
         from core.saas.rate_governance import RateGovernanceProjection, RateGovernanceService
@@ -1190,6 +1190,18 @@ def _get_saas_services():
         reseller_proj = ResellerProjection()
         subscription_proj = SubscriptionProjection()
 
+        # Load from DB into in-memory projections
+        try:
+            from core.saas.persistence import SaaSPersistenceStore
+            SaaSPersistenceStore.load_plan_projection(plan_proj)
+            SaaSPersistenceStore.load_rate_governance_projection(rate_proj)
+            SaaSPersistenceStore.load_subscription_projection(subscription_proj)
+            SaaSPersistenceStore.load_promotion_projection(promo_proj)
+            SaaSPersistenceStore.load_referral_projection(referral_proj)
+            SaaSPersistenceStore.load_reseller_projection(reseller_proj)
+        except Exception:
+            pass  # DB not ready yet (migrations pending); start with empty projections
+
         _get_saas_services._plan_manager = PlanManager(plan_proj)
         _get_saas_services._rate_service = RateGovernanceService(rate_proj)
         _get_saas_services._promo_service = PromotionService(promo_proj)
@@ -1204,6 +1216,15 @@ def _get_saas_services():
         _get_saas_services._sub_proj = subscription_proj
         _get_saas_services._loaded = True
     return _get_saas_services
+
+
+def _persist_saas(fn_name, **kwargs):
+    """Persist SaaS state change to DB. Silently ignores if DB not ready."""
+    try:
+        from core.saas.persistence import SaaSPersistenceStore
+        getattr(SaaSPersistenceStore, fn_name)(**kwargs)
+    except Exception:
+        pass
 
 
 def _saas_rejection_response(result: dict) -> JsonResponse:
@@ -1251,6 +1272,9 @@ def saas_register_engine_view(request: HttpRequest) -> JsonResponse:
     rej = _saas_rejection_response(result)
     if rej:
         return rej
+    _persist_saas("save_engine", engine_key=req.engine_key,
+                  display_name=req.display_name, category=req.category,
+                  description=req.description)
     return JsonResponse({"status": "ok", "engine_key": result["engine_key"]})
 
 
@@ -1307,6 +1331,14 @@ def saas_define_combo_view(request: HttpRequest) -> JsonResponse:
     rej = _saas_rejection_response(result)
     if rej:
         return rej
+    _persist_saas("save_combo", combo_id=result["combo_id"],
+                  name=req.name, slug=req.slug, description=req.description,
+                  business_model=req.business_model,
+                  paid_engines=list(req.paid_engines),
+                  max_branches=req.max_branches, max_users=req.max_users,
+                  max_api_calls_per_month=req.max_api_calls_per_month,
+                  max_documents_per_month=req.max_documents_per_month,
+                  sort_order=req.sort_order)
     return JsonResponse({
         "status": "ok",
         "combo_id": str(result["combo_id"]),
@@ -1342,6 +1374,19 @@ def saas_update_combo_view(request: HttpRequest) -> JsonResponse:
     rejection = svcs._plan_manager.update_combo(req)
     if rejection is not None:
         return _json_error(rejection.code, rejection.message, status=400)
+    # Persist updated combo state
+    combo = svcs._plan_proj.get_combo(req.combo_id)
+    if combo:
+        _persist_saas("save_combo", combo_id=combo.combo_id,
+                      name=combo.name, slug=combo.slug,
+                      description=combo.description,
+                      business_model=combo.business_model.value,
+                      paid_engines=sorted(combo.paid_engines),
+                      max_branches=combo.quota.max_branches,
+                      max_users=combo.quota.max_users,
+                      max_api_calls_per_month=combo.quota.max_api_calls_per_month,
+                      max_documents_per_month=combo.quota.max_documents_per_month,
+                      sort_order=combo.sort_order, status=combo.status.value)
     return JsonResponse({"status": "ok", "combo_id": str(body["combo_id"])})
 
 
@@ -1366,6 +1411,7 @@ def saas_deactivate_combo_view(request: HttpRequest) -> JsonResponse:
     rejection = svcs._plan_manager.deactivate_combo(req)
     if rejection is not None:
         return _json_error(rejection.code, rejection.message, status=400)
+    _persist_saas("deactivate_combo", combo_id=req.combo_id)
     return JsonResponse({"status": "ok"})
 
 
@@ -1428,6 +1474,11 @@ def saas_set_combo_rate_view(request: HttpRequest) -> JsonResponse:
     rej = _saas_rejection_response(result)
     if rej:
         return rej
+    rate = svcs._plan_proj.get_rate(req.combo_id, req.region_code)
+    _persist_saas("save_combo_rate", combo_id=req.combo_id,
+                  region_code=req.region_code, currency=req.currency,
+                  monthly_amount=req.monthly_amount,
+                  rate_version=rate.rate_version if rate else 1)
     return JsonResponse({"status": "ok"})
 
 
@@ -1473,6 +1524,12 @@ def saas_set_trial_policy_view(request: HttpRequest) -> JsonResponse:
 
     svcs = _get_saas_services()
     svcs._rate_service.set_trial_policy(req)
+    _persist_saas("save_trial_policy",
+                  default_trial_days=req.default_trial_days,
+                  max_trial_days=req.max_trial_days,
+                  grace_period_days=req.grace_period_days,
+                  rate_notice_days=req.rate_notice_days,
+                  version=req.version)
     return JsonResponse({"status": "ok"})
 
 
@@ -1530,6 +1587,19 @@ def saas_create_trial_view(request: HttpRequest) -> JsonResponse:
     rej = _saas_rejection_response(result)
     if rej:
         return rej
+    _persist_saas("save_trial_agreement",
+                  agreement_id=result["agreement_id"],
+                  business_id=req.business_id,
+                  combo_id=req.combo_id,
+                  region_code=req.region_code,
+                  currency=result["currency"],
+                  monthly_amount=result["monthly_amount"],
+                  rate_version=req.rate_version,
+                  trial_days=result["trial_days"],
+                  bonus_days=req.referral_bonus_days,
+                  total_trial_days=result["trial_days"],
+                  trial_ends_at=result.get("trial_ends_at"),
+                  billing_starts_at=result.get("billing_starts_at"))
     return JsonResponse({
         "status": "ok",
         "agreement_id": str(result["agreement_id"]),
@@ -1725,6 +1795,15 @@ def saas_create_promo_view(request: HttpRequest) -> JsonResponse:
     rej = _saas_rejection_response(result)
     if rej:
         return rej
+    _persist_saas("save_promotion", promo_id=result["promo_id"],
+                  promo_code=req.promo_code, promo_type=req.promo_type,
+                  description=req.description,
+                  discount_pct=req.discount_pct if req.discount_pct else None,
+                  credit_amount=req.credit_amount if req.credit_amount else None,
+                  extra_trial_days=req.extra_trial_days or None,
+                  bonus_engine=req.bonus_engine,
+                  max_redemptions=req.max_redemptions,
+                  valid_from=req.valid_from, valid_until=req.valid_until)
     return JsonResponse({
         "status": "ok",
         "promo_id": str(result["promo_id"]),
@@ -1756,6 +1835,11 @@ def saas_redeem_promo_view(request: HttpRequest) -> JsonResponse:
     rej = _saas_rejection_response(result)
     if rej:
         return rej
+    _persist_saas("save_promo_redemption",
+                  promo_id=result.get("promo_id"),
+                  business_id=req.business_id,
+                  redeemed_at=req.issued_at,
+                  details=result.get("details", {}))
     return JsonResponse({
         "status": "ok",
         "redemption_id": str(result["redemption_id"]),
@@ -1816,6 +1900,12 @@ def saas_set_referral_policy_view(request: HttpRequest) -> JsonResponse:
 
     svcs = _get_saas_services()
     svcs._referral_service.set_policy(req)
+    _persist_saas("save_referral_policy",
+                  referrer_reward_days=req.referrer_reward_days,
+                  referee_bonus_days=req.referee_bonus_days,
+                  max_referrals_per_year=req.max_referrals_per_year,
+                  qualification_days=req.qualification_days,
+                  qualification_transactions=req.qualification_min_transactions)
     return JsonResponse({"status": "ok"})
 
 
@@ -1838,6 +1928,8 @@ def saas_generate_referral_code_view(request: HttpRequest) -> JsonResponse:
 
     svcs = _get_saas_services()
     result = svcs._referral_service.generate_code(req)
+    _persist_saas("save_referral_code",
+                  business_id=req.business_id, code=result["code"])
     return JsonResponse({"status": "ok", "referral_code": result["code"]})
 
 
@@ -1864,6 +1956,12 @@ def saas_submit_referral_view(request: HttpRequest) -> JsonResponse:
     rej = _saas_rejection_response(result)
     if rej:
         return rej
+    _persist_saas("save_referral",
+                  referral_id=result["referral_id"],
+                  referrer_business_id=result.get("referrer_business_id"),
+                  referee_business_id=req.referee_business_id,
+                  status="PENDING",
+                  submitted_at=req.issued_at)
     return JsonResponse({
         "status": "ok",
         "referral_id": str(result["referral_id"]),
@@ -1930,6 +2028,15 @@ def saas_register_reseller_view(request: HttpRequest) -> JsonResponse:
     rej = _saas_rejection_response(result)
     if rej:
         return rej
+    _persist_saas("save_reseller",
+                  reseller_id=result["reseller_id"],
+                  company_name=req.company_name,
+                  contact_name=req.contact_person,
+                  contact_phone=req.phone,
+                  contact_email=req.email,
+                  tier=result["tier"],
+                  commission_rate=result["commission_rate"],
+                  payout_method=req.payout_method)
     return JsonResponse({
         "status": "ok",
         "reseller_id": str(result["reseller_id"]),
@@ -1960,6 +2067,10 @@ def saas_link_tenant_view(request: HttpRequest) -> JsonResponse:
     rej = _saas_rejection_response(result)
     if rej:
         return rej
+    _persist_saas("save_reseller_tenant_link",
+                  reseller_id=req.reseller_id,
+                  business_id=req.business_id,
+                  linked_at=req.issued_at)
     return JsonResponse({
         "status": "ok",
         "new_tier": result["new_tier"],
@@ -1990,6 +2101,14 @@ def saas_accrue_commission_view(request: HttpRequest) -> JsonResponse:
 
     svcs = _get_saas_services()
     result = svcs._reseller_service.accrue_commission(req)
+    if result.get("accrued"):
+        _persist_saas("save_commission",
+                      reseller_id=req.reseller_id,
+                      business_id=req.business_id,
+                      amount=result.get("commission", "0"),
+                      currency=req.currency,
+                      period=req.period,
+                      entry_type="ACCRUAL")
     return JsonResponse({
         "status": "ok",
         "accrued": result["accrued"],
@@ -2022,6 +2141,13 @@ def saas_request_payout_view(request: HttpRequest) -> JsonResponse:
     rej = _saas_rejection_response(result)
     if rej:
         return rej
+    _persist_saas("save_payout",
+                  payout_id=result["payout_id"],
+                  reseller_id=req.reseller_id,
+                  amount=req.amount,
+                  currency=req.currency,
+                  status="PENDING",
+                  requested_at=req.issued_at)
     return JsonResponse({
         "status": "ok",
         "payout_id": str(result["payout_id"]),
@@ -2081,6 +2207,14 @@ def saas_start_trial_sub_view(request: HttpRequest) -> JsonResponse:
     rej = _saas_rejection_response(result)
     if rej:
         return rej
+    _persist_saas("save_subscription",
+                  subscription_id=result["subscription_id"],
+                  business_id=req.business_id,
+                  combo_id=req.combo_id,
+                  trial_agreement_id=req.trial_agreement_id,
+                  status="TRIAL",
+                  billing_starts_at=req.billing_starts_at,
+                  activated_at=req.issued_at)
     return JsonResponse({
         "status": "ok",
         "subscription_id": str(result["subscription_id"]),
@@ -2112,6 +2246,16 @@ def saas_activate_sub_view(request: HttpRequest) -> JsonResponse:
     rej = _saas_rejection_response(result)
     if rej:
         return rej
+    sub = svcs._sub_proj.get_subscription(req.business_id)
+    if sub:
+        _persist_saas("save_subscription",
+                      subscription_id=sub.subscription_id,
+                      business_id=sub.business_id,
+                      combo_id=sub.combo_id,
+                      trial_agreement_id=sub.trial_agreement_id,
+                      status=sub.status.value,
+                      billing_starts_at=sub.billing_starts_at,
+                      activated_at=sub.activated_at)
     return JsonResponse({
         "status": "ok",
         "subscription_id": str(result["subscription_id"]),
@@ -2139,6 +2283,17 @@ def saas_cancel_sub_view(request: HttpRequest) -> JsonResponse:
     rejection = svcs._sub_manager.cancel(req)
     if rejection is not None:
         return _json_error(rejection.code, rejection.message, status=400)
+    sub = svcs._sub_proj.get_subscription(req.business_id)
+    if sub:
+        _persist_saas("save_subscription",
+                      subscription_id=sub.subscription_id,
+                      business_id=sub.business_id,
+                      combo_id=sub.combo_id,
+                      trial_agreement_id=sub.trial_agreement_id,
+                      status=sub.status.value,
+                      billing_starts_at=sub.billing_starts_at,
+                      activated_at=sub.activated_at,
+                      cancelled_at=sub.cancelled_at)
     return JsonResponse({"status": "ok"})
 
 
@@ -2191,4 +2346,281 @@ def saas_change_combo_view(request: HttpRequest) -> JsonResponse:
     rejection = svcs._sub_manager.change_combo(req)
     if rejection is not None:
         return _json_error(rejection.code, rejection.message, status=400)
+    sub = svcs._sub_proj.get_subscription(req.business_id)
+    if sub:
+        _persist_saas("save_subscription",
+                      subscription_id=sub.subscription_id,
+                      business_id=sub.business_id,
+                      combo_id=sub.combo_id,
+                      trial_agreement_id=sub.trial_agreement_id,
+                      status=sub.status.value,
+                      billing_starts_at=sub.billing_starts_at,
+                      activated_at=sub.activated_at)
     return JsonResponse({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Tenant Plan Builder — self-service plan selection for tenants
+# ---------------------------------------------------------------------------
+
+@csrf_exempt
+def saas_tenant_available_plans_view(request: HttpRequest) -> JsonResponse:
+    """
+    GET /saas/tenant/available-plans?region_code=KE&business_model=B2C
+    Tenant-facing: browse available combos with pricing for their region.
+    """
+    if request.method != "GET":
+        return _method_not_allowed()
+    region_code = request.GET.get("region_code", "")
+    if not region_code:
+        return _json_error("INVALID_REQUEST", "region_code is required.", status=400)
+    business_model = request.GET.get("business_model")
+
+    svcs = _get_saas_services()
+    catalog = svcs._plan_manager.get_pricing_catalog(
+        region_code=region_code,
+        business_model=business_model,
+    )
+
+    # Get trial policy for display
+    trial_policy = svcs._rate_proj.get_trial_policy()
+    trial_days = trial_policy.default_trial_days if trial_policy else 180
+
+    return JsonResponse({
+        "status": "ok",
+        "region_code": region_code,
+        "trial_days": trial_days,
+        "plans": catalog,
+    })
+
+
+@csrf_exempt
+def saas_tenant_my_plan_view(request: HttpRequest) -> JsonResponse:
+    """
+    GET /saas/tenant/my-plan?business_id=...
+    Tenant-facing: view current subscription, combo details, and trial status.
+    """
+    if request.method != "GET":
+        return _method_not_allowed()
+    try:
+        business_id = _parse_uuid(request.GET.get("business_id", ""), "business_id")
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    sub = svcs._sub_proj.get_subscription(business_id)
+    if sub is None:
+        return JsonResponse({
+            "status": "ok",
+            "has_subscription": False,
+            "subscription": None,
+            "combo": None,
+            "trial": None,
+        })
+
+    # Resolve combo details
+    combo_data = None
+    if sub.combo_id:
+        combo = svcs._plan_proj.get_combo(sub.combo_id)
+        if combo:
+            combo_data = {
+                "combo_id": str(combo.combo_id),
+                "name": combo.name,
+                "slug": combo.slug,
+                "description": combo.description,
+                "business_model": combo.business_model.value,
+                "paid_engines": sorted(combo.paid_engines),
+                "all_engines": sorted(combo.all_engines),
+                "quota": {
+                    "max_branches": combo.quota.max_branches,
+                    "max_users": combo.quota.max_users,
+                    "max_api_calls_per_month": combo.quota.max_api_calls_per_month,
+                    "max_documents_per_month": combo.quota.max_documents_per_month,
+                },
+            }
+
+    # Resolve trial agreement
+    trial_data = None
+    agreement = svcs._rate_proj.get_agreement(business_id)
+    if agreement:
+        trial_data = {
+            "agreement_id": str(agreement.agreement_id),
+            "trial_days": agreement.trial_days,
+            "bonus_days": agreement.bonus_days,
+            "trial_starts_at": agreement.trial_starts_at.isoformat(),
+            "trial_ends_at": agreement.trial_ends_at.isoformat(),
+            "billing_starts_at": agreement.billing_starts_at.isoformat(),
+            "status": agreement.status.value,
+            "rate_snapshot": {
+                "currency": agreement.rate_snapshot.currency,
+                "monthly_amount": str(agreement.rate_snapshot.monthly_amount),
+            },
+        }
+
+    return JsonResponse({
+        "status": "ok",
+        "has_subscription": True,
+        "subscription": {
+            "subscription_id": str(sub.subscription_id),
+            "status": sub.status.value,
+            "activated_at": sub.activated_at.isoformat() if sub.activated_at else None,
+            "billing_starts_at": sub.billing_starts_at.isoformat() if sub.billing_starts_at else None,
+            "renewal_count": sub.renewal_count,
+        },
+        "combo": combo_data,
+        "trial": trial_data,
+    })
+
+
+@csrf_exempt
+def saas_tenant_select_plan_view(request: HttpRequest) -> JsonResponse:
+    """
+    POST /saas/tenant/select-plan
+    Tenant self-service: select a combo → create trial agreement → start subscription.
+
+    Body: {
+        "business_id": "...",
+        "combo_slug": "bos-duka",  (or "combo_id")
+        "region_code": "KE",
+        "referral_code": ""  (optional)
+    }
+    """
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        business_id = _parse_uuid(body["business_id"], "business_id")
+        region_code = body["region_code"]
+        referral_code = body.get("referral_code", "")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+
+    # Resolve combo by slug or ID
+    combo = None
+    if "combo_slug" in body:
+        combo = svcs._plan_proj.get_combo_by_slug(body["combo_slug"])
+    elif "combo_id" in body:
+        combo = svcs._plan_proj.get_combo(_parse_uuid(body["combo_id"], "combo_id"))
+    if combo is None:
+        return _json_error("COMBO_NOT_FOUND", "No active combo found.", status=400)
+
+    # Get rate for region
+    rate = svcs._plan_proj.get_rate(combo.combo_id, region_code)
+    if rate is None:
+        return _json_error("NO_RATE_FOR_REGION",
+                           f"Combo '{combo.name}' has no pricing for region {region_code}.",
+                           status=400)
+
+    # Check if already subscribed
+    existing = svcs._sub_proj.get_subscription(business_id)
+    if existing and existing.status.value in ("TRIAL", "ACTIVE"):
+        return _json_error("SUBSCRIPTION_EXISTS",
+                           "Business already has an active or trial subscription.",
+                           status=400)
+
+    from datetime import datetime, timezone
+    from decimal import Decimal
+    now = datetime.now(tz=timezone.utc)
+
+    # Handle referral bonus days
+    referral_bonus_days = 0
+    if referral_code:
+        try:
+            from core.saas.referrals import SubmitReferralRequest
+            ref_result = svcs._referral_service.submit_referral(SubmitReferralRequest(
+                referral_code=referral_code,
+                referee_business_id=business_id,
+                referee_phone="",
+                actor_id=str(business_id),
+                issued_at=now,
+            ))
+            if "rejected" not in ref_result:
+                referral_bonus_days = ref_result.get("referee_bonus_days", 0)
+                _persist_saas("save_referral",
+                              referral_id=ref_result["referral_id"],
+                              referrer_business_id=ref_result.get("referrer_business_id"),
+                              referee_business_id=business_id,
+                              status="PENDING",
+                              submitted_at=now)
+        except Exception:
+            pass  # referral failure should not block signup
+
+    # Create trial agreement
+    from core.saas.rate_governance import CreateTrialAgreementRequest
+    trial_result = svcs._rate_service.create_trial_agreement(CreateTrialAgreementRequest(
+        business_id=business_id,
+        combo_id=combo.combo_id,
+        region_code=region_code,
+        currency=rate.currency,
+        monthly_amount=rate.monthly_amount,
+        rate_version=rate.rate_version,
+        actor_id=str(business_id),
+        issued_at=now,
+        referral_bonus_days=referral_bonus_days,
+    ))
+    if "rejected" in trial_result:
+        rej = trial_result["rejected"]
+        return _json_error(rej.code, rej.message, status=400)
+
+    agreement_id = trial_result["agreement_id"]
+    _persist_saas("save_trial_agreement",
+                  agreement_id=agreement_id,
+                  business_id=business_id,
+                  combo_id=combo.combo_id,
+                  region_code=region_code,
+                  currency=trial_result["currency"],
+                  monthly_amount=trial_result["monthly_amount"],
+                  rate_version=rate.rate_version,
+                  trial_days=trial_result["trial_days"],
+                  bonus_days=referral_bonus_days,
+                  total_trial_days=trial_result["trial_days"],
+                  trial_ends_at=trial_result.get("trial_ends_at"),
+                  billing_starts_at=trial_result.get("billing_starts_at"))
+
+    # Start trial subscription
+    from core.saas.subscriptions import StartTrialRequest
+    sub_result = svcs._sub_manager.start_trial(StartTrialRequest(
+        business_id=business_id,
+        combo_id=combo.combo_id,
+        trial_agreement_id=agreement_id,
+        billing_starts_at=trial_result.get("billing_starts_at", now),
+        actor_id=str(business_id),
+        issued_at=now,
+    ))
+    if "rejected" in sub_result:
+        rej = sub_result["rejected"]
+        return _json_error(rej.code, rej.message, status=400)
+
+    _persist_saas("save_subscription",
+                  subscription_id=sub_result["subscription_id"],
+                  business_id=business_id,
+                  combo_id=combo.combo_id,
+                  trial_agreement_id=agreement_id,
+                  status="TRIAL",
+                  billing_starts_at=trial_result.get("billing_starts_at"),
+                  activated_at=now)
+
+    return JsonResponse({
+        "status": "ok",
+        "subscription_id": str(sub_result["subscription_id"]),
+        "subscription_status": "TRIAL",
+        "combo": {
+            "combo_id": str(combo.combo_id),
+            "name": combo.name,
+            "slug": combo.slug,
+            "all_engines": sorted(combo.all_engines),
+        },
+        "trial": {
+            "agreement_id": str(agreement_id),
+            "trial_days": trial_result["trial_days"],
+            "trial_ends_at": trial_result["trial_ends_at"].isoformat() if trial_result.get("trial_ends_at") else None,
+            "billing_starts_at": trial_result["billing_starts_at"].isoformat() if trial_result.get("billing_starts_at") else None,
+        },
+        "pricing": {
+            "currency": rate.currency,
+            "monthly_amount": str(rate.monthly_amount),
+        },
+        "referral_bonus_days": referral_bonus_days,
+    })
