@@ -35,6 +35,114 @@ export async function updateRegion(data: {
   return res.data;
 }
 
+/* ── Region Detail & Lifecycle ────────────────────────────────── */
+
+export async function getRegionDetail(regionCode: string) {
+  const res = await api.get(`/saas/regions/${regionCode}/detail`);
+  return res.data;
+}
+
+export async function launchRegion(data: { region_code: string; notes?: string }) {
+  const res = await api.post("/saas/regions/launch", data);
+  return res.data;
+}
+
+export async function suspendRegion(data: { region_code: string; reason: string }) {
+  const res = await api.post("/saas/regions/suspend", data);
+  return res.data;
+}
+
+export async function reactivateRegion(data: { region_code: string; notes?: string }) {
+  const res = await api.post("/saas/regions/reactivate", data);
+  return res.data;
+}
+
+export async function sunsetRegion(data: { region_code: string; reason: string }) {
+  const res = await api.post("/saas/regions/sunset", data);
+  return res.data;
+}
+
+/* ── Region Payment Channels ─────────────────────────────────── */
+
+export async function getRegionPaymentChannels(regionCode: string) {
+  const res = await api.get(`/saas/regions/${regionCode}/payment-channels`);
+  return res.data;
+}
+
+export async function setRegionPaymentChannel(data: {
+  region_code: string;
+  channel_key: string;
+  display_name: string;
+  provider: string;
+  channel_type: string;
+  is_active?: boolean;
+  config?: Record<string, string>;
+  min_amount?: number;
+  max_amount?: number;
+  settlement_delay_days?: number;
+}) {
+  const res = await api.post("/saas/regions/set-payment-channel", data);
+  return res.data;
+}
+
+export async function removeRegionPaymentChannel(data: {
+  region_code: string;
+  channel_key: string;
+}) {
+  const res = await api.post("/saas/regions/remove-payment-channel", data);
+  return res.data;
+}
+
+/* ── Region Settlement Accounts ──────────────────────────────── */
+
+export async function getRegionSettlementAccounts(regionCode: string) {
+  const res = await api.get(`/saas/regions/${regionCode}/settlement-accounts`);
+  return res.data;
+}
+
+export async function setRegionSettlement(data: {
+  region_code: string;
+  bank_name: string;
+  account_name: string;
+  account_number: string;
+  branch_code?: string;
+  swift_code?: string;
+  currency: string;
+  is_primary?: boolean;
+}) {
+  const res = await api.post("/saas/regions/set-settlement", data);
+  return res.data;
+}
+
+/* ── Region Dashboard ────────────────────────────────────────── */
+
+export async function getRegionDashboard(regionCode: string) {
+  const res = await api.get(`/saas/regions/${regionCode}/dashboard`);
+  return res.data;
+}
+
+/* ── Region Performance & Resellers ──────────────────────────── */
+
+export async function getRegionResellers(regionCode: string) {
+  const res = await api.get(`/saas/regions/${regionCode}/resellers`);
+  return res.data;
+}
+
+export async function getRegionPerformance(regionCode: string) {
+  const res = await api.get(`/saas/regions/${regionCode}/performance`);
+  return res.data;
+}
+
+export async function getRegionSummary(regionCode: string) {
+  const res = await api.get(`/saas/regions/${regionCode}/summary`);
+  return res.data;
+}
+
+export async function getRegionTerritories(regionCode: string) {
+  const res = await api.get(`/saas/regions/${regionCode}/territories`);
+  return res.data;
+}
+
 /* ── Services (Huduma) ─────────────────────────────────────── */
 
 export async function getServices() {

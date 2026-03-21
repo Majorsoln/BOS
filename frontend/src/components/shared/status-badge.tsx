@@ -27,7 +27,10 @@ type StatusType =
   | "SILVER"
   | "GOLD"
   | "STANDARD"
-  | "ELEVATED";
+  | "ELEVATED"
+  | "DRAFT"
+  | "PILOT"
+  | "SUNSET";
 
 const STATUS_CONFIG: Record<StatusType, { variant: "success" | "purple" | "warning" | "destructive" | "secondary" | "gold" | "outline" | "default"; label?: string }> = {
   ACTIVE: { variant: "success" },
@@ -55,6 +58,9 @@ const STATUS_CONFIG: Record<StatusType, { variant: "success" | "purple" | "warni
   GOLD: { variant: "gold" },
   STANDARD: { variant: "outline" },
   ELEVATED: { variant: "warning" },
+  DRAFT: { variant: "secondary" },
+  PILOT: { variant: "purple" },
+  SUNSET: { variant: "destructive" },
 };
 
 export function StatusBadge({ status, label }: { status: string; label?: string }) {
