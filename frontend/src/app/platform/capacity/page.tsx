@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/page-header";
 import { FormDialog } from "@/components/shared/form-dialog";
 import {
-  Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Toast,
+  Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Toast, Badge,
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui";
 import { getCapacityPricing, setCapacityTierRate } from "@/lib/api/saas";
 import { CAPACITY_DIMENSIONS, REGIONS } from "@/lib/constants";
@@ -17,6 +18,13 @@ const DIMENSION_ICONS: Record<string, LucideIcon> = {
   DOCUMENTS: FileText,
   USERS: Users,
   AI_TOKENS: Cpu,
+};
+
+const DIMENSION_COLORS: Record<string, string> = {
+  BRANCHES: "bg-blue-100 text-blue-600 dark:bg-blue-900/30",
+  DOCUMENTS: "bg-amber-100 text-amber-600 dark:bg-amber-900/30",
+  USERS: "bg-green-100 text-green-600 dark:bg-green-900/30",
+  AI_TOKENS: "bg-purple-100 text-purple-600 dark:bg-purple-900/30",
 };
 
 type TierRateMap = Record<string, Record<string, Record<string, { monthly_amount: number; currency: string }>>>;
@@ -47,8 +55,14 @@ export default function CapacityPage() {
     });
   }
 
-  // { BRANCHES: { BRANCH_1: { KE: { monthly_amount, currency } } } }
   const tierRates: TierRateMap = pricing.data?.data ?? {};
+
+  // Count configured rates
+  const totalTiers = CAPACITY_DIMENSIONS.reduce((s, d) => s + d.tiers.length, 0);
+  const configuredRates = Object.values(tierRates).reduce(
+    (s, dim) => s + Object.values(dim).reduce((s2, tier) => s2 + Object.keys(tier).length, 0),
+    0,
+  );
 
   return (
     <div>
@@ -57,6 +71,44 @@ export default function CapacityPage() {
         description="Define capacity tier pricing per region. Tiers are global — only prices differ by region."
       />
 
+      {/* Summary Cards */}
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Card>
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-bos-purple/10">
+              <Layers className="h-5 w-5 text-bos-purple" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{CAPACITY_DIMENSIONS.length}</p>
+              <p className="text-xs text-bos-silver-dark">Dimensions</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-100 dark:bg-green-900/30">
+              <Building2 className="h-5 w-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{totalTiers}</p>
+              <p className="text-xs text-bos-silver-dark">Total Tiers</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-bos-gold-light">
+              <DollarSign className="h-5 w-5 text-bos-gold-dark" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{configuredRates}</p>
+              <p className="text-xs text-bos-silver-dark">Rates Configured</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Info Banner */}
       <div className="mb-6 rounded-lg border border-bos-purple/20 bg-bos-purple/5 p-4">
         <h3 className="mb-1 text-sm font-semibold text-bos-purple">How Capacity Pricing Works</h3>
         <p className="text-xs text-bos-silver-dark">
@@ -66,17 +118,19 @@ export default function CapacityPage() {
         </p>
       </div>
 
+      {/* Dimension Cards */}
       <div className="space-y-6">
         {CAPACITY_DIMENSIONS.map((dim) => {
           const Icon = DIMENSION_ICONS[dim.key] ?? Layers;
+          const colorClass = DIMENSION_COLORS[dim.key] ?? "bg-neutral-100 text-neutral-600";
           const dimRates = tierRates[dim.key] ?? {};
 
           return (
             <Card key={dim.key}>
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-bos-purple/10">
-                    <Icon className="h-5 w-5 text-bos-purple" />
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${colorClass}`}>
+                    <Icon className="h-5 w-5" />
                   </div>
                   <div>
                     <CardTitle className="text-base">{dim.label}</CardTitle>
@@ -85,57 +139,60 @@ export default function CapacityPage() {
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-bos-silver/20">
-                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-bos-silver-dark">Tier</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-bos-silver-dark">Limit</th>
-                        {REGIONS.slice(0, 5).map((r) => (
-                          <th key={r.code} className="px-3 py-2 text-right text-xs font-semibold uppercase text-bos-silver-dark">
-                            {r.code}
-                          </th>
-                        ))}
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-bos-silver-dark">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dim.tiers.map((tier) => {
-                        const tRates = dimRates[tier.key] ?? {};
-                        return (
-                          <tr key={tier.key} className="border-b border-bos-silver/10">
-                            <td className="px-3 py-2 font-medium">{tier.label}</td>
-                            <td className="px-3 py-2 text-right font-mono text-xs">
-                              {tier.limit === -1 ? "∞" : tier.limit.toLocaleString()}
-                            </td>
-                            {REGIONS.slice(0, 5).map((r) => {
-                              const rate = tRates[r.code];
-                              return (
-                                <td key={r.code} className="px-3 py-2 text-right text-xs">
-                                  {rate
-                                    ? <span className="font-mono">{r.currency} {rate.monthly_amount.toLocaleString()}</span>
-                                    : <span className="text-bos-silver">—</span>
-                                  }
-                                </td>
-                              );
-                            })}
-                            <td className="px-3 py-2 text-right">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setRateTarget({ dimension: dim.key, tier_key: tier.key })}
-                                className="gap-1"
-                              >
-                                <DollarSign className="h-3 w-3" />
-                                Set
-                              </Button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-bos-silver-light/50 dark:bg-neutral-900 hover:bg-bos-silver-light/50">
+                      <TableHead className="text-xs h-9">Tier</TableHead>
+                      <TableHead className="text-right text-xs h-9 w-20">Limit</TableHead>
+                      {REGIONS.map((r) => (
+                        <TableHead key={r.code} className="text-right text-xs h-9 px-2 w-24">
+                          {r.code} ({r.currency})
+                        </TableHead>
+                      ))}
+                      <TableHead className="text-right text-xs h-9 w-16">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {dim.tiers.map((tier) => {
+                      const tRates = dimRates[tier.key] ?? {};
+                      return (
+                        <TableRow key={tier.key}>
+                          <TableCell className="font-medium py-2">{tier.label}</TableCell>
+                          <TableCell className="text-right py-2">
+                            <Badge variant="outline" className="font-mono">
+                              {tier.limit === -1 ? "\u221E" : tier.limit.toLocaleString()}
+                            </Badge>
+                          </TableCell>
+                          {REGIONS.map((r) => {
+                            const rate = tRates[r.code];
+                            return (
+                              <TableCell key={r.code} className="text-right py-2 px-2">
+                                {rate ? (
+                                  <span className="font-mono text-xs font-semibold">
+                                    {rate.monthly_amount.toLocaleString()}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-neutral-300 dark:text-neutral-600">—</span>
+                                )}
+                              </TableCell>
+                            );
+                          })}
+                          <TableCell className="text-right py-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setRateTarget({ dimension: dim.key, tier_key: tier.key })}
+                              className="gap-1 h-7 px-2"
+                            >
+                              <DollarSign className="h-3 w-3" />
+                              Set
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           );
@@ -146,7 +203,7 @@ export default function CapacityPage() {
       <FormDialog
         open={!!rateTarget}
         onClose={() => setRateTarget(null)}
-        title={`Set Tier Rate`}
+        title="Set Tier Rate"
         description={rateTarget ? `${CAPACITY_DIMENSIONS.find((d) => d.key === rateTarget.dimension)?.label} — ${
           CAPACITY_DIMENSIONS.find((d) => d.key === rateTarget.dimension)?.tiers.find((t) => t.key === rateTarget.tier_key)?.label
         }` : ""}

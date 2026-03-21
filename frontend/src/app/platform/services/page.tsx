@@ -6,10 +6,11 @@ import { PageHeader } from "@/components/shared/page-header";
 import { FormDialog } from "@/components/shared/form-dialog";
 import {
   Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Toast, Badge,
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui";
 import { getServices, setServiceRate, toggleService } from "@/lib/api/saas";
 import { BOS_SERVICES, REGIONS } from "@/lib/constants";
-import { Package, DollarSign, Power, PowerOff } from "lucide-react";
+import { Package, DollarSign, Power, PowerOff, CheckCircle2, XCircle } from "lucide-react";
 
 type RateMap = Record<string, Record<string, { monthly_amount: number; currency: string }>>;
 
@@ -44,10 +45,12 @@ export default function ServicesPage() {
     });
   }
 
-  // Server data: { rates: { RETAIL: { KE: { monthly_amount, currency }, TZ: {...} } } , active: { RETAIL: true } }
   const srvData = services.data?.data ?? {};
   const rates: RateMap = srvData.rates ?? {};
   const activeMap: Record<string, boolean> = srvData.active ?? {};
+
+  const activeCount = BOS_SERVICES.filter((s) => activeMap[s.key] !== false).length;
+  const totalRates = Object.values(rates).reduce((sum, r) => sum + Object.keys(r).length, 0);
 
   return (
     <div>
@@ -56,6 +59,44 @@ export default function ServicesPage() {
         description="Set pricing for each BOS service per region. Tenants choose which services they need."
       />
 
+      {/* Summary Cards */}
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Card>
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-bos-purple/10">
+              <Package className="h-5 w-5 text-bos-purple" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{BOS_SERVICES.length}</p>
+              <p className="text-xs text-bos-silver-dark">Total Services</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-100 dark:bg-green-900/30">
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{activeCount}</p>
+              <p className="text-xs text-bos-silver-dark">Active Services</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-bos-gold-light">
+              <DollarSign className="h-5 w-5 text-bos-gold-dark" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{totalRates}</p>
+              <p className="text-xs text-bos-silver-dark">Rates Configured</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Info Banner */}
       <div className="mb-6 rounded-lg border border-bos-purple/20 bg-bos-purple/5 p-4">
         <h3 className="mb-1 text-sm font-semibold text-bos-purple">How Services Work</h3>
         <p className="text-xs text-bos-silver-dark">
@@ -65,6 +106,7 @@ export default function ServicesPage() {
         </p>
       </div>
 
+      {/* Service Cards with Rate Table */}
       <div className="space-y-4">
         {BOS_SERVICES.map((svc) => {
           const isActive = activeMap[svc.key] !== false;
@@ -84,7 +126,7 @@ export default function ServicesPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={isActive ? "default" : "outline"}>
+                    <Badge variant={isActive ? "success" : "outline"}>
                       {isActive ? "Active" : "Inactive"}
                     </Badge>
                     <Button
@@ -104,27 +146,47 @@ export default function ServicesPage() {
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-bos-silver-dark">
-                  Regional Rates
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {REGIONS.map((r) => {
-                    const rate = svcRates[r.code];
-                    return (
-                      <div key={r.code} className="flex items-center gap-1 rounded-md border border-bos-silver/20 px-2 py-1 text-xs">
-                        <span className="font-medium">{r.code}</span>
-                        <span className="text-bos-silver-dark">
-                          {rate ? `${r.currency} ${rate.monthly_amount.toLocaleString()}/mo` : "Not set"}
-                        </span>
-                      </div>
-                    );
-                  })}
+                {/* Engines included */}
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  {svc.engines.map((eng) => (
+                    <span
+                      key={eng}
+                      className="inline-flex items-center rounded-md bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+                    >
+                      {eng}
+                    </span>
+                  ))}
                 </div>
-                <div className="mt-2">
-                  <p className="text-xs text-bos-silver-dark">
-                    Engines included: {svc.engines.join(", ")}
-                  </p>
-                </div>
+                {/* Regional Rates Table */}
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      {REGIONS.map((r) => (
+                        <TableHead key={r.code} className="text-center text-xs h-8 px-2">
+                          {r.code}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow className="hover:bg-transparent">
+                      {REGIONS.map((r) => {
+                        const rate = svcRates[r.code];
+                        return (
+                          <TableCell key={r.code} className="text-center px-2 py-2">
+                            {rate ? (
+                              <span className="font-mono text-xs font-semibold">
+                                {r.currency} {rate.monthly_amount.toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-neutral-300 dark:text-neutral-600">—</span>
+                            )}
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           );

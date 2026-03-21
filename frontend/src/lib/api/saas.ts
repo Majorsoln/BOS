@@ -1,5 +1,40 @@
 import api from "./client";
 
+/* ── Regions (Nchi) ────────────────────────────────────────── */
+
+export async function getRegions() {
+  const res = await api.get("/saas/regions");
+  return res.data;
+}
+
+export async function addRegion(data: {
+  code: string;
+  name: string;
+  currency: string;
+  tax_name?: string;
+  vat_rate?: number;
+  digital_tax_rate?: number;
+  b2b_reverse_charge?: boolean;
+  registration_required?: boolean;
+}) {
+  const res = await api.post("/saas/regions/add", data);
+  return res.data;
+}
+
+export async function updateRegion(data: {
+  code: string;
+  name?: string;
+  currency?: string;
+  tax_name?: string;
+  vat_rate?: number;
+  digital_tax_rate?: number;
+  b2b_reverse_charge?: boolean;
+  registration_required?: boolean;
+}) {
+  const res = await api.post("/saas/regions/update", data);
+  return res.data;
+}
+
 /* ── Services (Huduma) ─────────────────────────────────────── */
 
 export async function getServices() {

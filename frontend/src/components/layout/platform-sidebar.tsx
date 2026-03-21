@@ -15,6 +15,7 @@ import {
   Users,
   ArrowLeft,
   Globe,
+  MapPin,
   Scale,
   UserCheck,
 } from "lucide-react";
@@ -49,6 +50,7 @@ const PLATFORM_NAV: NavGroup[] = [
   {
     title: "Billing & Tax",
     items: [
+      { label: "Regions", href: "/platform/regions", icon: MapPin },
       { label: "Rate Governance", href: "/platform/rates", icon: Scale },
       { label: "Trial Policy", href: "/platform/trial-policy", icon: ClipboardList },
       { label: "Active Trials", href: "/platform/trials", icon: Clock },

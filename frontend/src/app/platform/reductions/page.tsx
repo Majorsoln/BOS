@@ -5,11 +5,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/page-header";
 import { FormDialog } from "@/components/shared/form-dialog";
 import {
-  Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Toast,
+  Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Toast, Badge,
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui";
 import { getReductionRates, setReductionRate } from "@/lib/api/saas";
 import { REGIONS } from "@/lib/constants";
-import { Percent, ArrowDown } from "lucide-react";
+import { Percent, ArrowDown, Calculator, Globe } from "lucide-react";
 
 const SERVICE_COUNTS = [
   { count: 2, label: "2 Services" },
@@ -43,8 +44,14 @@ export default function ReductionsPage() {
     });
   }
 
-  // { KE: { 2: 10, 3: 15, 4: 20, 5: 25 }, TZ: {...} }
   const rateMap: ReductionMap = reductions.data?.data ?? {};
+
+  // Stats
+  const configuredCount = Object.values(rateMap).reduce(
+    (s, r) => s + Object.keys(r).length,
+    0,
+  );
+  const regionsConfigured = Object.keys(rateMap).length;
 
   return (
     <div>
@@ -59,6 +66,44 @@ export default function ReductionsPage() {
         }
       />
 
+      {/* Summary Cards */}
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Card>
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-bos-purple/10">
+              <Percent className="h-5 w-5 text-bos-purple" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{configuredCount}</p>
+              <p className="text-xs text-bos-silver-dark">Rates Configured</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-100 dark:bg-green-900/30">
+              <Globe className="h-5 w-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{regionsConfigured}</p>
+              <p className="text-xs text-bos-silver-dark">Regions Set</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-bos-gold-light">
+              <ArrowDown className="h-5 w-5 text-bos-gold-dark" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{SERVICE_COUNTS.length}</p>
+              <p className="text-xs text-bos-silver-dark">Service Tiers (2–5)</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Info Banner */}
       <div className="mb-6 rounded-lg border border-bos-purple/20 bg-bos-purple/5 p-4">
         <h3 className="mb-1 text-sm font-semibold text-bos-purple">How Reduction Works</h3>
         <p className="text-xs text-bos-silver-dark">
@@ -67,82 +112,111 @@ export default function ReductionsPage() {
           service layer, not to capacity charges. Set rates per region.
         </p>
         <div className="mt-3 rounded-md bg-white p-3 text-xs dark:bg-neutral-900">
-          <p className="font-mono">
-            monthly_total = (service_total − service_total × reduction_rate) + capacity_total
+          <p className="font-mono text-bos-purple">
+            monthly_total = (service_total - service_total x reduction_rate) + capacity_total
           </p>
         </div>
       </div>
 
+      {/* Reduction Table */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <ArrowDown className="h-5 w-5 text-bos-purple" />
             <CardTitle className="text-base">Reduction Rates by Region</CardTitle>
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-bos-silver/20 bg-bos-silver-light dark:bg-neutral-900">
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-bos-silver-dark">Region</th>
-                  {SERVICE_COUNTS.map((sc) => (
-                    <th key={sc.count} className="px-4 py-3 text-center text-xs font-semibold uppercase text-bos-silver-dark">
-                      {sc.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {REGIONS.map((r) => {
-                  const regionRates = rateMap[r.code] ?? {};
-                  return (
-                    <tr key={r.code} className="border-b border-bos-silver/10 hover:bg-bos-silver-light/50 dark:hover:bg-neutral-900/50">
-                      <td className="px-4 py-3">
-                        <div>
-                          <span className="font-medium">{r.name}</span>
-                          <span className="ml-1 text-xs text-bos-silver-dark">({r.code})</span>
-                        </div>
-                      </td>
-                      {SERVICE_COUNTS.map((sc) => {
-                        const rate = regionRates[sc.count];
-                        return (
-                          <td key={sc.count} className="px-4 py-3 text-center">
-                            {rate !== undefined ? (
-                              <span className="rounded-md bg-bos-purple/10 px-2 py-1 font-mono text-sm font-bold text-bos-purple">
-                                {rate}%
-                              </span>
-                            ) : (
-                              <span className="text-bos-silver">Not set</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-bos-silver-light/50 dark:bg-neutral-900 hover:bg-bos-silver-light/50">
+                <TableHead className="h-10">Region</TableHead>
+                <TableHead className="h-10 w-20">Currency</TableHead>
+                {SERVICE_COUNTS.map((sc) => (
+                  <TableHead key={sc.count} className="text-center h-10">
+                    {sc.label}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {REGIONS.map((r) => {
+                const regionRates = rateMap[r.code] ?? {};
+                return (
+                  <TableRow key={r.code}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center justify-center rounded-md bg-bos-purple/10 px-1.5 py-0.5 text-[10px] font-bold text-bos-purple">
+                          {r.code}
+                        </span>
+                        {r.name}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{r.currency}</Badge>
+                    </TableCell>
+                    {SERVICE_COUNTS.map((sc) => {
+                      const rate = regionRates[sc.count];
+                      return (
+                        <TableCell key={sc.count} className="text-center">
+                          {rate !== undefined ? (
+                            <span className="inline-flex items-center rounded-lg bg-bos-purple/10 px-3 py-1 font-mono text-sm font-bold text-bos-purple">
+                              {rate}%
+                            </span>
+                          ) : (
+                            <span className="text-xs text-neutral-300 dark:text-neutral-600">—</span>
+                          )}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 
       {/* Example Calculator */}
       <Card className="mt-4">
-        <CardHeader>
-          <CardTitle className="text-base">Example Calculation</CardTitle>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Calculator className="h-5 w-5 text-bos-gold-dark" />
+            <CardTitle className="text-base">Example Calculation</CardTitle>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="rounded-lg bg-bos-silver-light p-4 text-sm dark:bg-neutral-900">
             <p className="font-semibold">Kenya — Tenant picks BOS Retail + BOS HR (2 services, 10% reduction):</p>
-            <div className="mt-2 space-y-1 font-mono text-xs">
-              <p>BOS Retail:            KES 3,000</p>
-              <p>BOS HR:                KES 2,500</p>
-              <p>Service Total:         KES 5,500</p>
-              <p className="text-bos-purple">Reduction (10%):     − KES   550</p>
-              <p className="font-bold">Service After Reduction: KES 4,950</p>
-              <p>+ Capacity (branches, docs, users, AI)...</p>
-              <p className="font-bold">= Monthly Total</p>
+            <div className="mt-3 space-y-1.5 font-mono text-xs">
+              <div className="flex justify-between max-w-xs">
+                <span>BOS Retail</span>
+                <span>KES 3,000</span>
+              </div>
+              <div className="flex justify-between max-w-xs">
+                <span>BOS HR</span>
+                <span>KES 2,500</span>
+              </div>
+              <div className="flex justify-between max-w-xs border-t border-bos-silver/40 pt-1.5">
+                <span>Service Total</span>
+                <span>KES 5,500</span>
+              </div>
+              <div className="flex justify-between max-w-xs text-bos-purple font-semibold">
+                <span>Reduction (10%)</span>
+                <span>- KES 550</span>
+              </div>
+              <div className="flex justify-between max-w-xs border-t border-bos-silver/40 pt-1.5 font-bold">
+                <span>Service After Reduction</span>
+                <span>KES 4,950</span>
+              </div>
+              <div className="flex justify-between max-w-xs text-bos-silver-dark">
+                <span>+ Capacity charges...</span>
+                <span></span>
+              </div>
+              <div className="flex justify-between max-w-xs font-bold text-base pt-1">
+                <span>= Monthly Total</span>
+                <span></span>
+              </div>
             </div>
           </div>
         </CardContent>
