@@ -6,7 +6,11 @@ Replaces combo-based pricing with a 3-layer model:
   2. Capacity  — tiered pricing per dimension per region
   3. Reductions — multi-service discount on service total
 
-Also manages regions (countries) as dynamic entities.
+Also manages regions (countries/markets) as full operational entities with:
+  - Financial channels (M-Pesa, MTN MoMo, bank settlement)
+  - Lifecycle management (DRAFT → PILOT → ACTIVE → SUSPENDED → SUNSET)
+  - Regulatory compliance settings
+  - Support & operations configuration
 
 Formula:
   monthly_total = (service_total - service_total * reduction_rate) + capacity_total
@@ -16,8 +20,34 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
-from typing import Dict, List, Optional, Tuple
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
+
+
+# ---------------------------------------------------------------------------
+# Region lifecycle
+# ---------------------------------------------------------------------------
+
+class RegionStatus(Enum):
+    DRAFT = "DRAFT"           # Region configured but not launched
+    PILOT = "PILOT"           # Limited rollout — capped tenant count
+    ACTIVE = "ACTIVE"         # Fully live — accepting all tenants
+    SUSPENDED = "SUSPENDED"   # Temporarily halted — no new signups, existing tenants OK
+    SUNSET = "SUNSET"         # Winding down — no new signups, migration out encouraged
+
+
+# Region lifecycle event types
+REGION_ADDED_V1 = "saas.region.added.v1"
+REGION_UPDATED_V1 = "saas.region.updated.v1"
+REGION_LAUNCHED_V1 = "saas.region.launched.v1"
+REGION_SUSPENDED_V1 = "saas.region.suspended.v1"
+REGION_REACTIVATED_V1 = "saas.region.reactivated.v1"
+REGION_SUNSET_V1 = "saas.region.sunset.v1"
+REGION_PAYMENT_CHANNEL_SET_V1 = "saas.region.payment_channel_set.v1"
+REGION_PAYMENT_CHANNEL_REMOVED_V1 = "saas.region.payment_channel_removed.v1"
+REGION_SETTLEMENT_SET_V1 = "saas.region.settlement_set.v1"
 
 
 # ---------------------------------------------------------------------------
@@ -25,16 +55,75 @@ from typing import Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 
 @dataclass
-class RegionEntry:
-    code: str
-    name: str
+class PaymentChannelConfig:
+    """A payment collection method available in a region."""
+    channel_key: str              # e.g. "mpesa_ke", "mtn_momo_ug", "flutterwave", "bank_transfer"
+    display_name: str             # e.g. "M-Pesa (Kenya)"
+    provider: str                 # e.g. "SAFARICOM", "MTN", "FLUTTERWAVE", "DPO"
+    channel_type: str             # MOBILE_MONEY, CARD, BANK_TRANSFER, USSD
+    is_active: bool
+    config: Dict[str, Any]        # provider-specific: paybill, shortcode, api_key_ref, etc.
+    min_amount: Decimal           # minimum transaction amount
+    max_amount: Decimal           # maximum per transaction
+    settlement_delay_days: int    # T+N settlement
+
+
+@dataclass
+class SettlementAccountConfig:
+    """Where collected funds settle for a region."""
+    bank_name: str
+    account_name: str
+    account_number: str
+    branch_code: str
+    swift_code: str
     currency: str
+    is_primary: bool
+
+
+@dataclass
+class RegionEntry:
+    """Full operational definition of a market/country."""
+    # ── Identity ──
+    code: str                         # ISO 3166-1 alpha-2 (KE, TZ, UG, RW, ET, etc.)
+    name: str                         # "Kenya", "Tanzania", etc.
+    currency: str                     # ISO 4217 (KES, TZS, UGX, RWF, ETB)
+    status: str = "ACTIVE"            # RegionStatus value
+
+    # ── Tax & Compliance ──
     tax_name: str = "VAT"
-    vat_rate: float = 0.0
-    digital_tax_rate: float = 0.0
+    vat_rate: float = 0.0             # e.g. 0.16 = 16%
+    digital_tax_rate: float = 0.0     # digital services tax
     b2b_reverse_charge: bool = False
     registration_required: bool = True
-    is_active: bool = True
+    regulatory_body: str = ""         # e.g. "KRA" (Kenya Revenue Authority)
+    business_license_required: bool = True
+    data_residency_required: bool = False   # must data stay in-country?
+
+    # ── Financial ──
+    payment_channels: Dict[str, PaymentChannelConfig] = field(default_factory=dict)
+    settlement_accounts: List[SettlementAccountConfig] = field(default_factory=list)
+    min_payout_amount: Decimal = Decimal("0")    # minimum commission payout
+    payout_currency: str = ""         # currency for reseller payouts (defaults to region currency)
+
+    # ── Operations ──
+    default_language: str = "en"      # ISO 639-1
+    timezone: str = "Africa/Nairobi"  # IANA timezone
+    support_phone: str = ""
+    support_email: str = ""
+    support_hours: str = ""           # e.g. "Mon-Fri 08:00-18:00 EAT"
+    country_calling_code: str = ""    # e.g. "+254"
+    phone_format: str = ""            # e.g. "07XXXXXXXX" or "+2547XXXXXXXX"
+
+    # ── Launch Management ──
+    launched_at: Optional[datetime] = None
+    suspended_at: Optional[datetime] = None
+    sunset_at: Optional[datetime] = None
+    pilot_tenant_limit: int = 0       # 0 = no limit (fully active)
+    pilot_tenant_count: int = 0       # current count during pilot
+    launch_notes: str = ""
+
+    # ── Legacy ──
+    is_active: bool = True            # backward compat — derived from status
 
 
 @dataclass
@@ -93,8 +182,15 @@ class ServicePricingProjection:
 
     def apply(self, event_type: str, payload: dict) -> None:
         handler = {
-            "saas.region.added.v1": self._apply_region_added,
-            "saas.region.updated.v1": self._apply_region_updated,
+            REGION_ADDED_V1: self._apply_region_added,
+            REGION_UPDATED_V1: self._apply_region_updated,
+            REGION_LAUNCHED_V1: self._apply_region_launched,
+            REGION_SUSPENDED_V1: self._apply_region_suspended,
+            REGION_REACTIVATED_V1: self._apply_region_reactivated,
+            REGION_SUNSET_V1: self._apply_region_sunset,
+            REGION_PAYMENT_CHANNEL_SET_V1: self._apply_payment_channel_set,
+            REGION_PAYMENT_CHANNEL_REMOVED_V1: self._apply_payment_channel_removed,
+            REGION_SETTLEMENT_SET_V1: self._apply_settlement_set,
             "saas.service.rate_set.v1": self._apply_service_rate_set,
             "saas.service.toggled.v1": self._apply_service_toggled,
             "saas.capacity.rate_set.v1": self._apply_capacity_rate_set,
@@ -105,16 +201,32 @@ class ServicePricingProjection:
 
     def _apply_region_added(self, p: dict) -> None:
         code = p["code"]
+        status_val = p.get("status", "ACTIVE")
         self._regions[code] = RegionEntry(
             code=code,
             name=p.get("name", code),
             currency=p.get("currency", "USD"),
+            status=status_val,
             tax_name=p.get("tax_name", "VAT"),
             vat_rate=float(p.get("vat_rate", 0)),
             digital_tax_rate=float(p.get("digital_tax_rate", 0)),
             b2b_reverse_charge=bool(p.get("b2b_reverse_charge", False)),
             registration_required=bool(p.get("registration_required", True)),
-            is_active=bool(p.get("is_active", True)),
+            regulatory_body=p.get("regulatory_body", ""),
+            business_license_required=bool(p.get("business_license_required", True)),
+            data_residency_required=bool(p.get("data_residency_required", False)),
+            min_payout_amount=Decimal(str(p.get("min_payout_amount", "0"))),
+            payout_currency=p.get("payout_currency", ""),
+            default_language=p.get("default_language", "en"),
+            timezone=p.get("timezone", "Africa/Nairobi"),
+            support_phone=p.get("support_phone", ""),
+            support_email=p.get("support_email", ""),
+            support_hours=p.get("support_hours", ""),
+            country_calling_code=p.get("country_calling_code", ""),
+            phone_format=p.get("phone_format", ""),
+            pilot_tenant_limit=int(p.get("pilot_tenant_limit", 0)),
+            launch_notes=p.get("launch_notes", ""),
+            is_active=status_val in ("ACTIVE", "PILOT"),
         )
 
     def _apply_region_updated(self, p: dict) -> None:
@@ -123,6 +235,7 @@ class ServicePricingProjection:
         if not existing:
             self._apply_region_added(p)
             return
+        # Tax & compliance
         if "name" in p:
             existing.name = p["name"]
         if "currency" in p:
@@ -137,8 +250,128 @@ class ServicePricingProjection:
             existing.b2b_reverse_charge = bool(p["b2b_reverse_charge"])
         if "registration_required" in p:
             existing.registration_required = bool(p["registration_required"])
+        if "regulatory_body" in p:
+            existing.regulatory_body = p["regulatory_body"]
+        if "business_license_required" in p:
+            existing.business_license_required = bool(p["business_license_required"])
+        if "data_residency_required" in p:
+            existing.data_residency_required = bool(p["data_residency_required"])
+        # Financial
+        if "min_payout_amount" in p:
+            existing.min_payout_amount = Decimal(str(p["min_payout_amount"]))
+        if "payout_currency" in p:
+            existing.payout_currency = p["payout_currency"]
+        # Operations
+        if "default_language" in p:
+            existing.default_language = p["default_language"]
+        if "timezone" in p:
+            existing.timezone = p["timezone"]
+        if "support_phone" in p:
+            existing.support_phone = p["support_phone"]
+        if "support_email" in p:
+            existing.support_email = p["support_email"]
+        if "support_hours" in p:
+            existing.support_hours = p["support_hours"]
+        if "country_calling_code" in p:
+            existing.country_calling_code = p["country_calling_code"]
+        if "phone_format" in p:
+            existing.phone_format = p["phone_format"]
+        # Launch
+        if "pilot_tenant_limit" in p:
+            existing.pilot_tenant_limit = int(p["pilot_tenant_limit"])
+        if "launch_notes" in p:
+            existing.launch_notes = p["launch_notes"]
+        # Legacy compat
         if "is_active" in p:
             existing.is_active = bool(p["is_active"])
+        if "status" in p:
+            existing.status = p["status"]
+            existing.is_active = p["status"] in ("ACTIVE", "PILOT")
+
+    def _apply_region_launched(self, p: dict) -> None:
+        code = p["code"]
+        existing = self._regions.get(code)
+        if not existing:
+            return
+        target = p.get("target_status", "ACTIVE")
+        existing.status = target
+        existing.is_active = True
+        existing.launched_at = p.get("issued_at")
+        if target == "PILOT":
+            existing.pilot_tenant_limit = int(p.get("pilot_tenant_limit", 50))
+
+    def _apply_region_suspended(self, p: dict) -> None:
+        code = p["code"]
+        existing = self._regions.get(code)
+        if not existing:
+            return
+        existing.status = RegionStatus.SUSPENDED.value
+        existing.is_active = False
+        existing.suspended_at = p.get("issued_at")
+
+    def _apply_region_reactivated(self, p: dict) -> None:
+        code = p["code"]
+        existing = self._regions.get(code)
+        if not existing:
+            return
+        existing.status = RegionStatus.ACTIVE.value
+        existing.is_active = True
+        existing.suspended_at = None
+
+    def _apply_region_sunset(self, p: dict) -> None:
+        code = p["code"]
+        existing = self._regions.get(code)
+        if not existing:
+            return
+        existing.status = RegionStatus.SUNSET.value
+        existing.is_active = False
+        existing.sunset_at = p.get("issued_at")
+
+    def _apply_payment_channel_set(self, p: dict) -> None:
+        code = p["region_code"]
+        existing = self._regions.get(code)
+        if not existing:
+            return
+        channel_key = p["channel_key"]
+        existing.payment_channels[channel_key] = PaymentChannelConfig(
+            channel_key=channel_key,
+            display_name=p.get("display_name", channel_key),
+            provider=p.get("provider", ""),
+            channel_type=p.get("channel_type", "MOBILE_MONEY"),
+            is_active=bool(p.get("is_active", True)),
+            config=p.get("config", {}),
+            min_amount=Decimal(str(p.get("min_amount", "0"))),
+            max_amount=Decimal(str(p.get("max_amount", "999999999"))),
+            settlement_delay_days=int(p.get("settlement_delay_days", 1)),
+        )
+
+    def _apply_payment_channel_removed(self, p: dict) -> None:
+        code = p["region_code"]
+        existing = self._regions.get(code)
+        if not existing:
+            return
+        existing.payment_channels.pop(p["channel_key"], None)
+
+    def _apply_settlement_set(self, p: dict) -> None:
+        code = p["region_code"]
+        existing = self._regions.get(code)
+        if not existing:
+            return
+        account = SettlementAccountConfig(
+            bank_name=p.get("bank_name", ""),
+            account_name=p.get("account_name", ""),
+            account_number=p.get("account_number", ""),
+            branch_code=p.get("branch_code", ""),
+            swift_code=p.get("swift_code", ""),
+            currency=p.get("currency", existing.currency),
+            is_primary=bool(p.get("is_primary", True)),
+        )
+        # Replace primary or append
+        if account.is_primary:
+            existing.settlement_accounts = [
+                a for a in existing.settlement_accounts if not a.is_primary
+            ]
+        existing.settlement_accounts.append(account)
 
     def _apply_service_rate_set(self, p: dict) -> None:
         key = (p["service_key"], p["region_code"])
@@ -177,6 +410,24 @@ class ServicePricingProjection:
 
     def get_region(self, code: str) -> Optional[RegionEntry]:
         return self._regions.get(code)
+
+    def list_regions_by_status(self, status: str) -> List[RegionEntry]:
+        return sorted(
+            [r for r in self._regions.values() if r.status == status],
+            key=lambda r: r.code,
+        )
+
+    def get_region_payment_channels(self, code: str) -> List[PaymentChannelConfig]:
+        region = self._regions.get(code)
+        if not region:
+            return []
+        return list(region.payment_channels.values())
+
+    def get_region_settlement_accounts(self, code: str) -> List[SettlementAccountConfig]:
+        region = self._regions.get(code)
+        if not region:
+            return []
+        return list(region.settlement_accounts)
 
     def get_service_rates(self) -> Dict[str, Dict[str, dict]]:
         """Returns {service_key: {region_code: {monthly_amount, currency}}}."""

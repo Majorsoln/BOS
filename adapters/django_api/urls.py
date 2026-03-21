@@ -122,6 +122,18 @@ urlpatterns = [
     path("saas/regions/<str:region_code>/performance", views.saas_region_performance_view),
     path("saas/regions/<str:region_code>/summary", views.saas_region_summary_view),
     path("saas/regions/<str:region_code>/territories", views.saas_region_territories_view),
+    # SaaS — Region Lifecycle & Financial Administration
+    path("saas/regions/launch", views.saas_region_launch_view),
+    path("saas/regions/suspend", views.saas_region_suspend_view),
+    path("saas/regions/reactivate", views.saas_region_reactivate_view),
+    path("saas/regions/sunset", views.saas_region_sunset_view),
+    path("saas/regions/set-payment-channel", views.saas_region_set_payment_channel_view),
+    path("saas/regions/remove-payment-channel", views.saas_region_remove_payment_channel_view),
+    path("saas/regions/set-settlement", views.saas_region_set_settlement_view),
+    path("saas/regions/<str:region_code>/detail", views.saas_region_detail_view),
+    path("saas/regions/<str:region_code>/payment-channels", views.saas_region_payment_channels_view),
+    path("saas/regions/<str:region_code>/settlement-accounts", views.saas_region_settlement_accounts_view),
+    path("saas/regions/<str:region_code>/dashboard", views.saas_region_dashboard_view),
     # SaaS — Subscriptions
     path("saas/subscriptions", views.saas_subscription_view),
     path("saas/subscriptions/start-trial", views.saas_start_trial_sub_view),

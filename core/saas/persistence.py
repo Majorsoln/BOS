@@ -681,19 +681,79 @@ class SaaSPersistenceStore:
     @staticmethod
     def save_region(code, name, currency, tax_name="VAT", vat_rate=0.0,
                     digital_tax_rate=0.0, b2b_reverse_charge=False,
-                    registration_required=True, is_active=True, **_kw):
+                    registration_required=True, is_active=True, **kw):
         from core.saas.models import SaaSRegion
-        SaaSRegion.objects.update_or_create(
-            code=code,
+        defaults = {
+            "name": name,
+            "currency": currency,
+            "tax_name": tax_name,
+            "vat_rate": vat_rate,
+            "digital_tax_rate": digital_tax_rate,
+            "b2b_reverse_charge": b2b_reverse_charge,
+            "registration_required": registration_required,
+            "is_active": is_active,
+        }
+        # Extended fields (new) — only set if provided
+        for field_name in (
+            "status", "regulatory_body", "business_license_required",
+            "data_residency_required", "min_payout_amount", "payout_currency",
+            "default_language", "timezone", "support_phone", "support_email",
+            "support_hours", "country_calling_code", "phone_format",
+            "launched_at", "suspended_at", "sunset_at",
+            "pilot_tenant_limit", "launch_notes",
+        ):
+            if field_name in kw:
+                defaults[field_name] = kw[field_name]
+        SaaSRegion.objects.update_or_create(code=code, defaults=defaults)
+
+    @staticmethod
+    def save_payment_channel(region_code, channel_key, display_name, provider,
+                             channel_type, is_active=True, config=None,
+                             min_amount=0, max_amount=999999999,
+                             settlement_delay_days=1, **_kw):
+        from core.saas.models import SaaSRegionPaymentChannel
+        SaaSRegionPaymentChannel.objects.update_or_create(
+            region_id=region_code,
+            channel_key=channel_key,
             defaults={
-                "name": name,
-                "currency": currency,
-                "tax_name": tax_name,
-                "vat_rate": vat_rate,
-                "digital_tax_rate": digital_tax_rate,
-                "b2b_reverse_charge": b2b_reverse_charge,
-                "registration_required": registration_required,
+                "display_name": display_name,
+                "provider": provider,
+                "channel_type": channel_type,
                 "is_active": is_active,
+                "config": config or {},
+                "min_amount": min_amount,
+                "max_amount": max_amount,
+                "settlement_delay_days": settlement_delay_days,
+            },
+        )
+
+    @staticmethod
+    def remove_payment_channel(region_code, channel_key):
+        from core.saas.models import SaaSRegionPaymentChannel
+        SaaSRegionPaymentChannel.objects.filter(
+            region_id=region_code, channel_key=channel_key
+        ).delete()
+
+    @staticmethod
+    def save_settlement_account(region_code, bank_name, account_name,
+                                account_number, currency, is_primary=True,
+                                branch_code="", swift_code="", **_kw):
+        from core.saas.models import SaaSRegionSettlementAccount
+        # If primary, demote existing primaries
+        if is_primary:
+            SaaSRegionSettlementAccount.objects.filter(
+                region_id=region_code, is_primary=True
+            ).update(is_primary=False)
+        SaaSRegionSettlementAccount.objects.update_or_create(
+            region_id=region_code,
+            account_number=account_number,
+            defaults={
+                "bank_name": bank_name,
+                "account_name": account_name,
+                "branch_code": branch_code,
+                "swift_code": swift_code,
+                "currency": currency,
+                "is_primary": is_primary,
             },
         )
 
@@ -754,13 +814,64 @@ class SaaSPersistenceStore:
                 "code": r.code,
                 "name": r.name,
                 "currency": r.currency,
+                "status": getattr(r, "status", "ACTIVE"),
                 "tax_name": r.tax_name,
                 "vat_rate": r.vat_rate,
                 "digital_tax_rate": r.digital_tax_rate,
                 "b2b_reverse_charge": r.b2b_reverse_charge,
                 "registration_required": r.registration_required,
+                "regulatory_body": getattr(r, "regulatory_body", ""),
+                "business_license_required": getattr(r, "business_license_required", True),
+                "data_residency_required": getattr(r, "data_residency_required", False),
+                "min_payout_amount": str(getattr(r, "min_payout_amount", 0)),
+                "payout_currency": getattr(r, "payout_currency", ""),
+                "default_language": getattr(r, "default_language", "en"),
+                "timezone": getattr(r, "timezone", "Africa/Nairobi"),
+                "support_phone": getattr(r, "support_phone", ""),
+                "support_email": getattr(r, "support_email", ""),
+                "support_hours": getattr(r, "support_hours", ""),
+                "country_calling_code": getattr(r, "country_calling_code", ""),
+                "phone_format": getattr(r, "phone_format", ""),
+                "pilot_tenant_limit": getattr(r, "pilot_tenant_limit", 0),
+                "launch_notes": getattr(r, "launch_notes", ""),
                 "is_active": r.is_active,
             })
+
+        # Load payment channels per region
+        try:
+            from core.saas.models import SaaSRegionPaymentChannel
+            for ch in SaaSRegionPaymentChannel.objects.all():
+                proj.apply("saas.region.payment_channel_set.v1", {
+                    "region_code": ch.region_id,
+                    "channel_key": ch.channel_key,
+                    "display_name": ch.display_name,
+                    "provider": ch.provider,
+                    "channel_type": ch.channel_type,
+                    "is_active": ch.is_active,
+                    "config": ch.config,
+                    "min_amount": str(ch.min_amount),
+                    "max_amount": str(ch.max_amount),
+                    "settlement_delay_days": ch.settlement_delay_days,
+                })
+        except Exception:
+            pass  # Table may not exist yet
+
+        # Load settlement accounts per region
+        try:
+            from core.saas.models import SaaSRegionSettlementAccount
+            for sa in SaaSRegionSettlementAccount.objects.all():
+                proj.apply("saas.region.settlement_set.v1", {
+                    "region_code": sa.region_id,
+                    "bank_name": sa.bank_name,
+                    "account_name": sa.account_name,
+                    "account_number": sa.account_number,
+                    "branch_code": sa.branch_code,
+                    "swift_code": sa.swift_code,
+                    "currency": sa.currency,
+                    "is_primary": sa.is_primary,
+                })
+        except Exception:
+            pass  # Table may not exist yet
 
         for sr in SaaSServiceRate.objects.all():
             proj.apply("saas.service.rate_set.v1", {

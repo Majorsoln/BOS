@@ -3288,38 +3288,132 @@ def _persist_pricing(fn_name, **kwargs):
         pass
 
 
-# ── Regions (Nchi) ──────────────────────────────────────────
+# ── Regions (Nchi / Mikoa) — Full Platform Admin ──────────────
+
+
+def _region_to_dict(r) -> dict:
+    """Serialize a RegionEntry to dict (full representation)."""
+    return {
+        "code": r.code,
+        "name": r.name,
+        "currency": r.currency,
+        "status": getattr(r, "status", "ACTIVE"),
+        # Tax & compliance
+        "tax_name": r.tax_name,
+        "vat_rate": r.vat_rate,
+        "digital_tax_rate": r.digital_tax_rate,
+        "b2b_reverse_charge": r.b2b_reverse_charge,
+        "registration_required": r.registration_required,
+        "regulatory_body": getattr(r, "regulatory_body", ""),
+        "business_license_required": getattr(r, "business_license_required", True),
+        "data_residency_required": getattr(r, "data_residency_required", False),
+        # Financial
+        "min_payout_amount": str(getattr(r, "min_payout_amount", 0)),
+        "payout_currency": getattr(r, "payout_currency", "") or r.currency,
+        "payment_channels": [
+            {
+                "channel_key": ch.channel_key,
+                "display_name": ch.display_name,
+                "provider": ch.provider,
+                "channel_type": ch.channel_type,
+                "is_active": ch.is_active,
+                "min_amount": str(ch.min_amount),
+                "max_amount": str(ch.max_amount),
+                "settlement_delay_days": ch.settlement_delay_days,
+            }
+            for ch in getattr(r, "payment_channels", {}).values()
+        ],
+        "settlement_accounts": [
+            {
+                "bank_name": sa.bank_name,
+                "account_name": sa.account_name,
+                "account_number": sa.account_number,
+                "branch_code": sa.branch_code,
+                "swift_code": sa.swift_code,
+                "currency": sa.currency,
+                "is_primary": sa.is_primary,
+            }
+            for sa in getattr(r, "settlement_accounts", [])
+        ],
+        # Operations
+        "default_language": getattr(r, "default_language", "en"),
+        "timezone": getattr(r, "timezone", "Africa/Nairobi"),
+        "support_phone": getattr(r, "support_phone", ""),
+        "support_email": getattr(r, "support_email", ""),
+        "support_hours": getattr(r, "support_hours", ""),
+        "country_calling_code": getattr(r, "country_calling_code", ""),
+        "phone_format": getattr(r, "phone_format", ""),
+        # Launch
+        "launched_at": str(r.launched_at) if getattr(r, "launched_at", None) else None,
+        "suspended_at": str(r.suspended_at) if getattr(r, "suspended_at", None) else None,
+        "sunset_at": str(r.sunset_at) if getattr(r, "sunset_at", None) else None,
+        "pilot_tenant_limit": getattr(r, "pilot_tenant_limit", 0),
+        "launch_notes": getattr(r, "launch_notes", ""),
+        "is_active": r.is_active,
+    }
+
+
+def _persist_region_full(region):
+    """Persist a full region state to DB."""
+    _persist_pricing("save_region",
+                     code=region.code, name=region.name, currency=region.currency,
+                     status=getattr(region, "status", "ACTIVE"),
+                     tax_name=region.tax_name, vat_rate=region.vat_rate,
+                     digital_tax_rate=region.digital_tax_rate,
+                     b2b_reverse_charge=region.b2b_reverse_charge,
+                     registration_required=region.registration_required,
+                     regulatory_body=getattr(region, "regulatory_body", ""),
+                     business_license_required=getattr(region, "business_license_required", True),
+                     data_residency_required=getattr(region, "data_residency_required", False),
+                     min_payout_amount=getattr(region, "min_payout_amount", 0),
+                     payout_currency=getattr(region, "payout_currency", ""),
+                     default_language=getattr(region, "default_language", "en"),
+                     timezone=getattr(region, "timezone", "Africa/Nairobi"),
+                     support_phone=getattr(region, "support_phone", ""),
+                     support_email=getattr(region, "support_email", ""),
+                     support_hours=getattr(region, "support_hours", ""),
+                     country_calling_code=getattr(region, "country_calling_code", ""),
+                     phone_format=getattr(region, "phone_format", ""),
+                     launched_at=getattr(region, "launched_at", None),
+                     suspended_at=getattr(region, "suspended_at", None),
+                     sunset_at=getattr(region, "sunset_at", None),
+                     pilot_tenant_limit=getattr(region, "pilot_tenant_limit", 0),
+                     launch_notes=getattr(region, "launch_notes", ""),
+                     is_active=region.is_active)
 
 
 @csrf_exempt
 def saas_regions_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/regions — List all regions with full operational detail."""
     if request.method != "GET":
         return _method_not_allowed()
     proj = _get_pricing_projection()
-    regions = proj.list_regions()
+    status_filter = request.GET.get("status")
+    if status_filter:
+        regions = proj.list_regions_by_status(status_filter.upper())
+    else:
+        regions = proj.list_regions()
     return JsonResponse({
         "status": "ok",
-        "data": {
-            "regions": [
-                {
-                    "code": r.code,
-                    "name": r.name,
-                    "currency": r.currency,
-                    "tax_name": r.tax_name,
-                    "vat_rate": r.vat_rate,
-                    "digital_tax_rate": r.digital_tax_rate,
-                    "b2b_reverse_charge": r.b2b_reverse_charge,
-                    "registration_required": r.registration_required,
-                    "is_active": r.is_active,
-                }
-                for r in regions
-            ],
-        },
+        "data": {"regions": [_region_to_dict(r) for r in regions]},
     })
 
 
 @csrf_exempt
+def saas_region_detail_view(request: HttpRequest, region_code: str) -> JsonResponse:
+    """GET /saas/regions/<code>/detail — Full region detail with channels, settlement, resellers."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    proj = _get_pricing_projection()
+    region = proj.get_region(region_code.upper())
+    if not region:
+        return _json_error("NOT_FOUND", f"Region {region_code} not found", status=404)
+    return JsonResponse({"status": "ok", "region": _region_to_dict(region)})
+
+
+@csrf_exempt
 def saas_regions_add_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/add — Create new region (starts as DRAFT)."""
     if request.method != "POST":
         return _method_not_allowed()
     try:
@@ -3331,7 +3425,8 @@ def saas_regions_add_view(request: HttpRequest) -> JsonResponse:
         return _json_error("INVALID_REQUEST", str(exc))
 
     if len(code) != 2:
-        return _json_error("INVALID_REQUEST", "Country code must be 2 characters (ISO 3166-1 alpha-2)")
+        return _json_error("INVALID_REQUEST",
+                           "Country code must be 2 characters (ISO 3166-1 alpha-2)")
 
     proj = _get_pricing_projection()
     if proj.get_region(code):
@@ -3341,21 +3436,42 @@ def saas_regions_add_view(request: HttpRequest) -> JsonResponse:
         "code": code,
         "name": name,
         "currency": currency,
+        "status": body.get("status", "DRAFT"),
+        # Tax
         "tax_name": body.get("tax_name", "VAT"),
         "vat_rate": float(body.get("vat_rate", 0)),
         "digital_tax_rate": float(body.get("digital_tax_rate", 0)),
         "b2b_reverse_charge": bool(body.get("b2b_reverse_charge", False)),
         "registration_required": bool(body.get("registration_required", True)),
-        "is_active": True,
+        "regulatory_body": body.get("regulatory_body", ""),
+        "business_license_required": bool(body.get("business_license_required", True)),
+        "data_residency_required": bool(body.get("data_residency_required", False)),
+        # Financial
+        "min_payout_amount": body.get("min_payout_amount", "0"),
+        "payout_currency": body.get("payout_currency", ""),
+        # Operations
+        "default_language": body.get("default_language", "en"),
+        "timezone": body.get("timezone", "Africa/Nairobi"),
+        "support_phone": body.get("support_phone", ""),
+        "support_email": body.get("support_email", ""),
+        "support_hours": body.get("support_hours", ""),
+        "country_calling_code": body.get("country_calling_code", ""),
+        "phone_format": body.get("phone_format", ""),
+        # Launch
+        "pilot_tenant_limit": int(body.get("pilot_tenant_limit", 0)),
+        "launch_notes": body.get("launch_notes", ""),
+        "is_active": body.get("status", "DRAFT") in ("ACTIVE", "PILOT"),
     }
     proj.apply("saas.region.added.v1", payload)
-    _persist_pricing("save_region", **payload)
+    region = proj.get_region(code)
+    _persist_region_full(region)
 
     return JsonResponse({"status": "ok", "code": code})
 
 
 @csrf_exempt
 def saas_regions_update_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/update — Update region fields (partial update)."""
     if request.method != "POST":
         return _method_not_allowed()
     try:
@@ -3369,23 +3485,388 @@ def saas_regions_update_view(request: HttpRequest) -> JsonResponse:
         return _json_error("NOT_FOUND", f"Region {code} not found", status=404)
 
     payload = {"code": code}
-    for key in ("name", "currency", "tax_name", "vat_rate", "digital_tax_rate",
-                "b2b_reverse_charge", "registration_required", "is_active"):
+    updatable_fields = (
+        "name", "currency", "tax_name", "vat_rate", "digital_tax_rate",
+        "b2b_reverse_charge", "registration_required", "is_active",
+        "regulatory_body", "business_license_required", "data_residency_required",
+        "min_payout_amount", "payout_currency",
+        "default_language", "timezone", "support_phone", "support_email",
+        "support_hours", "country_calling_code", "phone_format",
+        "pilot_tenant_limit", "launch_notes",
+    )
+    for key in updatable_fields:
         if key in body:
             payload[key] = body[key]
 
     proj.apply("saas.region.updated.v1", payload)
-    # Re-save full region state
     region = proj.get_region(code)
-    _persist_pricing("save_region",
-                     code=region.code, name=region.name, currency=region.currency,
-                     tax_name=region.tax_name, vat_rate=region.vat_rate,
-                     digital_tax_rate=region.digital_tax_rate,
-                     b2b_reverse_charge=region.b2b_reverse_charge,
-                     registration_required=region.registration_required,
-                     is_active=region.is_active)
+    _persist_region_full(region)
 
     return JsonResponse({"status": "ok", "code": code})
+
+
+@csrf_exempt
+def saas_region_launch_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/launch — Launch a region (DRAFT→PILOT or DRAFT→ACTIVE)."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        code = body["code"].strip().upper()
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    proj = _get_pricing_projection()
+    region = proj.get_region(code)
+    if not region:
+        return _json_error("NOT_FOUND", f"Region {code} not found", status=404)
+    if region.status not in ("DRAFT",):
+        return _json_error("INVALID_STATE",
+                           f"Region is {region.status}, can only launch from DRAFT")
+
+    # Validate readiness: must have at least one payment channel
+    channels = proj.get_region_payment_channels(code)
+    if not channels:
+        return _json_error("NOT_READY",
+                           "Region must have at least one payment channel before launch")
+
+    target = body.get("target_status", "PILOT")
+    if target not in ("PILOT", "ACTIVE"):
+        return _json_error("INVALID_REQUEST", "target_status must be PILOT or ACTIVE")
+
+    payload = {
+        "code": code,
+        "target_status": target,
+        "pilot_tenant_limit": int(body.get("pilot_tenant_limit", 50)),
+        "issued_at": _dt_from_body(body),
+    }
+    proj.apply("saas.region.launched.v1", payload)
+    region = proj.get_region(code)
+    _persist_region_full(region)
+
+    return JsonResponse({
+        "status": "ok", "code": code, "region_status": region.status,
+    })
+
+
+@csrf_exempt
+def saas_region_suspend_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/suspend — Suspend a region (no new signups)."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        code = body["code"].strip().upper()
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    proj = _get_pricing_projection()
+    region = proj.get_region(code)
+    if not region:
+        return _json_error("NOT_FOUND", f"Region {code} not found", status=404)
+    if region.status not in ("ACTIVE", "PILOT"):
+        return _json_error("INVALID_STATE",
+                           f"Region is {region.status}, can only suspend ACTIVE/PILOT")
+
+    proj.apply("saas.region.suspended.v1", {
+        "code": code, "reason": body.get("reason", ""),
+        "issued_at": _dt_from_body(body),
+    })
+    region = proj.get_region(code)
+    _persist_region_full(region)
+
+    return JsonResponse({
+        "status": "ok", "code": code, "region_status": region.status,
+    })
+
+
+@csrf_exempt
+def saas_region_reactivate_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/reactivate — Reactivate a suspended region."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        code = body["code"].strip().upper()
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    proj = _get_pricing_projection()
+    region = proj.get_region(code)
+    if not region:
+        return _json_error("NOT_FOUND", f"Region {code} not found", status=404)
+    if region.status != "SUSPENDED":
+        return _json_error("INVALID_STATE",
+                           f"Region is {region.status}, can only reactivate SUSPENDED")
+
+    proj.apply("saas.region.reactivated.v1", {
+        "code": code, "issued_at": _dt_from_body(body),
+    })
+    region = proj.get_region(code)
+    _persist_region_full(region)
+
+    return JsonResponse({
+        "status": "ok", "code": code, "region_status": region.status,
+    })
+
+
+@csrf_exempt
+def saas_region_sunset_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/sunset — Begin winding down a region."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        code = body["code"].strip().upper()
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    proj = _get_pricing_projection()
+    region = proj.get_region(code)
+    if not region:
+        return _json_error("NOT_FOUND", f"Region {code} not found", status=404)
+
+    proj.apply("saas.region.sunset.v1", {
+        "code": code, "reason": body.get("reason", ""),
+        "issued_at": _dt_from_body(body),
+    })
+    region = proj.get_region(code)
+    _persist_region_full(region)
+
+    return JsonResponse({
+        "status": "ok", "code": code, "region_status": region.status,
+    })
+
+
+@csrf_exempt
+def saas_region_set_payment_channel_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/set-payment-channel — Add or update a payment channel for a region."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        region_code = body["region_code"].strip().upper()
+        channel_key = body["channel_key"].strip()
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    proj = _get_pricing_projection()
+    if not proj.get_region(region_code):
+        return _json_error("NOT_FOUND", f"Region {region_code} not found", status=404)
+
+    payload = {
+        "region_code": region_code,
+        "channel_key": channel_key,
+        "display_name": body.get("display_name", channel_key),
+        "provider": body.get("provider", ""),
+        "channel_type": body.get("channel_type", "MOBILE_MONEY"),
+        "is_active": bool(body.get("is_active", True)),
+        "config": body.get("config", {}),
+        "min_amount": str(body.get("min_amount", "0")),
+        "max_amount": str(body.get("max_amount", "999999999")),
+        "settlement_delay_days": int(body.get("settlement_delay_days", 1)),
+    }
+    proj.apply("saas.region.payment_channel_set.v1", payload)
+    _persist_pricing("save_payment_channel", **payload)
+
+    return JsonResponse({
+        "status": "ok", "region_code": region_code, "channel_key": channel_key,
+    })
+
+
+@csrf_exempt
+def saas_region_remove_payment_channel_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/remove-payment-channel — Remove a payment channel."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        region_code = body["region_code"].strip().upper()
+        channel_key = body["channel_key"].strip()
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    proj = _get_pricing_projection()
+    if not proj.get_region(region_code):
+        return _json_error("NOT_FOUND", f"Region {region_code} not found", status=404)
+
+    proj.apply("saas.region.payment_channel_removed.v1", {
+        "region_code": region_code, "channel_key": channel_key,
+    })
+    _persist_pricing("remove_payment_channel",
+                     region_code=region_code, channel_key=channel_key)
+
+    return JsonResponse({
+        "status": "ok", "region_code": region_code, "channel_key": channel_key,
+    })
+
+
+@csrf_exempt
+def saas_region_payment_channels_view(request: HttpRequest, region_code: str) -> JsonResponse:
+    """GET /saas/regions/<code>/payment-channels — List payment channels for a region."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    proj = _get_pricing_projection()
+    code = region_code.upper()
+    region = proj.get_region(code)
+    if not region:
+        return _json_error("NOT_FOUND", f"Region {code} not found", status=404)
+    channels = proj.get_region_payment_channels(code)
+    return JsonResponse({
+        "status": "ok",
+        "region_code": code,
+        "channels": [
+            {
+                "channel_key": ch.channel_key,
+                "display_name": ch.display_name,
+                "provider": ch.provider,
+                "channel_type": ch.channel_type,
+                "is_active": ch.is_active,
+                "min_amount": str(ch.min_amount),
+                "max_amount": str(ch.max_amount),
+                "settlement_delay_days": ch.settlement_delay_days,
+            }
+            for ch in channels
+        ],
+    })
+
+
+@csrf_exempt
+def saas_region_set_settlement_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/set-settlement — Set settlement bank account for a region."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        region_code = body["region_code"].strip().upper()
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    proj = _get_pricing_projection()
+    region = proj.get_region(region_code)
+    if not region:
+        return _json_error("NOT_FOUND", f"Region {region_code} not found", status=404)
+
+    payload = {
+        "region_code": region_code,
+        "bank_name": body.get("bank_name", ""),
+        "account_name": body.get("account_name", ""),
+        "account_number": body.get("account_number", ""),
+        "branch_code": body.get("branch_code", ""),
+        "swift_code": body.get("swift_code", ""),
+        "currency": body.get("currency", region.currency),
+        "is_primary": bool(body.get("is_primary", True)),
+    }
+    proj.apply("saas.region.settlement_set.v1", payload)
+    _persist_pricing("save_settlement_account", **payload)
+
+    return JsonResponse({
+        "status": "ok", "region_code": region_code,
+        "bank_name": payload["bank_name"],
+    })
+
+
+@csrf_exempt
+def saas_region_settlement_accounts_view(request: HttpRequest, region_code: str) -> JsonResponse:
+    """GET /saas/regions/<code>/settlement-accounts — List settlement accounts."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    proj = _get_pricing_projection()
+    code = region_code.upper()
+    region = proj.get_region(code)
+    if not region:
+        return _json_error("NOT_FOUND", f"Region {code} not found", status=404)
+    accounts = proj.get_region_settlement_accounts(code)
+    return JsonResponse({
+        "status": "ok",
+        "region_code": code,
+        "settlement_accounts": [
+            {
+                "bank_name": sa.bank_name,
+                "account_name": sa.account_name,
+                "account_number": sa.account_number,
+                "branch_code": sa.branch_code,
+                "swift_code": sa.swift_code,
+                "currency": sa.currency,
+                "is_primary": sa.is_primary,
+            }
+            for sa in accounts
+        ],
+    })
+
+
+@csrf_exempt
+def saas_region_dashboard_view(request: HttpRequest, region_code: str) -> JsonResponse:
+    """GET /saas/regions/<code>/dashboard — Full operational dashboard for a region."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    proj = _get_pricing_projection()
+    code = region_code.upper()
+    region = proj.get_region(code)
+    if not region:
+        return _json_error("NOT_FOUND", f"Region {code} not found", status=404)
+
+    channels = proj.get_region_payment_channels(code)
+    accounts = proj.get_region_settlement_accounts(code)
+
+    # Get reseller stats from reseller projection
+    svcs = _get_saas_services()
+    resellers = svcs._reseller_proj.list_resellers_by_region(code)
+    mgr = svcs._reseller_proj.get_regional_manager(code)
+    territories = svcs._reseller_proj.get_territories_for_region(code)
+    override = svcs._reseller_proj.get_commission_override(code)
+
+    active_channels = [ch for ch in channels if ch.is_active]
+
+    return JsonResponse({
+        "status": "ok",
+        "region_code": code,
+        "region_name": region.name,
+        "region_status": region.status,
+        "currency": region.currency,
+        # Financial readiness
+        "financial": {
+            "payment_channels_total": len(channels),
+            "payment_channels_active": len(active_channels),
+            "channel_types": list({ch.channel_type for ch in active_channels}),
+            "settlement_accounts": len(accounts),
+            "has_primary_settlement": any(sa.is_primary for sa in accounts),
+            "min_payout_amount": str(region.min_payout_amount),
+        },
+        # Tax configuration
+        "tax": {
+            "tax_name": region.tax_name,
+            "vat_rate": region.vat_rate,
+            "digital_tax_rate": region.digital_tax_rate,
+            "regulatory_body": region.regulatory_body,
+        },
+        # Reseller network
+        "reseller_network": {
+            "total_resellers": len(resellers),
+            "active_resellers": len([r for r in resellers if r.status.value == "ACTIVE"]),
+            "total_tenants": sum(r.active_tenant_count for r in resellers),
+            "regional_manager": {
+                "reseller_id": str(mgr.reseller_id),
+                "bonus_rate": str(mgr.bonus_rate),
+            } if mgr else None,
+            "territories": len(territories),
+            "commission_override": str(override.override_rate) if override else None,
+        },
+        # Operations
+        "operations": {
+            "timezone": region.timezone,
+            "default_language": region.default_language,
+            "support_phone": region.support_phone,
+            "support_email": region.support_email,
+            "support_hours": region.support_hours,
+        },
+        # Launch info
+        "launch": {
+            "launched_at": str(region.launched_at) if region.launched_at else None,
+            "pilot_tenant_limit": region.pilot_tenant_limit,
+            "launch_notes": region.launch_notes,
+        },
+    })
 
 
 # ── Services (Huduma) ──────────────────────────────────────

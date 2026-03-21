@@ -723,25 +723,151 @@ class SaaSPayout(models.Model):
 # 16. SaaSRegion — dynamic region/country configuration
 # ---------------------------------------------------------------------------
 
+class RegionStatusChoices(models.TextChoices):
+    DRAFT = "DRAFT", "Draft"
+    PILOT = "PILOT", "Pilot"
+    ACTIVE = "ACTIVE", "Active"
+    SUSPENDED = "SUSPENDED", "Suspended"
+    SUNSET = "SUNSET", "Sunset"
+
+
 class SaaSRegion(models.Model):
     code = models.CharField(max_length=8, primary_key=True)
     name = models.CharField(max_length=255)
     currency = models.CharField(max_length=8)
+    status = models.CharField(
+        max_length=16,
+        choices=RegionStatusChoices.choices,
+        default=RegionStatusChoices.ACTIVE,
+    )
+
+    # ── Tax & Compliance ──
     tax_name = models.CharField(max_length=32, default="VAT")
     vat_rate = models.FloatField(default=0.0)
     digital_tax_rate = models.FloatField(default=0.0)
     b2b_reverse_charge = models.BooleanField(default=False)
     registration_required = models.BooleanField(default=True)
+    regulatory_body = models.CharField(max_length=128, default="", blank=True)
+    business_license_required = models.BooleanField(default=True)
+    data_residency_required = models.BooleanField(default=False)
+
+    # ── Financial ──
+    min_payout_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0
+    )
+    payout_currency = models.CharField(max_length=8, default="", blank=True)
+
+    # ── Operations ──
+    default_language = models.CharField(max_length=8, default="en")
+    timezone = models.CharField(max_length=64, default="Africa/Nairobi")
+    support_phone = models.CharField(max_length=32, default="", blank=True)
+    support_email = models.CharField(max_length=255, default="", blank=True)
+    support_hours = models.CharField(max_length=128, default="", blank=True)
+    country_calling_code = models.CharField(max_length=8, default="", blank=True)
+    phone_format = models.CharField(max_length=64, default="", blank=True)
+
+    # ── Launch Management ──
+    launched_at = models.DateTimeField(null=True, blank=True)
+    suspended_at = models.DateTimeField(null=True, blank=True)
+    sunset_at = models.DateTimeField(null=True, blank=True)
+    pilot_tenant_limit = models.IntegerField(default=0)
+    launch_notes = models.TextField(default="", blank=True)
+
+    # ── Legacy ──
     is_active = models.BooleanField(default=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "bos_saas_region"
         ordering = ["code"]
+        indexes = [
+            models.Index(fields=["status"], name="idx_saas_region_status"),
+        ]
 
     def __str__(self) -> str:
-        return f"{self.code} — {self.name} ({self.currency})"
+        return f"{self.code} — {self.name} ({self.currency}) [{self.status}]"
+
+
+# ---------------------------------------------------------------------------
+# 16b. SaaSRegionPaymentChannel — payment collection methods per region
+# ---------------------------------------------------------------------------
+
+class SaaSRegionPaymentChannel(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    region = models.ForeignKey(
+        SaaSRegion,
+        on_delete=models.CASCADE,
+        related_name="payment_channels_set",
+        db_column="region_code",
+    )
+    channel_key = models.CharField(max_length=64)
+    display_name = models.CharField(max_length=255)
+    provider = models.CharField(max_length=64)
+    channel_type = models.CharField(max_length=32)
+    is_active = models.BooleanField(default=True)
+    config = models.JSONField(default=dict, blank=True)
+    min_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    max_amount = models.DecimalField(max_digits=14, decimal_places=2, default=999999999)
+    settlement_delay_days = models.IntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_region_payment_channel"
+        ordering = ["region", "channel_key"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["region", "channel_key"],
+                name="uq_saas_region_payment_channel",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["region", "is_active"],
+                name="idx_saas_rpc_region_active",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.region_id}/{self.channel_key} ({self.provider})"
+
+
+# ---------------------------------------------------------------------------
+# 16c. SaaSRegionSettlementAccount — bank accounts for fund settlement
+# ---------------------------------------------------------------------------
+
+class SaaSRegionSettlementAccount(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    region = models.ForeignKey(
+        SaaSRegion,
+        on_delete=models.CASCADE,
+        related_name="settlement_accounts_set",
+        db_column="region_code",
+    )
+    bank_name = models.CharField(max_length=255)
+    account_name = models.CharField(max_length=255)
+    account_number = models.CharField(max_length=64)
+    branch_code = models.CharField(max_length=32, default="", blank=True)
+    swift_code = models.CharField(max_length=16, default="", blank=True)
+    currency = models.CharField(max_length=8)
+    is_primary = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_region_settlement_account"
+        ordering = ["region", "-is_primary"]
+        indexes = [
+            models.Index(
+                fields=["region", "is_primary"],
+                name="idx_saas_rsa_region_primary",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.region_id} {self.bank_name} ({self.account_number})"
 
 
 # ---------------------------------------------------------------------------
