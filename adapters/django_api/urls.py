@@ -109,4 +109,16 @@ urlpatterns = [
     path("saas/tenant/available-plans", views.saas_tenant_available_plans_view),
     path("saas/tenant/my-plan", views.saas_tenant_my_plan_view),
     path("saas/tenant/select-plan", views.saas_tenant_select_plan_view),
+    # SaaS — Service-Based Pricing (Regions, Services, Capacity, Reductions)
+    path("saas/regions", views.saas_regions_list_view),
+    path("saas/regions/add", views.saas_regions_add_view),
+    path("saas/regions/update", views.saas_regions_update_view),
+    path("saas/services", views.saas_services_list_view),
+    path("saas/services/set-rate", views.saas_services_set_rate_view),
+    path("saas/services/toggle", views.saas_services_toggle_view),
+    path("saas/capacity", views.saas_capacity_list_view),
+    path("saas/capacity/set-rate", views.saas_capacity_set_rate_view),
+    path("saas/reductions", views.saas_reductions_list_view),
+    path("saas/reductions/set", views.saas_reductions_set_view),
+    path("saas/calculate-price", views.saas_calculate_price_view),
 ]

@@ -561,3 +561,119 @@ class SaaSPersistenceStore:
                 "completed_at": completed_at,
             },
         )
+
+    # ── Service-Based Pricing Persistence ──────────────────────
+
+    @staticmethod
+    def save_region(code, name, currency, tax_name="VAT", vat_rate=0.0,
+                    digital_tax_rate=0.0, b2b_reverse_charge=False,
+                    registration_required=True, is_active=True, **_kw):
+        from core.saas.models import SaaSRegion
+        SaaSRegion.objects.update_or_create(
+            code=code,
+            defaults={
+                "name": name,
+                "currency": currency,
+                "tax_name": tax_name,
+                "vat_rate": vat_rate,
+                "digital_tax_rate": digital_tax_rate,
+                "b2b_reverse_charge": b2b_reverse_charge,
+                "registration_required": registration_required,
+                "is_active": is_active,
+            },
+        )
+
+    @staticmethod
+    def save_service_rate(service_key, region_code, currency, monthly_amount,
+                          **_kw):
+        from core.saas.models import SaaSServiceRate
+        SaaSServiceRate.objects.update_or_create(
+            service_key=service_key,
+            region_code=region_code,
+            defaults={
+                "currency": currency,
+                "monthly_amount": monthly_amount,
+            },
+        )
+
+    @staticmethod
+    def save_service_toggle(service_key, active, **_kw):
+        from core.saas.models import SaaSServiceToggle
+        SaaSServiceToggle.objects.update_or_create(
+            service_key=service_key,
+            defaults={"active": active},
+        )
+
+    @staticmethod
+    def save_capacity_rate(dimension, tier_key, region_code, currency,
+                           monthly_amount, **_kw):
+        from core.saas.models import SaaSCapacityRate
+        SaaSCapacityRate.objects.update_or_create(
+            dimension=dimension,
+            tier_key=tier_key,
+            region_code=region_code,
+            defaults={
+                "currency": currency,
+                "monthly_amount": monthly_amount,
+            },
+        )
+
+    @staticmethod
+    def save_reduction_rate(region_code, service_count, reduction_pct, **_kw):
+        from core.saas.models import SaaSReductionRate
+        SaaSReductionRate.objects.update_or_create(
+            region_code=region_code,
+            service_count=service_count,
+            defaults={"reduction_pct": reduction_pct},
+        )
+
+    @staticmethod
+    def load_pricing_projection(proj):
+        """Hydrate a ServicePricingProjection from the DB."""
+        from core.saas.models import (
+            SaaSRegion, SaaSServiceRate, SaaSServiceToggle,
+            SaaSCapacityRate, SaaSReductionRate,
+        )
+
+        for r in SaaSRegion.objects.all():
+            proj.apply("saas.region.added.v1", {
+                "code": r.code,
+                "name": r.name,
+                "currency": r.currency,
+                "tax_name": r.tax_name,
+                "vat_rate": r.vat_rate,
+                "digital_tax_rate": r.digital_tax_rate,
+                "b2b_reverse_charge": r.b2b_reverse_charge,
+                "registration_required": r.registration_required,
+                "is_active": r.is_active,
+            })
+
+        for sr in SaaSServiceRate.objects.all():
+            proj.apply("saas.service.rate_set.v1", {
+                "service_key": sr.service_key,
+                "region_code": sr.region_code,
+                "currency": sr.currency,
+                "monthly_amount": str(sr.monthly_amount),
+            })
+
+        for st in SaaSServiceToggle.objects.all():
+            proj.apply("saas.service.toggled.v1", {
+                "service_key": st.service_key,
+                "active": st.active,
+            })
+
+        for cr in SaaSCapacityRate.objects.all():
+            proj.apply("saas.capacity.rate_set.v1", {
+                "dimension": cr.dimension,
+                "tier_key": cr.tier_key,
+                "region_code": cr.region_code,
+                "currency": cr.currency,
+                "monthly_amount": str(cr.monthly_amount),
+            })
+
+        for rr in SaaSReductionRate.objects.all():
+            proj.apply("saas.reduction.rate_set.v1", {
+                "region_code": rr.region_code,
+                "service_count": rr.service_count,
+                "reduction_pct": str(rr.reduction_pct),
+            })

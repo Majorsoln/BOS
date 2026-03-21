@@ -2624,3 +2624,309 @@ def saas_tenant_select_plan_view(request: HttpRequest) -> JsonResponse:
         },
         "referral_bonus_days": referral_bonus_days,
     })
+
+
+# ---------------------------------------------------------------------------
+# SaaS — Service-Based Pricing (Regions, Services, Capacity, Reductions)
+# ---------------------------------------------------------------------------
+
+def _get_pricing_projection():
+    """Lazy-load the ServicePricingProjection singleton."""
+    if not hasattr(_get_pricing_projection, "_proj"):
+        from core.saas.pricing import ServicePricingProjection
+        proj = ServicePricingProjection()
+        # Load from DB
+        try:
+            from core.saas.persistence import SaaSPersistenceStore
+            SaaSPersistenceStore.load_pricing_projection(proj)
+        except Exception:
+            pass
+        _get_pricing_projection._proj = proj
+    return _get_pricing_projection._proj
+
+
+def _persist_pricing(fn_name, **kwargs):
+    """Persist pricing state change to DB."""
+    try:
+        from core.saas.persistence import SaaSPersistenceStore
+        getattr(SaaSPersistenceStore, fn_name)(**kwargs)
+    except Exception:
+        pass
+
+
+# ── Regions (Nchi) ──────────────────────────────────────────
+
+
+@csrf_exempt
+def saas_regions_list_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "GET":
+        return _method_not_allowed()
+    proj = _get_pricing_projection()
+    regions = proj.list_regions()
+    return JsonResponse({
+        "status": "ok",
+        "data": {
+            "regions": [
+                {
+                    "code": r.code,
+                    "name": r.name,
+                    "currency": r.currency,
+                    "tax_name": r.tax_name,
+                    "vat_rate": r.vat_rate,
+                    "digital_tax_rate": r.digital_tax_rate,
+                    "b2b_reverse_charge": r.b2b_reverse_charge,
+                    "registration_required": r.registration_required,
+                    "is_active": r.is_active,
+                }
+                for r in regions
+            ],
+        },
+    })
+
+
+@csrf_exempt
+def saas_regions_add_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        code = body["code"].strip().upper()
+        name = body["name"].strip()
+        currency = body["currency"].strip().upper()
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    if len(code) != 2:
+        return _json_error("INVALID_REQUEST", "Country code must be 2 characters (ISO 3166-1 alpha-2)")
+
+    proj = _get_pricing_projection()
+    if proj.get_region(code):
+        return _json_error("DUPLICATE", f"Region {code} already exists")
+
+    payload = {
+        "code": code,
+        "name": name,
+        "currency": currency,
+        "tax_name": body.get("tax_name", "VAT"),
+        "vat_rate": float(body.get("vat_rate", 0)),
+        "digital_tax_rate": float(body.get("digital_tax_rate", 0)),
+        "b2b_reverse_charge": bool(body.get("b2b_reverse_charge", False)),
+        "registration_required": bool(body.get("registration_required", True)),
+        "is_active": True,
+    }
+    proj.apply("saas.region.added.v1", payload)
+    _persist_pricing("save_region", **payload)
+
+    return JsonResponse({"status": "ok", "code": code})
+
+
+@csrf_exempt
+def saas_regions_update_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        code = body["code"].strip().upper()
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    proj = _get_pricing_projection()
+    if not proj.get_region(code):
+        return _json_error("NOT_FOUND", f"Region {code} not found", status=404)
+
+    payload = {"code": code}
+    for key in ("name", "currency", "tax_name", "vat_rate", "digital_tax_rate",
+                "b2b_reverse_charge", "registration_required", "is_active"):
+        if key in body:
+            payload[key] = body[key]
+
+    proj.apply("saas.region.updated.v1", payload)
+    # Re-save full region state
+    region = proj.get_region(code)
+    _persist_pricing("save_region",
+                     code=region.code, name=region.name, currency=region.currency,
+                     tax_name=region.tax_name, vat_rate=region.vat_rate,
+                     digital_tax_rate=region.digital_tax_rate,
+                     b2b_reverse_charge=region.b2b_reverse_charge,
+                     registration_required=region.registration_required,
+                     is_active=region.is_active)
+
+    return JsonResponse({"status": "ok", "code": code})
+
+
+# ── Services (Huduma) ──────────────────────────────────────
+
+
+@csrf_exempt
+def saas_services_list_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "GET":
+        return _method_not_allowed()
+    proj = _get_pricing_projection()
+    return JsonResponse({
+        "status": "ok",
+        "data": {
+            "rates": proj.get_service_rates(),
+            "active": proj.get_service_active_map(),
+        },
+    })
+
+
+@csrf_exempt
+def saas_services_set_rate_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        service_key = body["service_key"]
+        region_code = body["region_code"]
+        currency = body.get("currency", "USD")
+        monthly_amount = body["monthly_amount"]
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    proj = _get_pricing_projection()
+    payload = {
+        "service_key": service_key,
+        "region_code": region_code,
+        "currency": currency,
+        "monthly_amount": monthly_amount,
+    }
+    proj.apply("saas.service.rate_set.v1", payload)
+    _persist_pricing("save_service_rate", **payload)
+
+    return JsonResponse({"status": "ok", "service_key": service_key, "region_code": region_code})
+
+
+@csrf_exempt
+def saas_services_toggle_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        service_key = body["service_key"]
+        active = bool(body["active"])
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    proj = _get_pricing_projection()
+    payload = {"service_key": service_key, "active": active}
+    proj.apply("saas.service.toggled.v1", payload)
+    _persist_pricing("save_service_toggle", service_key=service_key, active=active)
+
+    return JsonResponse({"status": "ok", "service_key": service_key, "active": active})
+
+
+# ── Capacity Tiers ──────────────────────────────────────────
+
+
+@csrf_exempt
+def saas_capacity_list_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "GET":
+        return _method_not_allowed()
+    proj = _get_pricing_projection()
+    return JsonResponse({"status": "ok", "data": proj.get_capacity_rates()})
+
+
+@csrf_exempt
+def saas_capacity_set_rate_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        dimension = body["dimension"]
+        tier_key = body["tier_key"]
+        region_code = body["region_code"]
+        currency = body.get("currency", "USD")
+        monthly_amount = body["monthly_amount"]
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    proj = _get_pricing_projection()
+    payload = {
+        "dimension": dimension,
+        "tier_key": tier_key,
+        "region_code": region_code,
+        "currency": currency,
+        "monthly_amount": monthly_amount,
+    }
+    proj.apply("saas.capacity.rate_set.v1", payload)
+    _persist_pricing("save_capacity_rate", **payload)
+
+    return JsonResponse({"status": "ok", "dimension": dimension, "tier_key": tier_key, "region_code": region_code})
+
+
+# ── Multi-Service Reduction ─────────────────────────────────
+
+
+@csrf_exempt
+def saas_reductions_list_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "GET":
+        return _method_not_allowed()
+    proj = _get_pricing_projection()
+    return JsonResponse({"status": "ok", "data": proj.get_reduction_rates()})
+
+
+@csrf_exempt
+def saas_reductions_set_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        region_code = body["region_code"]
+        service_count = int(body["service_count"])
+        reduction_pct = float(body["reduction_pct"])
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    if not (2 <= service_count <= 5):
+        return _json_error("INVALID_REQUEST", "service_count must be 2-5")
+    if not (0 <= reduction_pct <= 50):
+        return _json_error("INVALID_REQUEST", "reduction_pct must be 0-50")
+
+    proj = _get_pricing_projection()
+    payload = {
+        "region_code": region_code,
+        "service_count": service_count,
+        "reduction_pct": reduction_pct,
+    }
+    proj.apply("saas.reduction.rate_set.v1", payload)
+    _persist_pricing("save_reduction_rate", **payload)
+
+    return JsonResponse({"status": "ok", "region_code": region_code, "service_count": service_count})
+
+
+# ── Price Calculator ────────────────────────────────────────
+
+
+@csrf_exempt
+def saas_calculate_price_view(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        region_code = body["region_code"]
+        services = body["services"]
+        capacity = body.get("capacity", {})
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc))
+
+    proj = _get_pricing_projection()
+    result = proj.calculate_price(region_code, services, capacity)
+    if result is None:
+        return _json_error("NOT_FOUND", f"Region {region_code} not found", status=404)
+
+    return JsonResponse({
+        "status": "ok",
+        "data": {
+            "region_code": result.region_code,
+            "currency": result.currency,
+            "service_lines": result.service_lines,
+            "service_total": float(result.service_total),
+            "reduction_pct": float(result.reduction_pct),
+            "reduction_amount": float(result.reduction_amount),
+            "service_after_reduction": float(result.service_after_reduction),
+            "capacity_lines": result.capacity_lines,
+            "capacity_total": float(result.capacity_total),
+            "monthly_total": float(result.monthly_total),
+        },
+    })

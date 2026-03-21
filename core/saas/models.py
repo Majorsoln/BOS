@@ -717,3 +717,152 @@ class SaaSPayout(models.Model):
             f"Payout {self.payout_id} {self.amount} {self.currency} "
             f"({self.status})"
         )
+
+
+# ---------------------------------------------------------------------------
+# 16. SaaSRegion — dynamic region/country configuration
+# ---------------------------------------------------------------------------
+
+class SaaSRegion(models.Model):
+    code = models.CharField(max_length=8, primary_key=True)
+    name = models.CharField(max_length=255)
+    currency = models.CharField(max_length=8)
+    tax_name = models.CharField(max_length=32, default="VAT")
+    vat_rate = models.FloatField(default=0.0)
+    digital_tax_rate = models.FloatField(default=0.0)
+    b2b_reverse_charge = models.BooleanField(default=False)
+    registration_required = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_region"
+        ordering = ["code"]
+
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name} ({self.currency})"
+
+
+# ---------------------------------------------------------------------------
+# 17. SaaSServiceRate — monthly rate per service per region
+# ---------------------------------------------------------------------------
+
+class SaaSServiceRate(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    service_key = models.CharField(max_length=64)
+    region_code = models.CharField(max_length=8)
+    currency = models.CharField(max_length=8)
+    monthly_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_service_rate"
+        ordering = ["service_key", "region_code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["service_key", "region_code"],
+                name="uq_saas_service_rate_svc_region",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["service_key"],
+                name="idx_saas_svcrate_svc",
+            ),
+            models.Index(
+                fields=["region_code"],
+                name="idx_saas_svcrate_region",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.service_key} @ {self.region_code} = {self.monthly_amount} {self.currency}"
+
+
+# ---------------------------------------------------------------------------
+# 18. SaaSServiceToggle — active/inactive flag per service
+# ---------------------------------------------------------------------------
+
+class SaaSServiceToggle(models.Model):
+    service_key = models.CharField(max_length=64, primary_key=True)
+    active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_service_toggle"
+        ordering = ["service_key"]
+
+    def __str__(self) -> str:
+        return f"{self.service_key} active={self.active}"
+
+
+# ---------------------------------------------------------------------------
+# 19. SaaSCapacityRate — tiered pricing per dimension per region
+# ---------------------------------------------------------------------------
+
+class SaaSCapacityRate(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    dimension = models.CharField(max_length=64)
+    tier_key = models.CharField(max_length=64)
+    region_code = models.CharField(max_length=8)
+    currency = models.CharField(max_length=8)
+    monthly_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_capacity_rate"
+        ordering = ["dimension", "tier_key", "region_code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["dimension", "tier_key", "region_code"],
+                name="uq_saas_capacity_rate_dim_tier_region",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["dimension"],
+                name="idx_saas_caprate_dim",
+            ),
+            models.Index(
+                fields=["region_code"],
+                name="idx_saas_caprate_region",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.dimension}/{self.tier_key} @ {self.region_code} = {self.monthly_amount} {self.currency}"
+
+
+# ---------------------------------------------------------------------------
+# 20. SaaSReductionRate — multi-service discount per region
+# ---------------------------------------------------------------------------
+
+class SaaSReductionRate(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    region_code = models.CharField(max_length=8)
+    service_count = models.IntegerField()
+    reduction_pct = models.DecimalField(max_digits=5, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_reduction_rate"
+        ordering = ["region_code", "service_count"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["region_code", "service_count"],
+                name="uq_saas_reduction_rate_region_count",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["region_code"],
+                name="idx_saas_redrate_region",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.region_code} {self.service_count} services = {self.reduction_pct}% off"
