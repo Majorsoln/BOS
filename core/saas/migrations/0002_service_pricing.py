@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("saas", "0001_saas_initial"),
+        ("core_saas", "0001_saas_initial"),
     ]
 
     operations = [
