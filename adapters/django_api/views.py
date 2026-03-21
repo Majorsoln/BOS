@@ -2181,6 +2181,640 @@ def saas_resellers_list_view(request: HttpRequest) -> JsonResponse:
     })
 
 
+# ── Reseller Management (Platform Admin) ──────────────────
+
+@csrf_exempt
+def saas_reseller_detail_view(request: HttpRequest, reseller_id: str) -> JsonResponse:
+    """GET /saas/resellers/<id> — Get single reseller detail."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    rid = _parse_uuid(reseller_id, "reseller_id")
+    r = svcs._reseller_proj.get_reseller(rid)
+    if r is None:
+        return _json_error("RESELLER_NOT_FOUND", "Reseller not found.", status=404)
+    territories = svcs._reseller_proj.get_territories_for_reseller(rid)
+    commissions = svcs._reseller_proj.get_commissions(rid)
+    payouts = svcs._reseller_proj.get_payouts(rid)
+    links = svcs._reseller_proj.get_tenant_links(rid)
+    # Check if regional manager
+    mgr_regions = [
+        m.region_code for m in svcs._reseller_proj.list_regional_managers()
+        if m.reseller_id == rid
+    ]
+    return JsonResponse({
+        "status": "ok",
+        "reseller": {
+            "reseller_id": str(r.reseller_id),
+            "company_name": r.company_name,
+            "contact_person": r.contact_person,
+            "phone": r.phone,
+            "email": r.email,
+            "region_codes": list(r.region_codes),
+            "tier": r.tier.value,
+            "status": r.status.value,
+            "commission_rate": str(r.commission_rate),
+            "effective_commission_rate": str(svcs._reseller_proj.get_effective_commission_rate(rid)),
+            "payout_method": r.payout_method,
+            "active_tenant_count": r.active_tenant_count,
+            "total_commission_earned": str(r.total_commission_earned),
+            "total_commission_paid": str(r.total_commission_paid),
+            "pending_commission": str(r.pending_commission),
+            "is_regional_manager": len(mgr_regions) > 0,
+            "managed_regions": mgr_regions,
+            "territories": [
+                {"territory_id": str(t.territory_id), "territory_name": t.territory_name,
+                 "region_code": t.region_code}
+                for t in territories
+            ],
+            "tenant_count": len([lnk for lnk in links if lnk.is_active]),
+            "tenants": [
+                {"business_id": str(lnk.business_id), "is_active": lnk.is_active,
+                 "linked_at": str(lnk.linked_at) if lnk.linked_at else None}
+                for lnk in links
+            ],
+            "commission_history": [
+                {"amount": str(c.amount), "currency": c.currency, "period": c.period,
+                 "is_clawback": c.is_clawback}
+                for c in commissions[-20:]  # last 20
+            ],
+            "payouts": [
+                {"payout_id": str(p.payout_id), "amount": str(p.amount),
+                 "currency": p.currency, "status": p.status.value}
+                for p in payouts
+            ],
+        },
+    })
+
+
+@csrf_exempt
+def saas_update_reseller_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/update — Update reseller profile."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.resellers import UpdateResellerRequest
+        req = UpdateResellerRequest(
+            reseller_id=_parse_uuid(body["reseller_id"], "reseller_id"),
+            company_name=body.get("company_name"),
+            contact_person=body.get("contact_person"),
+            phone=body.get("phone"),
+            email=body.get("email"),
+            region_codes=tuple(body["region_codes"]) if "region_codes" in body else None,
+            payout_method=body.get("payout_method"),
+            payout_phone=body.get("payout_phone"),
+            payout_bank_name=body.get("payout_bank_name"),
+            payout_account_number=body.get("payout_account_number"),
+            payout_account_name=body.get("payout_account_name"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.update_reseller(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    # Re-persist updated reseller
+    r = svcs._reseller_proj.get_reseller(req.reseller_id)
+    if r:
+        _persist_saas("save_reseller",
+                      reseller_id=r.reseller_id, company_name=r.company_name,
+                      contact_name=r.contact_person, contact_phone=r.phone,
+                      contact_email=r.email, tier=r.tier.value,
+                      commission_rate=str(r.commission_rate),
+                      payout_method=r.payout_method)
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_suspend_reseller_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/suspend — Suspend a reseller."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        rid = _parse_uuid(body["reseller_id"], "reseller_id")
+        reason = body.get("reason", "")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.suspend_reseller(
+        rid, reason, body.get("actor_id", ""), _dt_from_body(body))
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("save_reseller", reseller_id=rid, company_name="",
+                  status="DEACTIVATED")
+    return JsonResponse({"status": "ok", "reseller_status": result["status"]})
+
+
+@csrf_exempt
+def saas_reinstate_reseller_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/reinstate — Reinstate a suspended reseller."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        rid = _parse_uuid(body["reseller_id"], "reseller_id")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.reinstate_reseller(
+        rid, body.get("actor_id", ""), _dt_from_body(body))
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("save_reseller", reseller_id=rid, company_name="",
+                  status="ACTIVE")
+    return JsonResponse({"status": "ok", "reseller_status": result["status"]})
+
+
+@csrf_exempt
+def saas_terminate_reseller_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/terminate — Permanently terminate a reseller."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        rid = _parse_uuid(body["reseller_id"], "reseller_id")
+        reason = body.get("reason", "")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.terminate_reseller(
+        rid, reason, body.get("actor_id", ""), _dt_from_body(body))
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({"status": "ok", "reseller_status": result["status"]})
+
+
+@csrf_exempt
+def saas_approve_payout_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/approve-payout — Approve a pending payout."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.resellers import ApprovePayoutRequest
+        req = ApprovePayoutRequest(
+            payout_id=_parse_uuid(body["payout_id"], "payout_id"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.approve_payout(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    payout = svcs._reseller_proj.get_payout(req.payout_id)
+    if payout:
+        _persist_saas("save_payout", payout_id=req.payout_id,
+                      reseller_id=payout.reseller_id, amount=payout.amount,
+                      currency=payout.currency, status="COMPLETED",
+                      requested_at=payout.requested_at,
+                      completed_at=req.issued_at)
+    return JsonResponse({"status": "ok", "payout_status": result["status"]})
+
+
+@csrf_exempt
+def saas_reject_payout_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/reject-payout — Reject a pending payout."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.resellers import RejectPayoutRequest
+        req = RejectPayoutRequest(
+            payout_id=_parse_uuid(body["payout_id"], "payout_id"),
+            reason=body.get("reason", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.reject_payout(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    payout = svcs._reseller_proj.get_payout(req.payout_id)
+    if payout:
+        _persist_saas("save_payout", payout_id=req.payout_id,
+                      reseller_id=payout.reseller_id, amount=payout.amount,
+                      currency=payout.currency, status="FAILED",
+                      requested_at=payout.requested_at)
+    return JsonResponse({"status": "ok", "payout_status": result["status"],
+                         "reason": result.get("reason", "")})
+
+
+@csrf_exempt
+def saas_payouts_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/resellers/payouts — List all payouts (admin view)."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    status_filter = request.GET.get("status")
+    payouts = svcs._reseller_proj.list_all_payouts(status=status_filter)
+    return JsonResponse({
+        "status": "ok",
+        "payouts": [
+            {
+                "payout_id": str(p.payout_id),
+                "reseller_id": str(p.reseller_id),
+                "amount": str(p.amount),
+                "currency": p.currency,
+                "status": p.status.value,
+                "method": p.method,
+                "requested_at": str(p.requested_at) if p.requested_at else None,
+                "completed_at": str(p.completed_at) if p.completed_at else None,
+                "rejection_reason": p.rejection_reason,
+            }
+            for p in payouts
+        ],
+    })
+
+
+# ── Regional Management ───────────────────────────────────
+
+@csrf_exempt
+def saas_appoint_regional_manager_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/appoint-manager — Appoint a reseller as regional manager."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from decimal import Decimal
+        from core.saas.resellers import AppointRegionalManagerRequest, REGIONAL_MANAGER_BONUS_RATE
+        req = AppointRegionalManagerRequest(
+            reseller_id=_parse_uuid(body["reseller_id"], "reseller_id"),
+            region_code=body["region_code"],
+            bonus_rate=Decimal(str(body.get("bonus_rate", REGIONAL_MANAGER_BONUS_RATE))),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.appoint_regional_manager(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("save_regional_manager",
+                  region_code=req.region_code,
+                  reseller_id=req.reseller_id,
+                  bonus_rate=req.bonus_rate,
+                  appointed_at=req.issued_at)
+    return JsonResponse({
+        "status": "ok",
+        "region_code": result["region_code"],
+        "reseller_id": result["reseller_id"],
+        "bonus_rate": result["bonus_rate"],
+    })
+
+
+@csrf_exempt
+def saas_remove_regional_manager_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/remove-manager — Remove regional manager."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.resellers import RemoveRegionalManagerRequest
+        req = RemoveRegionalManagerRequest(
+            region_code=body["region_code"],
+            reason=body.get("reason", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.remove_regional_manager(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("remove_regional_manager", region_code=req.region_code)
+    return JsonResponse({
+        "status": "ok",
+        "region_code": result["region_code"],
+        "removed_reseller_id": result["removed_reseller_id"],
+    })
+
+
+@csrf_exempt
+def saas_region_resellers_view(request: HttpRequest, region_code: str) -> JsonResponse:
+    """GET /saas/regions/<code>/resellers — List resellers in a region."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    resellers = svcs._reseller_proj.list_resellers_by_region(region_code)
+    return JsonResponse({
+        "status": "ok",
+        "region_code": region_code,
+        "resellers": [
+            {
+                "reseller_id": str(r.reseller_id),
+                "company_name": r.company_name,
+                "tier": r.tier.value,
+                "status": r.status.value,
+                "commission_rate": str(r.commission_rate),
+                "effective_rate": str(svcs._reseller_proj.get_effective_commission_rate(r.reseller_id)),
+                "active_tenant_count": r.active_tenant_count,
+                "pending_commission": str(r.pending_commission),
+            }
+            for r in resellers
+        ],
+    })
+
+
+@csrf_exempt
+def saas_region_performance_view(request: HttpRequest, region_code: str) -> JsonResponse:
+    """GET /saas/regions/<code>/performance — Regional performance metrics."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    period = request.GET.get("period", "")
+    if not period:
+        from datetime import datetime, timezone
+        now = datetime.now(tz=timezone.utc)
+        period = now.strftime("%Y-%m")
+    result = svcs._reseller_service.get_regional_performance(region_code, period)
+    return JsonResponse({"status": "ok", **result})
+
+
+@csrf_exempt
+def saas_region_summary_view(request: HttpRequest, region_code: str) -> JsonResponse:
+    """GET /saas/regions/<code>/summary — Full region summary."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.get_region_summary(region_code)
+    return JsonResponse({"status": "ok", **result})
+
+
+@csrf_exempt
+def saas_assign_territory_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/assign-territory — Assign territory to reseller."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.resellers import AssignTerritoryRequest
+        req = AssignTerritoryRequest(
+            reseller_id=_parse_uuid(body["reseller_id"], "reseller_id"),
+            region_code=body["region_code"],
+            territory_name=body["territory_name"],
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.assign_territory(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("save_territory",
+                  territory_id=result["territory_id"],
+                  region_code=req.region_code,
+                  territory_name=req.territory_name,
+                  reseller_id=req.reseller_id,
+                  assigned_at=req.issued_at)
+    return JsonResponse({
+        "status": "ok",
+        "territory_id": result["territory_id"],
+    })
+
+
+@csrf_exempt
+def saas_revoke_territory_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/revoke-territory — Revoke territory from reseller."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.resellers import RevokeTerritoryRequest
+        req = RevokeTerritoryRequest(
+            territory_id=_parse_uuid(body["territory_id"], "territory_id"),
+            reason=body.get("reason", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.revoke_territory(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("revoke_territory", territory_id=req.territory_id)
+    return JsonResponse({
+        "status": "ok",
+        "territory_id": result["territory_id"],
+    })
+
+
+@csrf_exempt
+def saas_transfer_reseller_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/resellers/transfer — Transfer reseller between regions."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.resellers import TransferResellerRequest
+        req = TransferResellerRequest(
+            reseller_id=_parse_uuid(body["reseller_id"], "reseller_id"),
+            from_region_code=body["from_region_code"],
+            to_region_code=body["to_region_code"],
+            reason=body.get("reason", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.transfer_reseller(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    # Update persisted reseller region_codes
+    r = svcs._reseller_proj.get_reseller(req.reseller_id)
+    if r:
+        _persist_saas("save_reseller", reseller_id=r.reseller_id,
+                      company_name=r.company_name, contact_name=r.contact_person,
+                      contact_phone=r.phone, contact_email=r.email)
+    return JsonResponse({
+        "status": "ok",
+        "reseller_id": result["reseller_id"],
+        "from_region_code": result["from_region_code"],
+        "to_region_code": result["to_region_code"],
+    })
+
+
+@csrf_exempt
+def saas_set_commission_override_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/set-commission-override — Set regional commission override."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from decimal import Decimal
+        from core.saas.resellers import SetRegionalCommissionOverrideRequest
+        req = SetRegionalCommissionOverrideRequest(
+            region_code=body["region_code"],
+            override_rate=Decimal(str(body["override_rate"])),
+            reason=body.get("reason", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.set_regional_commission_override(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("save_commission_override",
+                  region_code=req.region_code,
+                  override_rate=req.override_rate,
+                  reason=req.reason,
+                  set_at=req.issued_at)
+    return JsonResponse({
+        "status": "ok",
+        "region_code": result["region_code"],
+        "override_rate": result["override_rate"],
+    })
+
+
+@csrf_exempt
+def saas_set_regional_target_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/regions/set-target — Set monthly target for a region."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from decimal import Decimal
+        from core.saas.resellers import SetRegionalTargetRequest
+        req = SetRegionalTargetRequest(
+            region_code=body["region_code"],
+            period=body["period"],
+            target_tenant_count=int(body.get("target_tenant_count", 0)),
+            target_revenue=Decimal(str(body.get("target_revenue", "0"))),
+            currency=body.get("currency", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.set_regional_target(req)
+    _persist_saas("save_regional_target",
+                  region_code=req.region_code, period=req.period,
+                  target_tenant_count=req.target_tenant_count,
+                  target_revenue=req.target_revenue,
+                  currency=req.currency, set_at=req.issued_at)
+    return JsonResponse({
+        "status": "ok",
+        "region_code": result["region_code"],
+        "period": result["period"],
+    })
+
+
+@csrf_exempt
+def saas_regional_managers_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/regions/managers — List all regional managers."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    managers = svcs._reseller_proj.list_regional_managers()
+    result = []
+    for m in managers:
+        r = svcs._reseller_proj.get_reseller(m.reseller_id)
+        result.append({
+            "region_code": m.region_code,
+            "reseller_id": str(m.reseller_id),
+            "company_name": r.company_name if r else "",
+            "bonus_rate": str(m.bonus_rate),
+            "appointed_at": str(m.appointed_at) if m.appointed_at else None,
+        })
+    return JsonResponse({"status": "ok", "managers": result})
+
+
+@csrf_exempt
+def saas_region_territories_view(request: HttpRequest, region_code: str) -> JsonResponse:
+    """GET /saas/regions/<code>/territories — List territories in a region."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    territories = svcs._reseller_proj.get_territories_for_region(
+        region_code, active_only=False)
+    return JsonResponse({
+        "status": "ok",
+        "region_code": region_code,
+        "territories": [
+            {
+                "territory_id": str(t.territory_id),
+                "territory_name": t.territory_name,
+                "reseller_id": str(t.reseller_id),
+                "is_active": t.is_active,
+                "assigned_at": str(t.assigned_at) if t.assigned_at else None,
+            }
+            for t in territories
+        ],
+    })
+
+
+@csrf_exempt
+def saas_commission_overrides_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/regions/commission-overrides — List all commission overrides."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    overrides = svcs._reseller_proj.list_commission_overrides()
+    return JsonResponse({
+        "status": "ok",
+        "overrides": [
+            {
+                "region_code": o.region_code,
+                "override_rate": str(o.override_rate),
+                "reason": o.reason,
+                "set_at": str(o.set_at) if o.set_at else None,
+            }
+            for o in overrides
+        ],
+    })
+
+
+@csrf_exempt
+def saas_regional_targets_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/regions/targets — List regional targets."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    region_code = request.GET.get("region_code")
+    targets = svcs._reseller_proj.list_regional_targets(region_code)
+    return JsonResponse({
+        "status": "ok",
+        "targets": [
+            {
+                "region_code": t.region_code,
+                "period": t.period,
+                "target_tenant_count": t.target_tenant_count,
+                "target_revenue": str(t.target_revenue),
+                "currency": t.currency,
+                "set_at": str(t.set_at) if t.set_at else None,
+            }
+            for t in targets
+        ],
+    })
+
+
 # ── Subscriptions ──────────────────────────────────────────
 
 @csrf_exempt

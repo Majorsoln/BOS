@@ -497,6 +497,120 @@ class SaaSPersistenceStore:
                     "payout_id": str(row.payout_id),
                 })
 
+        # Load regional management data
+        SaaSPersistenceStore.load_regional_management(projection)
+
+    @staticmethod
+    def load_regional_management(projection) -> None:
+        """Load regional managers, territories, overrides, targets from DB."""
+        from core.saas.models import (
+            SaaSRegionalManager, SaaSTerritory,
+            SaaSRegionalCommissionOverride, SaaSRegionalTarget,
+        )
+
+        for row in SaaSRegionalManager.objects.all():
+            projection.apply("saas.region.manager_appointed.v1", {
+                "region_code": row.region_code,
+                "reseller_id": str(row.reseller_id),
+                "bonus_rate": str(row.bonus_rate),
+                "issued_at": row.appointed_at,
+            })
+
+        for row in SaaSTerritory.objects.all():
+            projection.apply("saas.reseller.territory_assigned.v1", {
+                "territory_id": str(row.territory_id),
+                "region_code": row.region_code,
+                "territory_name": row.territory_name,
+                "reseller_id": str(row.reseller_id),
+                "issued_at": row.assigned_at,
+            })
+            if not row.is_active:
+                projection.apply("saas.reseller.territory_revoked.v1", {
+                    "territory_id": str(row.territory_id),
+                })
+
+        for row in SaaSRegionalCommissionOverride.objects.all():
+            projection.apply("saas.region.commission_override_set.v1", {
+                "region_code": row.region_code,
+                "override_rate": str(row.override_rate),
+                "reason": row.reason,
+                "issued_at": row.set_at,
+            })
+
+        for row in SaaSRegionalTarget.objects.all():
+            projection.apply("saas.region.target_set.v1", {
+                "region_code": row.region_code,
+                "period": row.period,
+                "target_tenant_count": row.target_tenant_count,
+                "target_revenue": str(row.target_revenue),
+                "currency": row.currency,
+                "issued_at": row.set_at,
+            })
+
+    @staticmethod
+    def save_regional_manager(region_code, reseller_id, bonus_rate, appointed_at):
+        from core.saas.models import SaaSRegionalManager
+        SaaSRegionalManager.objects.update_or_create(
+            region_code=region_code,
+            defaults={
+                "reseller_id": reseller_id,
+                "bonus_rate": bonus_rate,
+                "appointed_at": appointed_at,
+            },
+        )
+
+    @staticmethod
+    def remove_regional_manager(region_code):
+        from core.saas.models import SaaSRegionalManager
+        SaaSRegionalManager.objects.filter(region_code=region_code).delete()
+
+    @staticmethod
+    def save_territory(territory_id, region_code, territory_name, reseller_id,
+                       assigned_at, is_active=True):
+        from core.saas.models import SaaSTerritory
+        SaaSTerritory.objects.update_or_create(
+            territory_id=territory_id,
+            defaults={
+                "region_code": region_code,
+                "territory_name": territory_name,
+                "reseller_id": reseller_id,
+                "assigned_at": assigned_at,
+                "is_active": is_active,
+            },
+        )
+
+    @staticmethod
+    def revoke_territory(territory_id):
+        from core.saas.models import SaaSTerritory
+        SaaSTerritory.objects.filter(territory_id=territory_id).update(is_active=False)
+
+    @staticmethod
+    def save_commission_override(region_code, override_rate, reason, set_at):
+        from core.saas.models import SaaSRegionalCommissionOverride
+        SaaSRegionalCommissionOverride.objects.update_or_create(
+            region_code=region_code,
+            defaults={
+                "override_rate": override_rate,
+                "reason": reason,
+                "set_at": set_at,
+            },
+        )
+
+    @staticmethod
+    def save_regional_target(region_code, period, target_tenant_count,
+                             target_revenue, currency, set_at):
+        from core.saas.models import SaaSRegionalTarget
+        SaaSRegionalTarget.objects.update_or_create(
+            region_code=region_code,
+            period=period,
+            defaults={
+                "target_tenant_count": target_tenant_count,
+                "target_revenue": target_revenue,
+                "currency": currency,
+                "set_at": set_at,
+            },
+        )
+
     @staticmethod
     def save_reseller(reseller_id, company_name, contact_name="",
                       contact_phone="", contact_email="", tier="BRONZE",

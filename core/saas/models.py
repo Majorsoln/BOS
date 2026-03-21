@@ -866,3 +866,146 @@ class SaaSReductionRate(models.Model):
 
     def __str__(self) -> str:
         return f"{self.region_code} {self.service_count} services = {self.reduction_pct}% off"
+
+
+# ---------------------------------------------------------------------------
+# 21. SaaSRegionalManager — one per region
+# ---------------------------------------------------------------------------
+
+class SaaSRegionalManager(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    region_code = models.CharField(max_length=8, unique=True)
+    reseller = models.ForeignKey(
+        SaaSReseller,
+        on_delete=models.PROTECT,
+        related_name="managed_regions",
+        db_column="reseller_id",
+    )
+    bonus_rate = models.DecimalField(max_digits=5, decimal_places=4, default=0.03)
+    total_bonus_earned = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0
+    )
+    appointed_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_regional_manager"
+        ordering = ["region_code"]
+        indexes = [
+            models.Index(
+                fields=["reseller"],
+                name="idx_saas_rmgr_reseller",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"RegionalManager {self.region_code} → reseller={self.reseller_id}"
+
+
+# ---------------------------------------------------------------------------
+# 22. SaaSTerritory — named sub-areas within a region
+# ---------------------------------------------------------------------------
+
+class SaaSTerritory(models.Model):
+    territory_id = models.UUIDField(
+        primary_key=True, default=uuid.uuid4, editable=False
+    )
+    region_code = models.CharField(max_length=8)
+    territory_name = models.CharField(max_length=255)
+    reseller = models.ForeignKey(
+        SaaSReseller,
+        on_delete=models.PROTECT,
+        related_name="territories",
+        db_column="reseller_id",
+    )
+    is_active = models.BooleanField(default=True)
+    assigned_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_territory"
+        ordering = ["region_code", "territory_name"]
+        indexes = [
+            models.Index(
+                fields=["region_code", "is_active"],
+                name="idx_saas_terr_region_active",
+            ),
+            models.Index(
+                fields=["reseller", "is_active"],
+                name="idx_saas_terr_resl_active",
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["region_code", "territory_name"],
+                name="uq_saas_territory_region_name",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.territory_name} ({self.region_code}) → reseller={self.reseller_id}"
+
+
+# ---------------------------------------------------------------------------
+# 23. SaaSRegionalCommissionOverride — per-region commission adjustment
+# ---------------------------------------------------------------------------
+
+class SaaSRegionalCommissionOverride(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    region_code = models.CharField(max_length=8, unique=True)
+    override_rate = models.DecimalField(max_digits=5, decimal_places=4)
+    reason = models.TextField(default="", blank=True)
+    set_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_regional_commission_override"
+        ordering = ["region_code"]
+
+    def __str__(self) -> str:
+        return f"{self.region_code} override={self.override_rate}"
+
+
+# ---------------------------------------------------------------------------
+# 24. SaaSRegionalTarget — monthly targets per region
+# ---------------------------------------------------------------------------
+
+class SaaSRegionalTarget(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    region_code = models.CharField(max_length=8)
+    period = models.CharField(max_length=16)
+    target_tenant_count = models.IntegerField(default=0)
+    target_revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    currency = models.CharField(max_length=8)
+    set_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_regional_target"
+        ordering = ["region_code", "-period"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["region_code", "period"],
+                name="uq_saas_regional_target_region_period",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["region_code"],
+                name="idx_saas_rtarget_region",
+            ),
+            models.Index(
+                fields=["period"],
+                name="idx_saas_rtarget_period",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"Target {self.region_code}/{self.period}: "
+            f"{self.target_tenant_count} tenants, {self.target_revenue} {self.currency}"
+        )
