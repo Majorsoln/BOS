@@ -328,3 +328,147 @@ export async function cancelSubscription(data: {
   const res = await api.post("/saas/subscriptions/cancel", data);
   return res.data;
 }
+
+/* ── Compliance Packs ─────────────────────────────────────── */
+
+export async function listCompliancePacks(regionCode?: string) {
+  const params: Record<string, string> = {};
+  if (regionCode) params.region_code = regionCode;
+  const res = await api.get("/saas/compliance-packs", { params });
+  return res.data;
+}
+
+export async function getLatestCompliancePack(regionCode: string) {
+  const res = await api.get(`/saas/compliance-packs/${regionCode}/latest`);
+  return res.data;
+}
+
+export async function getCompliancePack(regionCode: string, version: number) {
+  const res = await api.get(`/saas/compliance-packs/${regionCode}/${version}`);
+  return res.data;
+}
+
+export async function publishCompliancePack(data: {
+  region_code: string;
+  display_name: string;
+  effective_date: string;
+  tax_rules: Array<{
+    tax_code: string;
+    rate: number;
+    description: string;
+    applies_to: string[];
+    is_compound?: boolean;
+  }>;
+  receipt_requirements: {
+    require_sequential_number: boolean;
+    require_tax_number: boolean;
+    require_customer_tax_id?: boolean;
+    require_digital_signature?: boolean;
+    require_qr_code?: boolean;
+    number_prefix_format?: string;
+  };
+  data_retention: {
+    financial_records_years: number;
+    audit_log_years: number;
+    personal_data_years: number;
+    region_law_reference: string;
+  };
+  required_invoice_fields: string[];
+  optional_invoice_fields: string[];
+  change_summary: string;
+}) {
+  const res = await api.post("/saas/compliance-packs/publish", data);
+  return res.data;
+}
+
+export async function deprecateCompliancePack(data: {
+  region_code: string;
+  version: number;
+  superseded_by_version: number;
+}) {
+  const res = await api.post("/saas/compliance-packs/deprecate", data);
+  return res.data;
+}
+
+export async function pinTenantPack(data: {
+  tenant_id: string;
+  region_code: string;
+  version: number;
+}) {
+  const res = await api.post("/saas/compliance-packs/pin-tenant", data);
+  return res.data;
+}
+
+export async function upgradeTenantPack(data: {
+  tenant_id: string;
+  region_code: string;
+  to_version: number;
+}) {
+  const res = await api.post("/saas/compliance-packs/upgrade-tenant", data);
+  return res.data;
+}
+
+/* ── Tenant Compliance Onboarding ─────────────────────────── */
+
+export async function listCountryPolicies() {
+  const res = await api.get("/saas/compliance/country-policies");
+  return res.data;
+}
+
+export async function setCountryPolicy(data: {
+  country_code: string;
+  display_name: string;
+  required_documents: string[];
+  required_fields: string[];
+  review_required: boolean;
+  auto_activate: boolean;
+}) {
+  const res = await api.post("/saas/compliance/set-country-policy", data);
+  return res.data;
+}
+
+export async function submitComplianceProfile(data: {
+  business_id: string;
+  country_code: string;
+  submitted_data: Record<string, string>;
+}) {
+  const res = await api.post("/saas/compliance/submit-profile", data);
+  return res.data;
+}
+
+export async function reviewComplianceProfile(data: {
+  profile_id: string;
+  decision: "approve" | "reject";
+  reason?: string;
+}) {
+  const res = await api.post("/saas/compliance/review-profile", data);
+  return res.data;
+}
+
+export async function activateComplianceProfile(data: { profile_id: string }) {
+  const res = await api.post("/saas/compliance/activate-profile", data);
+  return res.data;
+}
+
+export async function suspendComplianceProfile(data: {
+  profile_id: string;
+  reason: string;
+}) {
+  const res = await api.post("/saas/compliance/suspend-profile", data);
+  return res.data;
+}
+
+export async function reactivateComplianceProfile(data: {
+  profile_id: string;
+  reason?: string;
+}) {
+  const res = await api.post("/saas/compliance/reactivate-profile", data);
+  return res.data;
+}
+
+export async function getComplianceProfile(businessId: string) {
+  const res = await api.get("/saas/compliance/profile", {
+    params: { business_id: businessId },
+  });
+  return res.data;
+}

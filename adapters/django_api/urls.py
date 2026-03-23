@@ -156,4 +156,21 @@ urlpatterns = [
     path("saas/reductions", views.saas_reductions_list_view),
     path("saas/reductions/set", views.saas_reductions_set_view),
     path("saas/calculate-price", views.saas_calculate_price_view),
+    # SaaS — Compliance Packs (Versioned)
+    path("saas/compliance-packs", views.saas_compliance_packs_list_view),
+    path("saas/compliance-packs/publish", views.saas_publish_compliance_pack_view),
+    path("saas/compliance-packs/deprecate", views.saas_deprecate_compliance_pack_view),
+    path("saas/compliance-packs/pin-tenant", views.saas_pin_tenant_pack_view),
+    path("saas/compliance-packs/upgrade-tenant", views.saas_upgrade_tenant_pack_view),
+    path("saas/compliance-packs/<str:region_code>/latest", views.saas_compliance_pack_latest_view),
+    path("saas/compliance-packs/<str:region_code>/<int:version>", views.saas_compliance_pack_detail_view),
+    # SaaS — Tenant Compliance Onboarding
+    path("saas/compliance/set-country-policy", views.saas_set_country_policy_view),
+    path("saas/compliance/country-policies", views.saas_country_policies_list_view),
+    path("saas/compliance/submit-profile", views.saas_submit_compliance_profile_view),
+    path("saas/compliance/review-profile", views.saas_review_compliance_profile_view),
+    path("saas/compliance/activate-profile", views.saas_activate_compliance_profile_view),
+    path("saas/compliance/suspend-profile", views.saas_suspend_compliance_profile_view),
+    path("saas/compliance/reactivate-profile", views.saas_reactivate_compliance_profile_view),
+    path("saas/compliance/profile", views.saas_compliance_profile_view),
 ]

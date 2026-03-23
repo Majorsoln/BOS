@@ -18,6 +18,7 @@ import {
   MapPin,
   Scale,
   UserCheck,
+  ShieldCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -62,6 +63,12 @@ const PLATFORM_NAV: NavGroup[] = [
     items: [
       { label: "Agent Management", href: "/platform/agents", icon: UserCheck },
       { label: "Promotions", href: "/platform/promotions", icon: Tag },
+    ],
+  },
+  {
+    title: "Compliance",
+    items: [
+      { label: "Compliance Packs", href: "/platform/compliance", icon: ShieldCheck },
     ],
   },
   {

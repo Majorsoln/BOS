@@ -4045,3 +4045,455 @@ def saas_calculate_price_view(request: HttpRequest) -> JsonResponse:
             "monthly_total": float(result.monthly_total),
         },
     })
+
+
+# ═══════════════════════════════════════════════════════════════
+# COMPLIANCE PACKS & TENANT COMPLIANCE
+# ═══════════════════════════════════════════════════════════════
+
+def _get_compliance_services():
+    """Lazy-load compliance service singletons."""
+    if not hasattr(_get_compliance_services, "_loaded"):
+        from core.saas.compliance_packs import CompliancePackProjection, CompliancePackService
+        from core.saas.tenant_compliance import TenantComplianceProjection, TenantComplianceService
+
+        pack_proj = CompliancePackProjection()
+        tenant_proj = TenantComplianceProjection()
+
+        _get_compliance_services._pack_service = CompliancePackService(pack_proj)
+        _get_compliance_services._tenant_service = TenantComplianceService(tenant_proj)
+        _get_compliance_services._pack_proj = pack_proj
+        _get_compliance_services._tenant_proj = tenant_proj
+        _get_compliance_services._loaded = True
+    return _get_compliance_services
+
+
+def _serialize_compliance_pack(pack) -> dict:
+    """Serialize a CompliancePackVersion to JSON-safe dict."""
+    return {
+        "region_code": pack.region_code,
+        "version": pack.version,
+        "pack_ref": pack.pack_ref,
+        "display_name": pack.display_name,
+        "effective_date": pack.effective_date.isoformat() if pack.effective_date else None,
+        "published_at": pack.published_at.isoformat() if pack.published_at else None,
+        "published_by": pack.published_by,
+        "tax_rules": [
+            {
+                "tax_code": t.tax_code,
+                "rate": float(t.rate),
+                "description": t.description,
+                "applies_to": list(t.applies_to),
+                "is_compound": t.is_compound,
+            }
+            for t in pack.tax_rules
+        ],
+        "receipt_requirements": {
+            "require_sequential_number": pack.receipt_requirements.require_sequential_number,
+            "require_tax_number": pack.receipt_requirements.require_tax_number,
+            "require_customer_tax_id": pack.receipt_requirements.require_customer_tax_id,
+            "require_digital_signature": pack.receipt_requirements.require_digital_signature,
+            "require_qr_code": pack.receipt_requirements.require_qr_code,
+            "number_prefix_format": pack.receipt_requirements.number_prefix_format,
+        },
+        "data_retention": {
+            "financial_records_years": pack.data_retention.financial_records_years,
+            "audit_log_years": pack.data_retention.audit_log_years,
+            "personal_data_years": pack.data_retention.personal_data_years,
+            "region_law_reference": pack.data_retention.region_law_reference,
+        },
+        "required_invoice_fields": list(pack.required_invoice_fields),
+        "optional_invoice_fields": list(pack.optional_invoice_fields),
+        "change_summary": pack.change_summary,
+        "deprecated": pack.deprecated,
+        "deprecated_at": pack.deprecated_at.isoformat() if pack.deprecated_at else None,
+        "superseded_by": pack.superseded_by,
+    }
+
+
+def _serialize_tenant_profile(profile) -> dict:
+    """Serialize a TenantComplianceProfile to JSON-safe dict."""
+    return {
+        "profile_id": profile.profile_id,
+        "business_id": profile.business_id,
+        "country_code": profile.country_code,
+        "status": profile.status,
+        "submitted_data": profile.submitted_data,
+        "submitted_at": profile.submitted_at.isoformat() if profile.submitted_at else None,
+        "submitted_by": profile.submitted_by,
+        "decisions": [
+            {
+                "decision": d.decision,
+                "reviewer_id": d.reviewer_id,
+                "reason": d.reason,
+                "decided_at": d.decided_at.isoformat() if d.decided_at else None,
+            }
+            for d in profile.decisions
+        ],
+        "activated_at": profile.activated_at.isoformat() if profile.activated_at else None,
+        "suspended_at": profile.suspended_at.isoformat() if profile.suspended_at else None,
+        "suspended_reason": profile.suspended_reason,
+        "reactivated_at": profile.reactivated_at.isoformat() if profile.reactivated_at else None,
+    }
+
+
+# ── Compliance Packs ──────────────────────────────────────────
+
+def saas_compliance_packs_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/compliance-packs?region_code= — List pack versions for a region."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    region_code = request.GET.get("region_code", "")
+    if not region_code:
+        return _json_error("INVALID_REQUEST", "region_code is required.", status=400)
+
+    svcs = _get_compliance_services()
+    packs = svcs._pack_proj.list_versions(
+        region_code, include_deprecated=request.GET.get("include_deprecated") == "true"
+    )
+    return JsonResponse({
+        "status": "ok",
+        "packs": [_serialize_compliance_pack(p) for p in packs],
+    })
+
+
+def saas_compliance_pack_latest_view(request: HttpRequest, region_code: str) -> JsonResponse:
+    """GET /saas/compliance-packs/<region_code>/latest — Get latest active pack."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_compliance_services()
+    pack = svcs._pack_proj.get_latest_version(region_code)
+    if pack is None:
+        return _json_error("NOT_FOUND", f"No compliance pack found for region {region_code}.", status=404)
+    return JsonResponse({"status": "ok", "pack": _serialize_compliance_pack(pack)})
+
+
+def saas_compliance_pack_detail_view(request: HttpRequest, region_code: str, version: int) -> JsonResponse:
+    """GET /saas/compliance-packs/<region_code>/<version> — Get specific pack version."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_compliance_services()
+    pack = svcs._pack_proj.get_pack(region_code, version)
+    if pack is None:
+        return _json_error("NOT_FOUND", f"Pack {region_code}:v{version} not found.", status=404)
+    return JsonResponse({"status": "ok", "pack": _serialize_compliance_pack(pack)})
+
+
+@csrf_exempt
+def saas_publish_compliance_pack_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/compliance-packs/publish — Publish a new compliance pack version."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.compliance_packs import PublishCompliancePackRequest
+        req = PublishCompliancePackRequest(
+            region_code=body["region_code"],
+            display_name=body["display_name"],
+            effective_date=_dt_from_body(body, "effective_date"),
+            tax_rules=tuple(body.get("tax_rules", [])),
+            receipt_requirements=body.get("receipt_requirements", {}),
+            data_retention=body.get("data_retention", {}),
+            required_invoice_fields=tuple(body.get("required_invoice_fields", [])),
+            optional_invoice_fields=tuple(body.get("optional_invoice_fields", [])),
+            change_summary=body.get("change_summary", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_compliance_services()
+    result = svcs._pack_service.publish_pack(req)
+    return JsonResponse({
+        "status": "ok",
+        "pack_ref": result["pack_ref"],
+        "version": result["version"],
+    })
+
+
+@csrf_exempt
+def saas_deprecate_compliance_pack_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/compliance-packs/deprecate — Deprecate a compliance pack version."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.compliance_packs import DeprecateCompliancePackRequest
+        req = DeprecateCompliancePackRequest(
+            region_code=body["region_code"],
+            version=int(body["version"]),
+            superseded_by_version=int(body["superseded_by_version"]),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_compliance_services()
+    rejection = svcs._pack_service.deprecate_pack(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_pin_tenant_pack_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/compliance-packs/pin-tenant — Pin a tenant to a specific pack version."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.compliance_packs import PinTenantPackRequest
+        req = PinTenantPackRequest(
+            tenant_id=body["tenant_id"],
+            region_code=body["region_code"],
+            version=int(body["version"]),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_compliance_services()
+    rejection = svcs._pack_service.pin_tenant_to_pack(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_upgrade_tenant_pack_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/compliance-packs/upgrade-tenant — Upgrade a tenant to a newer pack."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.compliance_packs import UpgradeTenantPackRequest
+        req = UpgradeTenantPackRequest(
+            tenant_id=body["tenant_id"],
+            region_code=body["region_code"],
+            to_version=int(body["to_version"]),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_compliance_services()
+    rejection = svcs._pack_service.upgrade_tenant_pack(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok"})
+
+
+# ── Tenant Compliance ─────────────────────────────────────────
+
+@csrf_exempt
+def saas_set_country_policy_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/compliance/set-country-policy — Set a country compliance policy."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.tenant_compliance import SetCountryPolicyRequest
+        req = SetCountryPolicyRequest(
+            country_code=body["country_code"],
+            display_name=body["display_name"],
+            required_documents=tuple(body.get("required_documents", [])),
+            required_fields=tuple(body.get("required_fields", [])),
+            review_required=body.get("review_required", True),
+            auto_activate=body.get("auto_activate", False),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_compliance_services()
+    result = svcs._tenant_service.set_country_policy(req)
+    return JsonResponse({"status": "ok", "country_code": result["country_code"]})
+
+
+def saas_country_policies_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/compliance/country-policies — List all country compliance policies."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_compliance_services()
+    policies = svcs._tenant_proj.list_policies()
+    return JsonResponse({
+        "status": "ok",
+        "policies": [
+            {
+                "country_code": p.country_code,
+                "display_name": p.display_name,
+                "required_documents": list(p.required_documents),
+                "required_fields": list(p.required_fields),
+                "review_required": p.review_required,
+                "auto_activate": p.auto_activate,
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                "updated_by": p.updated_by,
+            }
+            for p in policies
+        ],
+    })
+
+
+@csrf_exempt
+def saas_submit_compliance_profile_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/compliance/submit-profile — Submit a tenant compliance profile."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.tenant_compliance import SubmitComplianceProfileRequest
+        req = SubmitComplianceProfileRequest(
+            business_id=body["business_id"],
+            country_code=body["country_code"],
+            submitted_data=body.get("submitted_data", {}),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_compliance_services()
+    result = svcs._tenant_service.submit_profile(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "profile_id": result["profile_id"],
+        "profile_status": result["status"],
+    })
+
+
+@csrf_exempt
+def saas_review_compliance_profile_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/compliance/review-profile — Review (approve/reject) a compliance profile."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.tenant_compliance import ReviewComplianceProfileRequest
+        req = ReviewComplianceProfileRequest(
+            profile_id=body["profile_id"],
+            decision=body["decision"],
+            reviewer_id=body["reviewer_id"],
+            reason=body.get("reason", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_compliance_services()
+    result = svcs._tenant_service.review_profile(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "profile_id": result["profile_id"],
+        "profile_status": result["status"],
+    })
+
+
+@csrf_exempt
+def saas_activate_compliance_profile_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/compliance/activate-profile — Activate an approved compliance profile."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.tenant_compliance import ActivateComplianceProfileRequest
+        req = ActivateComplianceProfileRequest(
+            profile_id=body["profile_id"],
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_compliance_services()
+    result = svcs._tenant_service.activate_profile(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "profile_id": result["profile_id"],
+        "profile_status": result["status"],
+    })
+
+
+@csrf_exempt
+def saas_suspend_compliance_profile_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/compliance/suspend-profile — Suspend an active compliance profile."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.tenant_compliance import SuspendComplianceProfileRequest
+        req = SuspendComplianceProfileRequest(
+            profile_id=body["profile_id"],
+            reason=body.get("reason", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_compliance_services()
+    result = svcs._tenant_service.suspend_profile(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "profile_id": result["profile_id"],
+        "profile_status": result["status"],
+    })
+
+
+@csrf_exempt
+def saas_reactivate_compliance_profile_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/compliance/reactivate-profile — Reactivate a suspended compliance profile."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.tenant_compliance import ReactivateComplianceProfileRequest
+        req = ReactivateComplianceProfileRequest(
+            profile_id=body["profile_id"],
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_compliance_services()
+    result = svcs._tenant_service.reactivate_profile(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({
+        "status": "ok",
+        "profile_id": result["profile_id"],
+        "profile_status": result["status"],
+    })
+
+
+def saas_compliance_profile_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/compliance/profile?business_id= — Get tenant compliance profile + decisions."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    business_id = request.GET.get("business_id", "")
+    if not business_id:
+        return _json_error("INVALID_REQUEST", "business_id is required.", status=400)
+
+    svcs = _get_compliance_services()
+    profile = svcs._tenant_proj.get_profile_by_business(business_id)
+    if profile is None:
+        return _json_error("NOT_FOUND", f"No compliance profile found for business {business_id}.", status=404)
+    return JsonResponse({"status": "ok", "profile": _serialize_tenant_profile(profile)})
