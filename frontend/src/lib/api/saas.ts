@@ -417,11 +417,17 @@ export async function listCountryPolicies() {
 
 export async function setCountryPolicy(data: {
   country_code: string;
-  display_name: string;
-  required_documents: string[];
-  required_fields: string[];
-  review_required: boolean;
-  auto_activate: boolean;
+  country_name: string;
+  b2b_allowed?: boolean;
+  b2c_allowed?: boolean;
+  vat_registration_required?: boolean;
+  company_registration_required?: boolean;
+  requires_tax_id?: boolean;
+  requires_physical_address?: boolean;
+  default_trial_days?: number;
+  grace_period_days?: number;
+  manual_review_required?: boolean;
+  active?: boolean;
 }) {
   const res = await api.post("/saas/compliance/set-country-policy", data);
   return res.data;
@@ -430,7 +436,15 @@ export async function setCountryPolicy(data: {
 export async function submitComplianceProfile(data: {
   business_id: string;
   country_code: string;
-  submitted_data: Record<string, string>;
+  customer_type: string;
+  legal_name: string;
+  trade_name?: string;
+  tax_id?: string;
+  company_registration_number?: string;
+  physical_address?: string;
+  city?: string;
+  contact_email?: string;
+  contact_phone?: string;
 }) {
   const res = await api.post("/saas/compliance/submit-profile", data);
   return res.data;
@@ -439,6 +453,7 @@ export async function submitComplianceProfile(data: {
 export async function reviewComplianceProfile(data: {
   profile_id: string;
   decision: "approve" | "reject";
+  reviewer_id: string;
   reason?: string;
 }) {
   const res = await api.post("/saas/compliance/review-profile", data);

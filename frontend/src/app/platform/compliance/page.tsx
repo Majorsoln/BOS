@@ -40,30 +40,45 @@ interface CompliancePack {
 
 interface CountryPolicyType {
   country_code: string;
-  display_name: string;
-  required_documents: string[];
-  required_fields: string[];
-  review_required: boolean;
-  auto_activate: boolean;
+  country_name: string;
+  b2b_allowed: boolean;
+  b2c_allowed: boolean;
+  vat_registration_required: boolean;
+  company_registration_required: boolean;
+  requires_tax_id: boolean;
+  requires_physical_address: boolean;
+  default_trial_days: number;
+  grace_period_days: number;
+  manual_review_required: boolean;
+  active: boolean;
+  version: number;
 }
 
 interface ComplianceProfileType {
   profile_id: string;
   business_id: string;
   country_code: string;
-  status: string;
-  submitted_data: Record<string, string>;
-  submitted_at: string | null;
-  submitted_by: string;
-  activated_at: string | null;
-  suspended_at: string | null;
-  suspended_reason: string;
-  decisions: Array<{
-    decision: string;
-    reviewer_id: string;
-    reason: string;
-    decided_at: string;
-  }>;
+  customer_type: string;
+  legal_name: string;
+  trade_name: string;
+  tax_id: string;
+  company_registration_number: string;
+  physical_address: string;
+  city: string;
+  contact_email: string;
+  contact_phone: string;
+  state: string;
+  tax_id_verified: boolean;
+  company_reg_verified: boolean;
+  address_verified: boolean;
+  eligible_for_billing: boolean;
+  rejection_reason: string;
+  reviewer_id: string;
+  review_notes: string;
+  created_at: string | null;
+  updated_at: string | null;
+  verified_at: string | null;
+  pack_ref: string;
 }
 
 const STATE_BADGE_VARIANT: Record<string, "success" | "warning" | "destructive" | "outline" | "purple" | "secondary"> = {
@@ -105,10 +120,12 @@ export default function CompliancePage() {
   const [policiesLoading, setPoliciesLoading] = useState(false);
   const [showAddPolicy, setShowAddPolicy] = useState(false);
   const [policyData, setPolicyData] = useState({
-    country_code: "", display_name: "",
-    required_documents: "business_registration,tax_pin",
-    required_fields: "business_name,physical_address,tax_number",
-    review_required: true, auto_activate: false,
+    country_code: "", country_name: "",
+    b2b_allowed: true, b2c_allowed: true,
+    vat_registration_required: false, company_registration_required: false,
+    requires_tax_id: false, requires_physical_address: false,
+    default_trial_days: 180, grace_period_days: 30,
+    manual_review_required: false, active: true,
   });
   const [savingPolicy, setSavingPolicy] = useState(false);
 
@@ -200,11 +217,17 @@ export default function CompliancePage() {
     try {
       await setCountryPolicy({
         country_code: policyData.country_code,
-        display_name: policyData.display_name,
-        required_documents: policyData.required_documents.split(",").map((s) => s.trim()).filter(Boolean),
-        required_fields: policyData.required_fields.split(",").map((s) => s.trim()).filter(Boolean),
-        review_required: policyData.review_required,
-        auto_activate: policyData.auto_activate,
+        country_name: policyData.country_name,
+        b2b_allowed: policyData.b2b_allowed,
+        b2c_allowed: policyData.b2c_allowed,
+        vat_registration_required: policyData.vat_registration_required,
+        company_registration_required: policyData.company_registration_required,
+        requires_tax_id: policyData.requires_tax_id,
+        requires_physical_address: policyData.requires_physical_address,
+        default_trial_days: policyData.default_trial_days,
+        grace_period_days: policyData.grace_period_days,
+        manual_review_required: policyData.manual_review_required,
+        active: policyData.active,
       });
       setToast({ message: `Policy for ${policyData.country_code} saved`, variant: "success" });
       setShowAddPolicy(false);
@@ -241,6 +264,7 @@ export default function CompliancePage() {
       await reviewComplianceProfile({
         profile_id: reviewTarget.profile_id,
         decision: reviewDecision,
+        reviewer_id: "platform-admin",
         reason: reviewReason,
       });
       setToast({ message: `Profile ${reviewDecision === "approve" ? "approved" : "rejected"}`, variant: "success" });
@@ -369,32 +393,38 @@ export default function CompliancePage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Country</TableHead>
-                      <TableHead>Required Documents</TableHead>
-                      <TableHead>Required Fields</TableHead>
+                      <TableHead>Business Model</TableHead>
+                      <TableHead>Requirements</TableHead>
+                      <TableHead>Trial</TableHead>
                       <TableHead>Review</TableHead>
-                      <TableHead>Auto-Activate</TableHead>
+                      <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {policies.map((p) => (
                       <TableRow key={p.country_code}>
-                        <TableCell className="font-medium">{p.country_code} — {p.display_name}</TableCell>
+                        <TableCell className="font-medium">{p.country_code} — {p.country_name}</TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {(p.required_documents || []).map((d) => (
-                              <Badge key={d} variant="outline" className="text-xs">{d}</Badge>
-                            ))}
+                          <div className="flex gap-1">
+                            {p.b2b_allowed && <Badge variant="outline" className="text-xs">B2B</Badge>}
+                            {p.b2c_allowed && <Badge variant="outline" className="text-xs">B2C</Badge>}
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {(p.required_fields || []).map((f) => (
-                              <Badge key={f} variant="secondary" className="text-xs">{f}</Badge>
-                            ))}
+                            {p.vat_registration_required && <Badge variant="secondary" className="text-xs">VAT Reg</Badge>}
+                            {p.company_registration_required && <Badge variant="secondary" className="text-xs">Company Reg</Badge>}
+                            {p.requires_tax_id && <Badge variant="secondary" className="text-xs">Tax ID</Badge>}
+                            {p.requires_physical_address && <Badge variant="secondary" className="text-xs">Address</Badge>}
                           </div>
                         </TableCell>
-                        <TableCell>{p.review_required ? <Badge variant="warning">Manual</Badge> : <Badge variant="success">Auto</Badge>}</TableCell>
-                        <TableCell>{p.auto_activate ? "Yes" : "No"}</TableCell>
+                        <TableCell className="text-sm">{p.default_trial_days}d + {p.grace_period_days}d grace</TableCell>
+                        <TableCell>{p.manual_review_required ? <Badge variant="warning">Manual</Badge> : <Badge variant="success">Auto</Badge>}</TableCell>
+                        <TableCell>
+                          <Badge variant={p.active ? "success" : "secondary"}>
+                            {p.active ? "Active" : "Inactive"}
+                          </Badge>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -427,58 +457,72 @@ export default function CompliancePage() {
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                   <div>
-                    <CardTitle>{profile.submitted_data?.business_name || profile.business_id}</CardTitle>
+                    <CardTitle>{profile.legal_name || profile.business_id}</CardTitle>
                     <CardDescription>
-                      {profile.country_code} | Business: {profile.business_id.slice(0, 12)}...
+                      {profile.country_code} | {profile.customer_type} | Business: {profile.business_id.slice(0, 12)}...
                     </CardDescription>
                   </div>
-                  <Badge variant={STATE_BADGE_VARIANT[profile.status?.toLowerCase()] || "outline"} className="text-sm">
-                    {profile.status}
+                  <Badge variant={STATE_BADGE_VARIANT[profile.state?.toLowerCase()] || "outline"} className="text-sm">
+                    {profile.state}
                   </Badge>
                 </CardHeader>
                 <CardContent>
-                  {/* Submitted data fields */}
+                  {/* Profile details */}
                   <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
-                    {Object.entries(profile.submitted_data || {}).map(([key, val]) => (
-                      <div key={key}>
-                        <span className="text-neutral-400">{key.replace(/_/g, " ")}:</span>{" "}
-                        <span className="font-medium">{val}</span>
-                      </div>
-                    ))}
+                    <div><span className="text-neutral-400">Legal Name:</span> <span className="font-medium">{profile.legal_name || "\u2014"}</span></div>
+                    <div><span className="text-neutral-400">Trade Name:</span> <span className="font-medium">{profile.trade_name || "\u2014"}</span></div>
+                    <div><span className="text-neutral-400">Tax ID:</span> <span className="font-medium">{profile.tax_id || "\u2014"}</span></div>
+                    <div><span className="text-neutral-400">Company Reg:</span> <span className="font-medium">{profile.company_registration_number || "\u2014"}</span></div>
+                    <div><span className="text-neutral-400">Address:</span> <span className="font-medium">{profile.physical_address || "\u2014"}{profile.city ? `, ${profile.city}` : ""}</span></div>
+                    <div><span className="text-neutral-400">Contact:</span> <span className="font-medium">{profile.contact_email || "\u2014"} / {profile.contact_phone || "\u2014"}</span></div>
+                  </div>
+
+                  {/* Verification flags */}
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    <Badge variant={profile.tax_id_verified ? "success" : "outline"}>{profile.tax_id_verified ? "\u2713" : "\u2717"} Tax ID</Badge>
+                    <Badge variant={profile.company_reg_verified ? "success" : "outline"}>{profile.company_reg_verified ? "\u2713" : "\u2717"} Company Reg</Badge>
+                    <Badge variant={profile.address_verified ? "success" : "outline"}>{profile.address_verified ? "\u2713" : "\u2717"} Address</Badge>
+                    <Badge variant={profile.eligible_for_billing ? "success" : "secondary"}>{profile.eligible_for_billing ? "Billing Eligible" : "Not Billing Eligible"}</Badge>
                   </div>
 
                   <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div><span className="text-neutral-400">Submitted:</span> {formatDate(profile.submitted_at)}</div>
-                    <div><span className="text-neutral-400">Activated:</span> {profile.activated_at ? formatDate(profile.activated_at) : "Not yet"}</div>
-                    <div><span className="text-neutral-400">Submitted by:</span> {profile.submitted_by?.slice(0, 12) || "\u2014"}</div>
+                    <div><span className="text-neutral-400">Created:</span> {formatDate(profile.created_at)}</div>
+                    <div><span className="text-neutral-400">Verified:</span> {profile.verified_at ? formatDate(profile.verified_at) : "Not yet"}</div>
+                    <div><span className="text-neutral-400">Pack Ref:</span> {profile.pack_ref || "\u2014"}</div>
                   </div>
 
-                  {profile.suspended_reason && (
+                  {profile.rejection_reason && (
                     <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-                      Suspension reason: {profile.suspended_reason}
+                      Rejection reason: {profile.rejection_reason}
+                    </div>
+                  )}
+
+                  {profile.review_notes && (
+                    <div className="mt-2 rounded border border-blue-200 bg-blue-50 p-2 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                      Review notes: {profile.review_notes}
                     </div>
                   )}
 
                   <Separator className="my-4" />
 
-                  {/* Action buttons based on status */}
+                  {/* Action buttons based on state */}
                   <div className="flex gap-2">
-                    {profile.status === "SUBMITTED" && (
+                    {(profile.state === "submitted" || profile.state === "under_review") && (
                       <Button size="sm" onClick={() => { setReviewTarget(profile); setReviewDecision("approve"); }}>
                         Review
                       </Button>
                     )}
-                    {profile.status === "APPROVED" && (
+                    {profile.state === "verified" && (
                       <Button size="sm" onClick={() => handleProfileAction("activate")}>
                         Activate
                       </Button>
                     )}
-                    {profile.status === "ACTIVE" && (
+                    {profile.state === "active" && (
                       <Button size="sm" variant="destructive" onClick={() => handleProfileAction("suspend", "Admin suspension")}>
                         Suspend
                       </Button>
                     )}
-                    {profile.status === "SUSPENDED" && (
+                    {profile.state === "suspended" && (
                       <Button size="sm" onClick={() => handleProfileAction("reactivate", "Admin reactivation")}>
                         Reactivate
                       </Button>
@@ -487,40 +531,18 @@ export default function CompliancePage() {
                 </CardContent>
               </Card>
 
-              {/* Decisions Audit Log */}
+              {/* Profile Metadata */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Review Decisions (Audit Log)</CardTitle>
+                  <CardTitle>Profile Details</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {(!profile.decisions || profile.decisions.length === 0) ? (
-                    <p className="text-sm text-neutral-400">No review decisions recorded</p>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Decision</TableHead>
-                          <TableHead>Reviewer</TableHead>
-                          <TableHead>Reason</TableHead>
-                          <TableHead>Date</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {profile.decisions.map((d, i) => (
-                          <TableRow key={i}>
-                            <TableCell>
-                              <Badge variant={d.decision === "approve" ? "success" : "destructive"}>
-                                {d.decision.toUpperCase()}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="font-mono text-xs">{d.reviewer_id?.slice(0, 12)}...</TableCell>
-                            <TableCell className="max-w-[200px] truncate text-sm">{d.reason || "\u2014"}</TableCell>
-                            <TableCell className="text-sm">{formatDate(d.decided_at)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div><span className="text-neutral-400">Profile ID:</span> <span className="font-mono text-xs">{profile.profile_id}</span></div>
+                    <div><span className="text-neutral-400">Reviewer:</span> <span className="font-mono text-xs">{profile.reviewer_id || "\u2014"}</span></div>
+                    <div><span className="text-neutral-400">Last Updated:</span> {profile.updated_at ? formatDate(profile.updated_at) : "\u2014"}</div>
+                    <div><span className="text-neutral-400">Customer Type:</span> {profile.customer_type}</div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -636,7 +658,7 @@ export default function CompliancePage() {
             <Label>Country Code</Label>
             <Select value={policyData.country_code} onChange={(e) => {
               const region = REGIONS.find((r) => r.code === e.target.value);
-              setPolicyData({ ...policyData, country_code: e.target.value, display_name: region ? `${region.name} Compliance Policy` : "" });
+              setPolicyData({ ...policyData, country_code: e.target.value, country_name: region?.name || "" });
             }} required>
               <option value="">-- Select --</option>
               {REGIONS.map((r) => (
@@ -645,39 +667,65 @@ export default function CompliancePage() {
             </Select>
           </div>
           <div>
-            <Label>Display Name</Label>
-            <Input value={policyData.display_name} onChange={(e) => setPolicyData({ ...policyData, display_name: e.target.value })} required />
+            <Label>Country Name</Label>
+            <Input value={policyData.country_name} onChange={(e) => setPolicyData({ ...policyData, country_name: e.target.value })} required />
           </div>
         </div>
 
-        <div>
-          <Label>Required Documents (comma-separated)</Label>
-          <Input
-            value={policyData.required_documents}
-            onChange={(e) => setPolicyData({ ...policyData, required_documents: e.target.value })}
-            placeholder="business_registration, tax_pin, id_copy"
-          />
-          <p className="mt-1 text-xs text-neutral-400">Document types the tenant must provide during onboarding</p>
-        </div>
-
-        <div>
-          <Label>Required Fields (comma-separated)</Label>
-          <Input
-            value={policyData.required_fields}
-            onChange={(e) => setPolicyData({ ...policyData, required_fields: e.target.value })}
-            placeholder="business_name, physical_address, tax_number"
-          />
-          <p className="mt-1 text-xs text-neutral-400">Data fields the tenant must submit in their compliance profile</p>
-        </div>
-
+        <Separator />
+        <p className="text-sm font-semibold">Business Model</p>
         <div className="grid grid-cols-2 gap-3">
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={policyData.review_required} onChange={(e) => setPolicyData({ ...policyData, review_required: e.target.checked })} />
+            <input type="checkbox" checked={policyData.b2b_allowed} onChange={(e) => setPolicyData({ ...policyData, b2b_allowed: e.target.checked })} />
+            B2B Allowed
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.b2c_allowed} onChange={(e) => setPolicyData({ ...policyData, b2c_allowed: e.target.checked })} />
+            B2C Allowed
+          </label>
+        </div>
+
+        <Separator />
+        <p className="text-sm font-semibold">Onboarding Requirements</p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.vat_registration_required} onChange={(e) => setPolicyData({ ...policyData, vat_registration_required: e.target.checked })} />
+            VAT Registration Required
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.company_registration_required} onChange={(e) => setPolicyData({ ...policyData, company_registration_required: e.target.checked })} />
+            Company Registration Required
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.requires_tax_id} onChange={(e) => setPolicyData({ ...policyData, requires_tax_id: e.target.checked })} />
+            Tax ID Required
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.requires_physical_address} onChange={(e) => setPolicyData({ ...policyData, requires_physical_address: e.target.checked })} />
+            Physical Address Required
+          </label>
+        </div>
+
+        <Separator />
+        <p className="text-sm font-semibold">Trial & Review</p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Default Trial Days</Label>
+            <Input type="number" value={policyData.default_trial_days} onChange={(e) => setPolicyData({ ...policyData, default_trial_days: parseInt(e.target.value) || 0 })} />
+          </div>
+          <div>
+            <Label>Grace Period Days</Label>
+            <Input type="number" value={policyData.grace_period_days} onChange={(e) => setPolicyData({ ...policyData, grace_period_days: parseInt(e.target.value) || 0 })} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.manual_review_required} onChange={(e) => setPolicyData({ ...policyData, manual_review_required: e.target.checked })} />
             Manual Review Required
           </label>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={policyData.auto_activate} onChange={(e) => setPolicyData({ ...policyData, auto_activate: e.target.checked })} />
-            Auto-Activate (skip review)
+            <input type="checkbox" checked={policyData.active} onChange={(e) => setPolicyData({ ...policyData, active: e.target.checked })} />
+            Active
           </label>
         </div>
       </FormDialog>

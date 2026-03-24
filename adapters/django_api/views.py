@@ -4117,23 +4117,27 @@ def _serialize_tenant_profile(profile) -> dict:
         "profile_id": profile.profile_id,
         "business_id": profile.business_id,
         "country_code": profile.country_code,
-        "status": profile.status,
-        "submitted_data": profile.submitted_data,
-        "submitted_at": profile.submitted_at.isoformat() if profile.submitted_at else None,
-        "submitted_by": profile.submitted_by,
-        "decisions": [
-            {
-                "decision": d.decision,
-                "reviewer_id": d.reviewer_id,
-                "reason": d.reason,
-                "decided_at": d.decided_at.isoformat() if d.decided_at else None,
-            }
-            for d in profile.decisions
-        ],
-        "activated_at": profile.activated_at.isoformat() if profile.activated_at else None,
-        "suspended_at": profile.suspended_at.isoformat() if profile.suspended_at else None,
-        "suspended_reason": profile.suspended_reason,
-        "reactivated_at": profile.reactivated_at.isoformat() if profile.reactivated_at else None,
+        "customer_type": profile.customer_type,
+        "legal_name": profile.legal_name,
+        "trade_name": profile.trade_name,
+        "tax_id": profile.tax_id,
+        "company_registration_number": profile.company_registration_number,
+        "physical_address": profile.physical_address,
+        "city": profile.city,
+        "contact_email": profile.contact_email,
+        "contact_phone": profile.contact_phone,
+        "state": profile.state,
+        "tax_id_verified": profile.tax_id_verified,
+        "company_reg_verified": profile.company_reg_verified,
+        "address_verified": profile.address_verified,
+        "eligible_for_billing": profile.eligible_for_billing,
+        "rejection_reason": profile.rejection_reason,
+        "reviewer_id": profile.reviewer_id,
+        "review_notes": profile.review_notes,
+        "created_at": profile.created_at.isoformat() if profile.created_at else None,
+        "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
+        "verified_at": profile.verified_at.isoformat() if profile.verified_at else None,
+        "pack_ref": profile.pack_ref,
     }
 
 
@@ -4299,11 +4303,17 @@ def saas_set_country_policy_view(request: HttpRequest) -> JsonResponse:
         from core.saas.tenant_compliance import SetCountryPolicyRequest
         req = SetCountryPolicyRequest(
             country_code=body["country_code"],
-            display_name=body["display_name"],
-            required_documents=tuple(body.get("required_documents", [])),
-            required_fields=tuple(body.get("required_fields", [])),
-            review_required=body.get("review_required", True),
-            auto_activate=body.get("auto_activate", False),
+            country_name=body.get("country_name", ""),
+            b2b_allowed=body.get("b2b_allowed", True),
+            b2c_allowed=body.get("b2c_allowed", True),
+            vat_registration_required=body.get("vat_registration_required", False),
+            company_registration_required=body.get("company_registration_required", False),
+            requires_tax_id=body.get("requires_tax_id", False),
+            requires_physical_address=body.get("requires_physical_address", False),
+            default_trial_days=body.get("default_trial_days", 180),
+            grace_period_days=body.get("grace_period_days", 30),
+            manual_review_required=body.get("manual_review_required", False),
+            active=body.get("active", True),
             actor_id=body.get("actor_id", ""),
             issued_at=_dt_from_body(body),
         )
@@ -4326,13 +4336,18 @@ def saas_country_policies_list_view(request: HttpRequest) -> JsonResponse:
         "policies": [
             {
                 "country_code": p.country_code,
-                "display_name": p.display_name,
-                "required_documents": list(p.required_documents),
-                "required_fields": list(p.required_fields),
-                "review_required": p.review_required,
-                "auto_activate": p.auto_activate,
-                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-                "updated_by": p.updated_by,
+                "country_name": p.country_name,
+                "b2b_allowed": p.b2b_allowed,
+                "b2c_allowed": p.b2c_allowed,
+                "vat_registration_required": p.vat_registration_required,
+                "company_registration_required": p.company_registration_required,
+                "requires_tax_id": p.requires_tax_id,
+                "requires_physical_address": p.requires_physical_address,
+                "default_trial_days": p.default_trial_days,
+                "grace_period_days": p.grace_period_days,
+                "manual_review_required": p.manual_review_required,
+                "active": p.active,
+                "version": p.version,
             }
             for p in policies
         ],
@@ -4350,7 +4365,15 @@ def saas_submit_compliance_profile_view(request: HttpRequest) -> JsonResponse:
         req = SubmitComplianceProfileRequest(
             business_id=body["business_id"],
             country_code=body["country_code"],
-            submitted_data=body.get("submitted_data", {}),
+            customer_type=body.get("customer_type", "B2C"),
+            legal_name=body.get("legal_name", ""),
+            trade_name=body.get("trade_name", ""),
+            tax_id=body.get("tax_id", ""),
+            company_registration_number=body.get("company_registration_number", ""),
+            physical_address=body.get("physical_address", ""),
+            city=body.get("city", ""),
+            contact_email=body.get("contact_email", ""),
+            contact_phone=body.get("contact_phone", ""),
             actor_id=body.get("actor_id", ""),
             issued_at=_dt_from_body(body),
         )
@@ -4358,14 +4381,14 @@ def saas_submit_compliance_profile_view(request: HttpRequest) -> JsonResponse:
         return _json_error("INVALID_REQUEST", str(exc), status=400)
 
     svcs = _get_compliance_services()
-    result = svcs._tenant_service.submit_profile(req)
-    rej = _saas_rejection_response(result)
-    if rej:
-        return rej
+    from core.commands.rejection import RejectionReason as _RR
+    result = svcs._tenant_service.submit_compliance_profile(req)
+    if isinstance(result, _RR):
+        return _json_error(result.code, result.message, status=400)
     return JsonResponse({
         "status": "ok",
         "profile_id": result["profile_id"],
-        "profile_status": result["status"],
+        "profile_state": result["state"],
     })
 
 
@@ -4388,15 +4411,10 @@ def saas_review_compliance_profile_view(request: HttpRequest) -> JsonResponse:
         return _json_error("INVALID_REQUEST", str(exc), status=400)
 
     svcs = _get_compliance_services()
-    result = svcs._tenant_service.review_profile(req)
-    rej = _saas_rejection_response(result)
-    if rej:
-        return rej
-    return JsonResponse({
-        "status": "ok",
-        "profile_id": result["profile_id"],
-        "profile_status": result["status"],
-    })
+    rejection = svcs._tenant_service.review_compliance_profile(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok", "profile_id": req.profile_id})
 
 
 @csrf_exempt
@@ -4416,15 +4434,10 @@ def saas_activate_compliance_profile_view(request: HttpRequest) -> JsonResponse:
         return _json_error("INVALID_REQUEST", str(exc), status=400)
 
     svcs = _get_compliance_services()
-    result = svcs._tenant_service.activate_profile(req)
-    rej = _saas_rejection_response(result)
-    if rej:
-        return rej
-    return JsonResponse({
-        "status": "ok",
-        "profile_id": result["profile_id"],
-        "profile_status": result["status"],
-    })
+    rejection = svcs._tenant_service.activate_compliance_profile(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok", "profile_id": req.profile_id})
 
 
 @csrf_exempt
@@ -4437,23 +4450,18 @@ def saas_suspend_compliance_profile_view(request: HttpRequest) -> JsonResponse:
         from core.saas.tenant_compliance import SuspendComplianceProfileRequest
         req = SuspendComplianceProfileRequest(
             profile_id=body["profile_id"],
-            reason=body.get("reason", ""),
             actor_id=body.get("actor_id", ""),
+            reason=body.get("reason", ""),
             issued_at=_dt_from_body(body),
         )
     except (ValueError, KeyError) as exc:
         return _json_error("INVALID_REQUEST", str(exc), status=400)
 
     svcs = _get_compliance_services()
-    result = svcs._tenant_service.suspend_profile(req)
-    rej = _saas_rejection_response(result)
-    if rej:
-        return rej
-    return JsonResponse({
-        "status": "ok",
-        "profile_id": result["profile_id"],
-        "profile_status": result["status"],
-    })
+    rejection = svcs._tenant_service.suspend_compliance_profile(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok", "profile_id": req.profile_id})
 
 
 @csrf_exempt
@@ -4467,21 +4475,17 @@ def saas_reactivate_compliance_profile_view(request: HttpRequest) -> JsonRespons
         req = ReactivateComplianceProfileRequest(
             profile_id=body["profile_id"],
             actor_id=body.get("actor_id", ""),
+            reason=body.get("reason", ""),
             issued_at=_dt_from_body(body),
         )
     except (ValueError, KeyError) as exc:
         return _json_error("INVALID_REQUEST", str(exc), status=400)
 
     svcs = _get_compliance_services()
-    result = svcs._tenant_service.reactivate_profile(req)
-    rej = _saas_rejection_response(result)
-    if rej:
-        return rej
-    return JsonResponse({
-        "status": "ok",
-        "profile_id": result["profile_id"],
-        "profile_status": result["status"],
-    })
+    rejection = svcs._tenant_service.reactivate_compliance_profile(req)
+    if rejection is not None:
+        return _json_error(rejection.code, rejection.message, status=400)
+    return JsonResponse({"status": "ok", "profile_id": req.profile_id})
 
 
 def saas_compliance_profile_view(request: HttpRequest) -> JsonResponse:
