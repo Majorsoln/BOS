@@ -173,4 +173,16 @@ urlpatterns = [
     path("saas/compliance/suspend-profile", views.saas_suspend_compliance_profile_view),
     path("saas/compliance/reactivate-profile", views.saas_reactivate_compliance_profile_view),
     path("saas/compliance/profile", views.saas_compliance_profile_view),
+    # Platform Audit Log (ACMV — Audit)
+    path("platform/audit", views.platform_audit_list_view),
+    path("platform/audit/<str:entry_id>", views.platform_audit_entry_view),
+    path("platform/audit/tenant/<str:tenant_id>", views.platform_audit_tenant_history_view),
+    # Platform Health / Observability (ACMV — Monitoring)
+    path("platform/health", views.platform_health_view),
+    path("platform/health/slos", views.platform_health_slos_view),
+    path("platform/health/breaches", views.platform_health_breaches_view),
+    path("platform/health/snapshot", views.platform_health_snapshot_view),
+    # Compliance Review Queue (ACMV — Compliance / Verification)
+    path("platform/compliance/pending", views.platform_compliance_pending_view),
+    path("platform/compliance/stats", views.platform_compliance_stats_view),
 ]

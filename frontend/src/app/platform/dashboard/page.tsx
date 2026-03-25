@@ -18,6 +18,10 @@ import {
   UserPlus,
   ArrowRight,
   DollarSign,
+  FileText,
+  Activity,
+  ClipboardCheck,
+  BadgeCheck,
 } from "lucide-react";
 
 export default function PlatformDashboardPage() {
@@ -61,6 +65,35 @@ export default function PlatformDashboardPage() {
         <StatCard title="Pending Payouts" value="—" icon={DollarSign} description="Agent commission payouts" />
         <StatCard title="Monthly Revenue" value="—" icon={TrendingUp} description="Estimated from active subs" />
         <StatCard title="Trial Conversion" value="—" icon={TrendingUp} description="Converted / total trials" />
+      </div>
+
+      {/* ACMV Quick Actions */}
+      <h2 className="mt-8 mb-4 text-lg font-semibold">Audit, Compliance, Monitoring & Verification</h2>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <QuickActionCard
+          title="Audit Log"
+          description="View immutable platform audit trail"
+          href="/platform/audit"
+          icon={FileText}
+        />
+        <QuickActionCard
+          title="System Health"
+          description="SLO monitoring and breach alerts"
+          href="/platform/health"
+          icon={Activity}
+        />
+        <QuickActionCard
+          title="Review Queue"
+          description="Pending compliance profiles to review"
+          href="/platform/reviews"
+          icon={ClipboardCheck}
+        />
+        <QuickActionCard
+          title="Verification"
+          description="Verification rates and bottleneck metrics"
+          href="/platform/verification"
+          icon={BadgeCheck}
+        />
       </div>
 
       {/* Quick Actions */}

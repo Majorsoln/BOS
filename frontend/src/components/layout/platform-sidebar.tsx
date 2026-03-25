@@ -19,6 +19,10 @@ import {
   Scale,
   UserCheck,
   ShieldCheck,
+  FileText,
+  Activity,
+  ClipboardCheck,
+  BadgeCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -66,9 +70,13 @@ const PLATFORM_NAV: NavGroup[] = [
     ],
   },
   {
-    title: "Compliance",
+    title: "ACMV",
     items: [
+      { label: "Audit Log", href: "/platform/audit", icon: FileText },
+      { label: "System Health", href: "/platform/health", icon: Activity },
       { label: "Compliance Packs", href: "/platform/compliance", icon: ShieldCheck },
+      { label: "Review Queue", href: "/platform/reviews", icon: ClipboardCheck },
+      { label: "Verification", href: "/platform/verification", icon: BadgeCheck },
     ],
   },
   {

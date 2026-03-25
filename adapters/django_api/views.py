@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timedelta
 from typing import Any
 
 from django.http import HttpRequest, JsonResponse
@@ -4501,3 +4502,265 @@ def saas_compliance_profile_view(request: HttpRequest) -> JsonResponse:
     if profile is None:
         return _json_error("NOT_FOUND", f"No compliance profile found for business {business_id}.", status=404)
     return JsonResponse({"status": "ok", "profile": _serialize_tenant_profile(profile)})
+
+
+# ═══════════════════════════════════════════════════════════════
+# PLATFORM AUDIT LOG (ACMV — Audit)
+# ═══════════════════════════════════════════════════════════════
+
+def _get_platform_audit_service():
+    """Lazy-load platform audit service singleton."""
+    if not hasattr(_get_platform_audit_service, "_loaded"):
+        from core.platform.platform_audit import PlatformAuditProjection, PlatformAuditService
+        proj = PlatformAuditProjection()
+        _get_platform_audit_service._service = PlatformAuditService(proj)
+        _get_platform_audit_service._projection = proj
+        _get_platform_audit_service._loaded = True
+    return _get_platform_audit_service
+
+
+def _serialize_audit_entry(entry) -> dict:
+    """Serialize a PlatformAuditEntry to JSON-safe dict."""
+    return {
+        "entry_id": str(entry.entry_id),
+        "event_type": entry.event_type,
+        "actor_id": entry.actor_id,
+        "actor_type": entry.actor_type,
+        "issued_at": entry.issued_at.isoformat() if hasattr(entry.issued_at, "isoformat") else str(entry.issued_at),
+        "subject_type": entry.subject_type,
+        "subject_id": entry.subject_id,
+        "payload": entry.payload,
+        "correlation_id": entry.correlation_id,
+        "region_code": entry.region_code,
+        "notes": entry.notes,
+    }
+
+
+def platform_audit_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/audit — List platform audit entries with optional filters."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svc = _get_platform_audit_service()
+    subject_id = request.GET.get("subject_id", "")
+    actor_id = request.GET.get("actor_id", "")
+    event_type = request.GET.get("event_type", "")
+    limit = int(request.GET.get("limit", "100"))
+
+    if subject_id:
+        entries = svc.get_tenant_history(subject_id)
+    elif actor_id:
+        entries = svc._projection.get_by_actor(actor_id)
+    elif event_type:
+        entries = svc._projection.get_by_event_type(event_type)
+    else:
+        entries = svc.get_recent_platform_events(limit)
+
+    return JsonResponse({
+        "status": "ok",
+        "data": [_serialize_audit_entry(e) for e in entries[-limit:]],
+    })
+
+
+def platform_audit_entry_view(request: HttpRequest, entry_id: str) -> JsonResponse:
+    """GET /platform/audit/<entry_id> — Get a single audit entry."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    try:
+        eid = uuid.UUID(entry_id)
+    except ValueError:
+        return _json_error("INVALID_REQUEST", "Invalid entry_id format.", status=400)
+
+    svc = _get_platform_audit_service()
+    entry = svc._projection.get_entry(eid)
+    if entry is None:
+        return _json_error("NOT_FOUND", f"Audit entry {entry_id} not found.", status=404)
+    return JsonResponse({"status": "ok", "entry": _serialize_audit_entry(entry)})
+
+
+def platform_audit_tenant_history_view(request: HttpRequest, tenant_id: str) -> JsonResponse:
+    """GET /platform/audit/tenant/<tenant_id> — Full audit history for one tenant."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svc = _get_platform_audit_service()
+    entries = svc.get_tenant_history(tenant_id)
+    return JsonResponse({
+        "status": "ok",
+        "data": [_serialize_audit_entry(e) for e in entries],
+    })
+
+
+# ═══════════════════════════════════════════════════════════════
+# PLATFORM HEALTH / OBSERVABILITY (ACMV — Monitoring)
+# ═══════════════════════════════════════════════════════════════
+
+def _get_observability_service():
+    """Lazy-load observability service singleton."""
+    if not hasattr(_get_observability_service, "_loaded"):
+        from core.platform.observability import ObservabilityProjection, ObservabilityService
+        proj = ObservabilityProjection()
+        _get_observability_service._service = ObservabilityService(proj)
+        _get_observability_service._projection = proj
+        _get_observability_service._loaded = True
+    return _get_observability_service
+
+
+def platform_health_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/health — Current platform health summary."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    obs = _get_observability_service()
+    summary = obs._service.get_health_summary()
+    return JsonResponse({"status": "ok", "data": summary})
+
+
+def platform_health_slos_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/health/slos — All SLO definitions + current statuses."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    obs = _get_observability_service()
+    from core.platform.observability import PLATFORM_SLOS
+    slos = []
+    for slo_id, slo_def in PLATFORM_SLOS.items():
+        status = obs._projection.evaluate_slo_status(slo_id)
+        sample = obs._projection.get_latest_metric(slo_def.metric_name)
+        slos.append({
+            "slo_id": slo_id,
+            "name": slo_def.name,
+            "metric_name": slo_def.metric_name,
+            "threshold": slo_def.threshold,
+            "warning_threshold": slo_def.warning_threshold,
+            "comparison": slo_def.comparison,
+            "unit": slo_def.unit,
+            "status": status.value,
+            "current_value": sample.value if sample else None,
+            "last_recorded": sample.recorded_at.isoformat() if sample and hasattr(sample.recorded_at, "isoformat") else None,
+        })
+    return JsonResponse({"status": "ok", "data": slos})
+
+
+def platform_health_breaches_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/health/breaches — Active SLO breaches."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    obs = _get_observability_service()
+    breaches = obs._projection.get_active_breaches()
+    return JsonResponse({
+        "status": "ok",
+        "data": [
+            {
+                "breach_id": str(b.breach_id),
+                "slo_id": b.slo_id,
+                "metric_name": b.metric_name,
+                "observed_value": b.observed_value,
+                "threshold": b.threshold,
+                "region_code": b.region_code,
+                "tenant_id": b.tenant_id,
+                "breached_at": b.breached_at.isoformat() if hasattr(b.breached_at, "isoformat") else str(b.breached_at),
+            }
+            for b in breaches
+        ],
+    })
+
+
+@csrf_exempt
+def platform_health_snapshot_view(request: HttpRequest) -> JsonResponse:
+    """POST /platform/health/snapshot — Take a health snapshot."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    obs = _get_observability_service()
+    result = obs._service.take_health_snapshot()
+    return JsonResponse({
+        "status": "ok",
+        "data": {
+            "snapshot_id": str(result["snapshot_id"]),
+            "overall_status": result["overall_status"],
+            "active_breaches": result["active_breaches"],
+            "slo_statuses": result["slo_statuses"],
+        },
+    })
+
+
+# ═══════════════════════════════════════════════════════════════
+# COMPLIANCE REVIEW QUEUE (ACMV — Compliance / Verification)
+# ═══════════════════════════════════════════════════════════════
+
+def platform_compliance_pending_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/compliance/pending — List profiles pending review."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_compliance_services()
+    proj = svcs._tenant_proj
+    # Get all profiles in reviewable states
+    pending_states = {"submitted", "under_review"}
+    country_filter = request.GET.get("country_code", "")
+
+    all_profiles = list(proj._profiles.values())
+    pending = [p for p in all_profiles if p.state in pending_states]
+    if country_filter:
+        pending = [p for p in pending if p.country_code == country_filter]
+    # Sort by created_at (oldest first for fair review)
+    pending.sort(key=lambda p: p.created_at if p.created_at else datetime.min)
+
+    return JsonResponse({
+        "status": "ok",
+        "data": [_serialize_tenant_profile(p) for p in pending],
+        "total": len(pending),
+    })
+
+
+def platform_compliance_stats_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/compliance/stats — Verification stats/metrics overview."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_compliance_services()
+    proj = svcs._tenant_proj
+    all_profiles = list(proj._profiles.values())
+
+    # Count by state
+    state_counts: dict = {}
+    for p in all_profiles:
+        state_counts[p.state] = state_counts.get(p.state, 0) + 1
+
+    # Count by country
+    country_counts: dict = {}
+    for p in all_profiles:
+        country_counts[p.country_code] = country_counts.get(p.country_code, 0) + 1
+
+    # Verification flag counts
+    verified_tax = sum(1 for p in all_profiles if p.tax_id_verified)
+    verified_reg = sum(1 for p in all_profiles if p.company_reg_verified)
+    verified_addr = sum(1 for p in all_profiles if p.address_verified)
+    billing_eligible = sum(1 for p in all_profiles if p.eligible_for_billing)
+
+    # Stuck profiles: submitted > 7 days ago
+    from datetime import timedelta
+    now = datetime.utcnow()
+    stuck = [
+        p for p in all_profiles
+        if p.state == "submitted" and p.created_at and (now - p.created_at).days > 7
+    ]
+
+    # Rejection reasons breakdown
+    rejection_reasons: dict = {}
+    for p in all_profiles:
+        if p.state == "rejected" and p.rejection_reason:
+            reason = p.rejection_reason[:50]
+            rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
+
+    return JsonResponse({
+        "status": "ok",
+        "data": {
+            "total_profiles": len(all_profiles),
+            "state_counts": state_counts,
+            "country_counts": country_counts,
+            "verification_counts": {
+                "tax_id_verified": verified_tax,
+                "company_reg_verified": verified_reg,
+                "address_verified": verified_addr,
+                "billing_eligible": billing_eligible,
+            },
+            "stuck_profiles": len(stuck),
+            "stuck_profile_ids": [p.profile_id for p in stuck[:20]],
+            "rejection_reasons": rejection_reasons,
+        },
+    })
