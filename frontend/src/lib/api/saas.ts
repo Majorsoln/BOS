@@ -358,6 +358,13 @@ export async function publishCompliancePack(data: {
     description: string;
     applies_to: string[];
     is_compound?: boolean;
+    category?: string;
+    threshold_amount?: number;
+    exemption_codes?: string[];
+    reverse_charge_applicable?: boolean;
+    withholding_rate?: number;
+    effective_from?: string;
+    effective_until?: string;
   }>;
   receipt_requirements: {
     require_sequential_number: boolean;
@@ -372,10 +379,67 @@ export async function publishCompliancePack(data: {
     audit_log_years: number;
     personal_data_years: number;
     region_law_reference: string;
+    consent_records_years?: number;
+    tax_records_years?: number;
+    employee_records_years?: number;
+    destruction_method?: string;
   };
   required_invoice_fields: string[];
   optional_invoice_fields: string[];
   change_summary: string;
+  // E-Invoicing
+  e_invoicing?: {
+    mandate_active: boolean;
+    system_name?: string;
+    regulatory_body?: string;
+    api_endpoint_ref?: string;
+    transmission_mode?: string;
+    requires_device_registration?: boolean;
+    device_type?: string;
+    qr_code_required?: boolean;
+    digital_signature_required?: boolean;
+    invoice_number_format?: string;
+    max_offline_hours?: number;
+    penalty_reference?: string;
+  };
+  // Invoice Format Rules
+  invoice_format?: {
+    required_header_fields?: string[];
+    required_line_fields?: string[];
+    required_footer_fields?: string[];
+    document_language?: string;
+    secondary_language?: string;
+    currency_decimal_places?: number;
+    date_format?: string;
+    tax_breakdown_required?: boolean;
+    credit_note_must_reference_invoice?: boolean;
+    pro_forma_legally_binding?: boolean;
+    max_payment_terms_days?: number;
+  };
+  // Cross-Border Rules
+  cross_border?: {
+    reverse_charge_on_imports?: boolean;
+    reverse_charge_threshold?: number;
+    withholding_on_foreign_services?: boolean;
+    withholding_rate?: number;
+    transfer_pricing_doc_required?: boolean;
+    permanent_establishment_rules?: string;
+    double_tax_treaty_countries?: string[];
+  };
+  // Digital Signature
+  digital_signature?: {
+    require_digital_signature?: boolean;
+    signature_algorithm?: string;
+    certificate_authority?: string;
+    timestamp_required?: boolean;
+    signature_visible_on_pdf?: boolean;
+  };
+  // Additional governance fields
+  fiscal_year_start_month?: number;
+  reporting_frequency?: string;
+  vat_return_frequency?: string;
+  currency_code?: string;
+  law_reference_url?: string;
 }) {
   const res = await api.post("/saas/compliance-packs/publish", data);
   return res.data;
@@ -428,6 +492,51 @@ export async function setCountryPolicy(data: {
   grace_period_days?: number;
   manual_review_required?: boolean;
   active?: boolean;
+  // E-Invoicing
+  e_invoicing_mandatory?: boolean;
+  e_invoicing_system?: string;
+  e_invoicing_deadline?: string;
+  fiscal_device_required?: boolean;
+  // Entity Types
+  allowed_entity_types?: string[];
+  ngo_tax_exempt?: boolean;
+  government_procurement_rules?: boolean;
+  cooperative_registration_required?: boolean;
+  // Tax Configuration
+  tax_exemption_categories?: string[];
+  vat_registration_threshold?: number;
+  withholding_tax_applicable?: boolean;
+  digital_services_tax?: boolean;
+  // Document & Language
+  document_language?: string;
+  secondary_document_language?: string;
+  receipt_qr_code_required?: boolean;
+  // Privacy & Data Governance
+  privacy_regime?: string;
+  privacy_regulator?: string;
+  data_controller_model?: string;
+  consent_required_for_processing?: boolean;
+  consent_required_for_marketing?: boolean;
+  data_localization_rule?: string;
+  cross_border_transfer_allowed?: boolean;
+  cross_border_transfer_requires_adequacy?: boolean;
+  cross_border_approved_countries?: string[];
+  breach_notification_hours?: number;
+  data_subject_access_days?: number;
+  right_to_erasure?: boolean;
+  data_protection_officer_required?: boolean;
+  privacy_impact_assessment_required?: boolean;
+  // Reporting & Fiscal
+  fiscal_year_start_month?: number;
+  vat_return_frequency?: string;
+  income_tax_return_frequency?: string;
+  statutory_audit_required?: boolean;
+  reporting_currency?: string;
+  // Compliance Automation
+  auto_compliance_checks?: boolean;
+  grace_period_after_law_change_days?: number;
+  penalty_reference?: string;
+  escalation_contact?: string;
 }) {
   const res = await api.post("/saas/compliance/set-country-policy", data);
   return res.data;

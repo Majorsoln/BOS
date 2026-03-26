@@ -122,6 +122,23 @@ class RegionEntry:
     pilot_tenant_count: int = 0       # current count during pilot
     launch_notes: str = ""
 
+    # ── Governance (Two-Level Model per Governance Memo) ──
+    region_owner_type: str = "PLATFORM"   # PLATFORM | AGENT | PARTNER
+    region_owner_id: str = ""             # reseller_id or partner_id if not PLATFORM
+    filing_owner: str = "MAIN_ADMIN"      # MAIN_ADMIN | REGION_AGENT — who files taxes?
+    privacy_regime: str = "NONE"          # NONE | KENYA_DPA | GDPR | POPIA | etc.
+    privacy_regulator: str = ""           # e.g. "ODPC", "ICO"
+    data_localization: str = "NONE"       # NONE | IN_COUNTRY | IN_REGION | ANYWHERE
+    e_invoicing_system: str = ""          # eTIMS, EFDMS, EFRIS, etc.
+    e_invoicing_mandatory: bool = False
+    fiscal_year_start_month: int = 1      # 1=Jan, 7=Jul
+    reporting_frequency: str = "MONTHLY"  # MONTHLY | QUARTERLY | ANNUAL
+    compliance_pack_ref: str = ""         # pinned compliance pack for this region
+    escalation_email: str = ""            # compliance escalation contact
+    local_payment_processor: str = ""     # primary local payment processor
+    withholding_tax_rate: float = 0.0     # WHT rate for this region
+    transfer_pricing_required: bool = False
+
     # ── Legacy ──
     is_active: bool = True            # backward compat — derived from status
 
@@ -226,6 +243,22 @@ class ServicePricingProjection:
             phone_format=p.get("phone_format", ""),
             pilot_tenant_limit=int(p.get("pilot_tenant_limit", 0)),
             launch_notes=p.get("launch_notes", ""),
+            # Governance
+            region_owner_type=p.get("region_owner_type", "PLATFORM"),
+            region_owner_id=p.get("region_owner_id", ""),
+            filing_owner=p.get("filing_owner", "MAIN_ADMIN"),
+            privacy_regime=p.get("privacy_regime", "NONE"),
+            privacy_regulator=p.get("privacy_regulator", ""),
+            data_localization=p.get("data_localization", "NONE"),
+            e_invoicing_system=p.get("e_invoicing_system", ""),
+            e_invoicing_mandatory=bool(p.get("e_invoicing_mandatory", False)),
+            fiscal_year_start_month=int(p.get("fiscal_year_start_month", 1)),
+            reporting_frequency=p.get("reporting_frequency", "MONTHLY"),
+            compliance_pack_ref=p.get("compliance_pack_ref", ""),
+            escalation_email=p.get("escalation_email", ""),
+            local_payment_processor=p.get("local_payment_processor", ""),
+            withholding_tax_rate=float(p.get("withholding_tax_rate", 0)),
+            transfer_pricing_required=bool(p.get("transfer_pricing_required", False)),
             is_active=status_val in ("ACTIVE", "PILOT"),
         )
 
@@ -281,6 +314,37 @@ class ServicePricingProjection:
             existing.pilot_tenant_limit = int(p["pilot_tenant_limit"])
         if "launch_notes" in p:
             existing.launch_notes = p["launch_notes"]
+        # Governance
+        if "region_owner_type" in p:
+            existing.region_owner_type = p["region_owner_type"]
+        if "region_owner_id" in p:
+            existing.region_owner_id = p["region_owner_id"]
+        if "filing_owner" in p:
+            existing.filing_owner = p["filing_owner"]
+        if "privacy_regime" in p:
+            existing.privacy_regime = p["privacy_regime"]
+        if "privacy_regulator" in p:
+            existing.privacy_regulator = p["privacy_regulator"]
+        if "data_localization" in p:
+            existing.data_localization = p["data_localization"]
+        if "e_invoicing_system" in p:
+            existing.e_invoicing_system = p["e_invoicing_system"]
+        if "e_invoicing_mandatory" in p:
+            existing.e_invoicing_mandatory = bool(p["e_invoicing_mandatory"])
+        if "fiscal_year_start_month" in p:
+            existing.fiscal_year_start_month = int(p["fiscal_year_start_month"])
+        if "reporting_frequency" in p:
+            existing.reporting_frequency = p["reporting_frequency"]
+        if "compliance_pack_ref" in p:
+            existing.compliance_pack_ref = p["compliance_pack_ref"]
+        if "escalation_email" in p:
+            existing.escalation_email = p["escalation_email"]
+        if "local_payment_processor" in p:
+            existing.local_payment_processor = p["local_payment_processor"]
+        if "withholding_tax_rate" in p:
+            existing.withholding_tax_rate = float(p["withholding_tax_rate"])
+        if "transfer_pricing_required" in p:
+            existing.transfer_pricing_required = bool(p["transfer_pricing_required"])
         # Legacy compat
         if "is_active" in p:
             existing.is_active = bool(p["is_active"])

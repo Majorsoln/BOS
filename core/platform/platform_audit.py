@@ -45,6 +45,16 @@ PLATFORM_ROLLOUT_STARTED_V1       = "platform.audit.rollout.started.v1"
 PLATFORM_ROLLOUT_COMPLETED_V1     = "platform.audit.rollout.completed.v1"
 PLATFORM_COMPLIANCE_PACK_VERSIONED_V1 = "platform.audit.compliance_pack.versioned.v1"
 
+# ── Compliance Audit Ledger Event Types (Governance Memo) ──
+COMPLIANCE_TAX_DECISION_V1       = "platform.audit.compliance.tax_decision.v1"
+COMPLIANCE_POLICY_CHANGE_V1      = "platform.audit.compliance.policy_change.v1"
+COMPLIANCE_AGENT_ACTION_V1       = "platform.audit.compliance.agent_action.v1"
+COMPLIANCE_DATA_BREACH_V1        = "platform.audit.compliance.data_breach.v1"
+COMPLIANCE_DSAR_REQUEST_V1       = "platform.audit.compliance.dsar_request.v1"
+COMPLIANCE_CONSENT_RECORDED_V1   = "platform.audit.compliance.consent_recorded.v1"
+COMPLIANCE_FILING_SUBMITTED_V1   = "platform.audit.compliance.filing_submitted.v1"
+COMPLIANCE_ESCALATION_V1         = "platform.audit.compliance.escalation.v1"
+
 PLATFORM_AUDIT_EVENT_TYPES = (
     PLATFORM_TENANT_ONBOARDED_V1,
     PLATFORM_TENANT_ACTIVATED_V1,
@@ -61,6 +71,14 @@ PLATFORM_AUDIT_EVENT_TYPES = (
     PLATFORM_ROLLOUT_STARTED_V1,
     PLATFORM_ROLLOUT_COMPLETED_V1,
     PLATFORM_COMPLIANCE_PACK_VERSIONED_V1,
+    COMPLIANCE_TAX_DECISION_V1,
+    COMPLIANCE_POLICY_CHANGE_V1,
+    COMPLIANCE_AGENT_ACTION_V1,
+    COMPLIANCE_DATA_BREACH_V1,
+    COMPLIANCE_DSAR_REQUEST_V1,
+    COMPLIANCE_CONSENT_RECORDED_V1,
+    COMPLIANCE_FILING_SUBMITTED_V1,
+    COMPLIANCE_ESCALATION_V1,
 )
 
 
@@ -329,6 +347,177 @@ class PlatformAuditService:
             region_code=region_code,
         ))
 
+    # ── Compliance Audit Ledger (Governance Memo) ──────────────
+
+    def record_tax_decision(
+        self, tenant_id: str, region_code: str,
+        transaction_type: str, tax_code: str, rate: str,
+        base_amount: str, tax_amount: str, category: str,
+        actor_id: str, issued_at: datetime,
+    ) -> Dict[str, Any]:
+        return self.record(RecordAuditEntryRequest(
+            event_type=COMPLIANCE_TAX_DECISION_V1,
+            actor_id=actor_id,
+            actor_type="SYSTEM",
+            issued_at=issued_at,
+            subject_type="TENANT",
+            subject_id=tenant_id,
+            payload={
+                "transaction_type": transaction_type,
+                "tax_code": tax_code,
+                "rate": rate,
+                "base_amount": base_amount,
+                "tax_amount": tax_amount,
+                "category": category,
+            },
+            region_code=region_code,
+        ))
+
+    def record_policy_change(
+        self, policy_type: str, region_code: str,
+        old_version: int, new_version: int, change_summary: str,
+        actor_id: str, issued_at: datetime,
+    ) -> Dict[str, Any]:
+        return self.record(RecordAuditEntryRequest(
+            event_type=COMPLIANCE_POLICY_CHANGE_V1,
+            actor_id=actor_id,
+            actor_type="PLATFORM_ADMIN",
+            issued_at=issued_at,
+            subject_type="POLICY",
+            subject_id=f"{policy_type}:{region_code}",
+            payload={
+                "policy_type": policy_type,
+                "old_version": old_version,
+                "new_version": new_version,
+                "change_summary": change_summary,
+            },
+            region_code=region_code,
+        ))
+
+    def record_agent_compliance_action(
+        self, agent_reseller_id: str, region_code: str,
+        action_type: str, subject_id: str, details: Dict[str, Any],
+        issued_at: datetime,
+    ) -> Dict[str, Any]:
+        return self.record(RecordAuditEntryRequest(
+            event_type=COMPLIANCE_AGENT_ACTION_V1,
+            actor_id=agent_reseller_id,
+            actor_type="REGION_AGENT",
+            issued_at=issued_at,
+            subject_type="COMPLIANCE_ACTION",
+            subject_id=subject_id,
+            payload={"action_type": action_type, **details},
+            region_code=region_code,
+        ))
+
+    def record_data_breach(
+        self, tenant_id: str, region_code: str,
+        breach_description: str, data_subjects_affected: int,
+        actor_id: str, issued_at: datetime,
+        notification_deadline: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        return self.record(RecordAuditEntryRequest(
+            event_type=COMPLIANCE_DATA_BREACH_V1,
+            actor_id=actor_id,
+            actor_type="PLATFORM_ADMIN",
+            issued_at=issued_at,
+            subject_type="TENANT",
+            subject_id=tenant_id,
+            payload={
+                "breach_description": breach_description,
+                "data_subjects_affected": data_subjects_affected,
+                "notification_deadline": notification_deadline.isoformat() if notification_deadline else None,
+            },
+            region_code=region_code,
+            notes=f"DATA BREACH — {data_subjects_affected} subjects affected.",
+        ))
+
+    def record_dsar_request(
+        self, tenant_id: str, request_type: str,
+        data_subject_ref: str, response_deadline_days: int,
+        actor_id: str, issued_at: datetime,
+        region_code: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return self.record(RecordAuditEntryRequest(
+            event_type=COMPLIANCE_DSAR_REQUEST_V1,
+            actor_id=actor_id,
+            actor_type="SYSTEM",
+            issued_at=issued_at,
+            subject_type="DATA_SUBJECT",
+            subject_id=data_subject_ref,
+            payload={
+                "tenant_id": tenant_id,
+                "request_type": request_type,
+                "response_deadline_days": response_deadline_days,
+            },
+            region_code=region_code,
+        ))
+
+    def record_consent(
+        self, tenant_id: str, data_subject_ref: str,
+        consent_type: str, consent_given: bool,
+        actor_id: str, issued_at: datetime,
+        region_code: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return self.record(RecordAuditEntryRequest(
+            event_type=COMPLIANCE_CONSENT_RECORDED_V1,
+            actor_id=actor_id,
+            actor_type="SYSTEM",
+            issued_at=issued_at,
+            subject_type="DATA_SUBJECT",
+            subject_id=data_subject_ref,
+            payload={
+                "tenant_id": tenant_id,
+                "consent_type": consent_type,
+                "consent_given": consent_given,
+            },
+            region_code=region_code,
+        ))
+
+    def record_filing_submitted(
+        self, filing_type: str, region_code: str,
+        period: str, amount: str, currency: str,
+        authority: str, reference_number: str,
+        actor_id: str, issued_at: datetime,
+    ) -> Dict[str, Any]:
+        return self.record(RecordAuditEntryRequest(
+            event_type=COMPLIANCE_FILING_SUBMITTED_V1,
+            actor_id=actor_id,
+            actor_type="REGION_AGENT",
+            issued_at=issued_at,
+            subject_type="TAX_FILING",
+            subject_id=reference_number,
+            payload={
+                "filing_type": filing_type,
+                "period": period,
+                "amount": amount,
+                "currency": currency,
+                "authority": authority,
+            },
+            region_code=region_code,
+        ))
+
+    def record_escalation(
+        self, escalation_id: str, region_code: str,
+        agent_id: str, subject_type: str, subject_id: str,
+        description: str, severity: str,
+        issued_at: datetime,
+    ) -> Dict[str, Any]:
+        return self.record(RecordAuditEntryRequest(
+            event_type=COMPLIANCE_ESCALATION_V1,
+            actor_id=agent_id,
+            actor_type="REGION_AGENT",
+            issued_at=issued_at,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            payload={
+                "escalation_id": escalation_id,
+                "description": description,
+                "severity": severity,
+            },
+            region_code=region_code,
+        ))
+
     # ── query helpers ────────────────────────────────────────
 
     def get_tenant_history(self, tenant_id: str) -> List[PlatformAuditEntry]:
@@ -336,3 +525,24 @@ class PlatformAuditService:
 
     def get_recent_platform_events(self, limit: int = 50) -> List[PlatformAuditEntry]:
         return self._projection.get_recent(limit)
+
+    def get_compliance_audit_trail(
+        self, region_code: Optional[str] = None, limit: int = 100
+    ) -> List[PlatformAuditEntry]:
+        compliance_types = {
+            COMPLIANCE_TAX_DECISION_V1,
+            COMPLIANCE_POLICY_CHANGE_V1,
+            COMPLIANCE_AGENT_ACTION_V1,
+            COMPLIANCE_DATA_BREACH_V1,
+            COMPLIANCE_DSAR_REQUEST_V1,
+            COMPLIANCE_CONSENT_RECORDED_V1,
+            COMPLIANCE_FILING_SUBMITTED_V1,
+            COMPLIANCE_ESCALATION_V1,
+        }
+        entries = [
+            e for e in self._projection._entries
+            if e.event_type in compliance_types
+        ]
+        if region_code:
+            entries = [e for e in entries if e.region_code == region_code]
+        return entries[-limit:]

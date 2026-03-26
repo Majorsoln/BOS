@@ -185,4 +185,8 @@ urlpatterns = [
     # Compliance Review Queue (ACMV — Compliance / Verification)
     path("platform/compliance/pending", views.platform_compliance_pending_view),
     path("platform/compliance/stats", views.platform_compliance_stats_view),
+    # Governance (Two-Level Admin Model)
+    path("platform/compliance/audit", views.platform_compliance_audit_view),
+    path("platform/governance/agents", views.platform_governance_agents_view),
+    path("platform/governance/escalations", views.platform_governance_escalations_view),
 ]

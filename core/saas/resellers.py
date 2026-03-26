@@ -286,6 +286,127 @@ class RegionalPerformanceSummary:
 
 
 # ══════════════════════════════════════════════════════════════
+# REGION AGENT GOVERNANCE MODEL
+# (Two-Level: Main Admin + Region/License Agents)
+# ══════════════════════════════════════════════════════════════
+
+class AgentGovernanceRole:
+    """Governance roles per the two-level governance memo."""
+    MAIN_ADMIN = "MAIN_ADMIN"          # Platform doctrine, architecture, security, pricing
+    REGION_AGENT = "REGION_AGENT"      # Local compliance execution, tax practice, local payments
+    LICENSE_AGENT = "LICENSE_AGENT"     # Licensed distributor with regulatory filing authority
+
+
+# Main Admin responsibilities (cannot be delegated)
+MAIN_ADMIN_EXCLUSIVE_PERMISSIONS = frozenset({
+    "DEFINE_DOCTRINE",               # BOS-level compliance rules and architecture
+    "SET_PRICING_POLICY",            # Global pricing strategy
+    "MANAGE_ENGINES",                # Enable/disable engine modules
+    "PUBLISH_COMPLIANCE_PACK",       # Publish new compliance pack versions
+    "SET_SECURITY_POLICY",           # Authentication, authorization rules
+    "MANAGE_PLATFORM_USERS",         # Platform-level admin accounts
+    "VIEW_ALL_REGIONS",              # Cross-region visibility
+    "KILL_SWITCH",                   # Emergency shutdown
+    "APPROVE_REGION_AGENT",          # Approve new region/license agents
+    "SET_COMMISSION_POLICY",         # Global commission structure
+})
+
+# Region Agent permissions (delegated by Main Admin)
+REGION_AGENT_PERMISSIONS = frozenset({
+    "ONBOARD_TENANTS",               # Register new tenants in their region
+    "REVIEW_COMPLIANCE_PROFILES",    # Review and approve/reject tenant compliance
+    "FILE_LOCAL_TAXES",              # File taxes with local authority (e.g. KRA, TRA)
+    "MANAGE_LOCAL_PAYMENTS",         # Configure local payment channels
+    "PROVIDE_L1_SUPPORT",           # First-line tenant support
+    "VIEW_REGION_DATA",              # See regional metrics and reports
+    "MANAGE_TERRITORY",             # Assign sub-territories to sub-agents
+    "SUBMIT_COMPLIANCE_EVIDENCE",    # Upload tax filings, registration docs
+    "ESCALATE_TO_MAIN_ADMIN",       # Escalate issues beyond agent authority
+    "CONFIGURE_LOCAL_SETTINGS",      # Region-specific settings (language, timezone)
+})
+
+
+@dataclass(frozen=True)
+class RegionAgentPermission:
+    """A single permission granted to a region agent."""
+    permission_code: str          # from REGION_AGENT_PERMISSIONS
+    granted_at: datetime
+    granted_by: str               # actor_id of Main Admin
+    expires_at: Optional[datetime] = None  # None = indefinite
+    conditions: str = ""          # free-text conditions on the permission
+
+
+@dataclass(frozen=True)
+class RegionAgentGovernanceRecord:
+    """
+    Governance overlay on a reseller, making them a Region/License Agent.
+
+    This extends the existing ResellerRecord with governance-specific
+    permissions, boundaries, and compliance filing authority.
+    """
+    reseller_id: uuid.UUID           # links to ResellerRecord
+    governance_role: str              # AgentGovernanceRole value
+    region_code: str                  # primary region
+    permissions: Tuple[RegionAgentPermission, ...] = ()
+    # Filing authority
+    can_file_taxes: bool = False      # authorized to file taxes with authority?
+    tax_authority_registration_id: str = ""  # agent's registration with tax authority
+    filing_certificate_ref: str = ""  # reference to uploaded filing certificate
+    # Boundaries
+    max_tenants: int = 0              # 0 = unlimited
+    max_territories: int = 10
+    can_appoint_sub_agents: bool = False
+    # Compliance
+    compliance_training_completed: bool = False
+    compliance_training_date: Optional[datetime] = None
+    last_audit_date: Optional[datetime] = None
+    next_audit_due: Optional[datetime] = None
+    # Status
+    governance_status: str = "PENDING"  # PENDING | ACTIVE | SUSPENDED | REVOKED
+    activated_at: Optional[datetime] = None
+    suspended_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+    revocation_reason: str = ""
+
+
+@dataclass(frozen=True)
+class ComplianceEscalation:
+    """Record of an escalation from Region Agent to Main Admin."""
+    escalation_id: str
+    region_code: str
+    agent_reseller_id: str
+    subject_type: str                # TENANT | TAX_FILING | REGULATION_CHANGE | OTHER
+    subject_id: str                  # business_id, filing_id, etc.
+    description: str
+    severity: str = "NORMAL"         # LOW | NORMAL | HIGH | CRITICAL
+    created_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+    resolved_by: str = ""
+    resolution_notes: str = ""
+    status: str = "OPEN"             # OPEN | IN_PROGRESS | RESOLVED | CLOSED
+
+
+# Event types for agent governance
+AGENT_GOVERNANCE_GRANTED_V1 = "saas.agent.governance_granted.v1"
+AGENT_GOVERNANCE_REVOKED_V1 = "saas.agent.governance_revoked.v1"
+AGENT_GOVERNANCE_SUSPENDED_V1 = "saas.agent.governance_suspended.v1"
+AGENT_PERMISSION_GRANTED_V1 = "saas.agent.permission_granted.v1"
+AGENT_PERMISSION_REVOKED_V1 = "saas.agent.permission_revoked.v1"
+AGENT_ESCALATION_CREATED_V1 = "saas.agent.escalation_created.v1"
+AGENT_ESCALATION_RESOLVED_V1 = "saas.agent.escalation_resolved.v1"
+
+AGENT_GOVERNANCE_EVENT_TYPES = (
+    AGENT_GOVERNANCE_GRANTED_V1,
+    AGENT_GOVERNANCE_REVOKED_V1,
+    AGENT_GOVERNANCE_SUSPENDED_V1,
+    AGENT_PERMISSION_GRANTED_V1,
+    AGENT_PERMISSION_REVOKED_V1,
+    AGENT_ESCALATION_CREATED_V1,
+    AGENT_ESCALATION_RESOLVED_V1,
+)
+
+
+# ══════════════════════════════════════════════════════════════
 # REQUEST DTOs
 # ══════════════════════════════════════════════════════════════
 
@@ -462,6 +583,11 @@ class ResellerProjection:
         self._commission_overrides: Dict[str, RegionalCommissionOverride] = {}
         # (region_code, period) → RegionalTarget
         self._regional_targets: Dict[Tuple[str, str], RegionalTarget] = {}
+        # ── Agent Governance State ──
+        # reseller_id → RegionAgentGovernanceRecord
+        self._agent_governance: Dict[uuid.UUID, RegionAgentGovernanceRecord] = {}
+        # escalation_id → ComplianceEscalation
+        self._escalations: Dict[str, ComplianceEscalation] = {}
 
     def apply(self, event_type: str, payload: Dict[str, Any]) -> None:
         if event_type == RESELLER_REGISTERED_V1:
@@ -505,6 +631,17 @@ class ResellerProjection:
             self._apply_payout_completed(payload)
         elif event_type == PAYOUT_REJECTED_V1:
             self._apply_payout_rejected(payload)
+        # Agent governance events
+        elif event_type == AGENT_GOVERNANCE_GRANTED_V1:
+            self._apply_governance_granted(payload)
+        elif event_type == AGENT_GOVERNANCE_REVOKED_V1:
+            self._apply_governance_revoked(payload)
+        elif event_type == AGENT_GOVERNANCE_SUSPENDED_V1:
+            self._apply_governance_suspended(payload)
+        elif event_type == AGENT_ESCALATION_CREATED_V1:
+            self._apply_escalation_created(payload)
+        elif event_type == AGENT_ESCALATION_RESOLVED_V1:
+            self._apply_escalation_resolved(payload)
 
     def _determine_tier(self, active_count: int) -> ResellerTier:
         for tier, config in TIER_CONFIG.items():
@@ -1077,6 +1214,146 @@ class ResellerProjection:
             currency=currency,
         )
 
+    # ── Agent Governance Handlers ─────────────────────────────────
+
+    def _apply_governance_granted(self, payload: Dict[str, Any]) -> None:
+        reseller_id = uuid.UUID(str(payload["reseller_id"]))
+        now = payload.get("issued_at", datetime.utcnow())
+        permissions = tuple(
+            RegionAgentPermission(
+                permission_code=p.get("permission_code", ""),
+                granted_at=now,
+                granted_by=payload.get("actor_id", ""),
+                expires_at=p.get("expires_at"),
+                conditions=p.get("conditions", ""),
+            )
+            for p in payload.get("permissions", [])
+        )
+        self._agent_governance[reseller_id] = RegionAgentGovernanceRecord(
+            reseller_id=reseller_id,
+            governance_role=payload.get("governance_role", AgentGovernanceRole.REGION_AGENT),
+            region_code=payload.get("region_code", ""),
+            permissions=permissions,
+            can_file_taxes=payload.get("can_file_taxes", False),
+            tax_authority_registration_id=payload.get("tax_authority_registration_id", ""),
+            filing_certificate_ref=payload.get("filing_certificate_ref", ""),
+            max_tenants=payload.get("max_tenants", 0),
+            max_territories=payload.get("max_territories", 10),
+            can_appoint_sub_agents=payload.get("can_appoint_sub_agents", False),
+            governance_status="ACTIVE",
+            activated_at=now,
+        )
+
+    def _apply_governance_revoked(self, payload: Dict[str, Any]) -> None:
+        reseller_id = uuid.UUID(str(payload["reseller_id"]))
+        old = self._agent_governance.get(reseller_id)
+        if old is None:
+            return
+        now = payload.get("issued_at", datetime.utcnow())
+        self._agent_governance[reseller_id] = RegionAgentGovernanceRecord(
+            reseller_id=old.reseller_id,
+            governance_role=old.governance_role,
+            region_code=old.region_code,
+            permissions=old.permissions,
+            can_file_taxes=False,
+            tax_authority_registration_id=old.tax_authority_registration_id,
+            filing_certificate_ref=old.filing_certificate_ref,
+            max_tenants=old.max_tenants,
+            max_territories=old.max_territories,
+            can_appoint_sub_agents=False,
+            governance_status="REVOKED",
+            activated_at=old.activated_at,
+            revoked_at=now,
+            revocation_reason=payload.get("reason", ""),
+        )
+
+    def _apply_governance_suspended(self, payload: Dict[str, Any]) -> None:
+        reseller_id = uuid.UUID(str(payload["reseller_id"]))
+        old = self._agent_governance.get(reseller_id)
+        if old is None:
+            return
+        now = payload.get("issued_at", datetime.utcnow())
+        self._agent_governance[reseller_id] = RegionAgentGovernanceRecord(
+            reseller_id=old.reseller_id,
+            governance_role=old.governance_role,
+            region_code=old.region_code,
+            permissions=old.permissions,
+            can_file_taxes=old.can_file_taxes,
+            tax_authority_registration_id=old.tax_authority_registration_id,
+            filing_certificate_ref=old.filing_certificate_ref,
+            max_tenants=old.max_tenants,
+            max_territories=old.max_territories,
+            can_appoint_sub_agents=old.can_appoint_sub_agents,
+            governance_status="SUSPENDED",
+            activated_at=old.activated_at,
+            suspended_at=now,
+        )
+
+    def _apply_escalation_created(self, payload: Dict[str, Any]) -> None:
+        escalation_id = payload.get("escalation_id", str(uuid.uuid4()))
+        self._escalations[escalation_id] = ComplianceEscalation(
+            escalation_id=escalation_id,
+            region_code=payload.get("region_code", ""),
+            agent_reseller_id=payload.get("agent_reseller_id", ""),
+            subject_type=payload.get("subject_type", "OTHER"),
+            subject_id=payload.get("subject_id", ""),
+            description=payload.get("description", ""),
+            severity=payload.get("severity", "NORMAL"),
+            created_at=payload.get("issued_at"),
+            status="OPEN",
+        )
+
+    def _apply_escalation_resolved(self, payload: Dict[str, Any]) -> None:
+        escalation_id = payload.get("escalation_id", "")
+        old = self._escalations.get(escalation_id)
+        if old is None:
+            return
+        self._escalations[escalation_id] = ComplianceEscalation(
+            escalation_id=old.escalation_id,
+            region_code=old.region_code,
+            agent_reseller_id=old.agent_reseller_id,
+            subject_type=old.subject_type,
+            subject_id=old.subject_id,
+            description=old.description,
+            severity=old.severity,
+            created_at=old.created_at,
+            resolved_at=payload.get("issued_at"),
+            resolved_by=payload.get("actor_id", ""),
+            resolution_notes=payload.get("resolution_notes", ""),
+            status="RESOLVED",
+        )
+
+    # ── Agent Governance Queries ───────────────────────────────
+
+    def get_agent_governance(self, reseller_id: uuid.UUID) -> Optional[RegionAgentGovernanceRecord]:
+        return self._agent_governance.get(reseller_id)
+
+    def list_region_agents(self, region_code: str) -> List[RegionAgentGovernanceRecord]:
+        return [
+            g for g in self._agent_governance.values()
+            if g.region_code == region_code and g.governance_status == "ACTIVE"
+        ]
+
+    def get_escalations(self, region_code: str = "", status: str = "") -> List[ComplianceEscalation]:
+        result = list(self._escalations.values())
+        if region_code:
+            result = [e for e in result if e.region_code == region_code]
+        if status:
+            result = [e for e in result if e.status == status]
+        return sorted(result, key=lambda e: e.created_at or datetime.min, reverse=True)
+
+    def has_permission(self, reseller_id: uuid.UUID, permission_code: str) -> bool:
+        gov = self._agent_governance.get(reseller_id)
+        if gov is None or gov.governance_status != "ACTIVE":
+            return False
+        now = datetime.utcnow()
+        for p in gov.permissions:
+            if p.permission_code == permission_code:
+                if p.expires_at and now > p.expires_at:
+                    continue
+                return True
+        return False
+
     def truncate(self) -> None:
         self._resellers.clear()
         self._tenant_links.clear()
@@ -1086,6 +1363,8 @@ class ResellerProjection:
         self._territories.clear()
         self._commission_overrides.clear()
         self._regional_targets.clear()
+        self._agent_governance.clear()
+        self._escalations.clear()
 
 
 # ══════════════════════════════════════════════════════════════

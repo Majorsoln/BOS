@@ -77,6 +77,32 @@ VALID_STATES = frozenset(VALID_TRANSITIONS.keys())
 
 VALID_CUSTOMER_TYPES = frozenset({"B2B", "B2C"})
 
+# Extended entity types per governance memo
+VALID_ENTITY_TYPES = frozenset({
+    "B2B", "B2C",
+    "NGO",                # Non-governmental organizations
+    "GOVERNMENT",         # Government entities
+    "EDUCATION",          # Schools, universities
+    "COOPERATIVE",        # SACCOs, cooperatives
+    "RELIGIOUS",          # Churches, mosques
+    "DIPLOMATIC",         # Embassies, international orgs
+    "FREELANCER",         # Individual practitioners
+    "INFORMAL",           # Informal sector / jua kali
+})
+
+# Privacy regimes
+VALID_PRIVACY_REGIMES = frozenset({
+    "NONE",               # No specific data protection law
+    "KENYA_DPA",          # Kenya Data Protection Act 2019
+    "GDPR",               # EU General Data Protection Regulation
+    "POPIA",              # South Africa POPIA
+    "NIGERIA_NDPR",       # Nigeria Data Protection Regulation
+    "TANZANIA_EDPA",      # Tanzania Electronic & Postal Communications Act
+    "UGANDA_DPP",         # Uganda Data Protection & Privacy Act
+    "RWANDA_DPL",         # Rwanda Data Protection Law
+    "AU_CONVENTION",      # African Union Convention on Cyber Security
+})
+
 VALID_DECISION_TYPES = frozenset({
     "SUBMITTED", "APPROVED", "REJECTED", "ACTIVATED",
     "SUSPENDED", "REACTIVATED", "BLOCKED", "DEACTIVATED",
@@ -97,8 +123,18 @@ class CountryPolicy:
     """
     Per-country compliance requirements.
 
-    Defines what documentation, verification steps, and business model
-    restrictions apply to tenants operating in this country.
+    Defines what documentation, verification steps, business model
+    restrictions, e-invoicing mandates, privacy regime, and data
+    governance rules apply to tenants operating in this country.
+
+    Enhanced per governance memo with:
+    - E-invoicing mandate configuration
+    - Extended entity type support (NGO, GOVERNMENT, EDUCATION, etc.)
+    - Tax exemption categories
+    - Privacy and data governance (GDPR, POPIA, Kenya DPA, etc.)
+    - Data residency and cross-border transfer controls
+    - Reporting obligations and fiscal calendar
+    - Auto-validation checks and penalty references
     """
     country_code: str
     country_name: str
@@ -113,6 +149,62 @@ class CountryPolicy:
     manual_review_required: bool = False
     active: bool = True
     version: int = 1
+
+    # ── E-Invoicing ──
+    e_invoicing_mandatory: bool = False           # is e-invoicing required by law?
+    e_invoicing_system: str = ""                  # eTIMS, EFDMS, EFRIS, FIRS_MBS, etc.
+    e_invoicing_deadline: str = ""                # date by which compliance required
+    fiscal_device_required: bool = False          # physical ETR/EFD device needed?
+
+    # ── Entity Types ──
+    allowed_entity_types: tuple = ("B2B", "B2C")  # which entity types can operate
+    ngo_tax_exempt: bool = False                   # NGOs get tax exemption?
+    government_procurement_rules: bool = False     # special procurement rules apply?
+    cooperative_registration_required: bool = False
+
+    # ── Tax Configuration ──
+    tax_exemption_categories: tuple = ()           # product/service codes exempt from VAT
+    vat_registration_threshold: int = 0            # turnover threshold for mandatory VAT reg
+    vat_registration_threshold_currency: str = ""  # currency of the threshold
+    withholding_tax_applicable: bool = False
+    digital_services_tax: bool = False             # separate digital services tax?
+    digital_services_tax_rate: float = 0.0
+
+    # ── Document & Language ──
+    document_language: str = "en"                  # primary language for legal documents
+    secondary_document_language: str = ""          # bilingual requirement
+    document_numbering_authority: str = ""         # authority that governs numbering
+    receipt_qr_code_required: bool = False
+
+    # ── Privacy & Data Governance ──
+    privacy_regime: str = "NONE"                   # VALID_PRIVACY_REGIMES value
+    privacy_regulator: str = ""                    # "ODPC" (Kenya), "ICO" (UK), etc.
+    data_controller_model: str = "JOINT"           # JOINT | BOS_ONLY | TENANT_ONLY
+    consent_required_for_processing: bool = False  # explicit consent needed?
+    consent_required_for_marketing: bool = False
+    data_localization_rule: str = "NONE"           # NONE | IN_COUNTRY | IN_REGION | ANYWHERE
+    cross_border_transfer_allowed: bool = True     # can data leave the country?
+    cross_border_transfer_requires_adequacy: bool = False  # adequacy decision needed?
+    cross_border_approved_countries: tuple = ()    # countries approved for transfer
+    breach_notification_hours: int = 72            # hours to notify regulator of breach
+    data_subject_access_days: int = 30             # days to respond to DSAR
+    right_to_erasure: bool = False                 # GDPR-style right to be forgotten
+    data_protection_officer_required: bool = False
+    privacy_impact_assessment_required: bool = False
+
+    # ── Reporting & Fiscal ──
+    fiscal_year_start_month: int = 1               # 1=Jan, 7=Jul (Kenya/Tanzania)
+    vat_return_frequency: str = "MONTHLY"          # MONTHLY | QUARTERLY
+    income_tax_return_frequency: str = "ANNUAL"    # ANNUAL | QUARTERLY
+    statutory_audit_required: bool = False          # annual statutory audit?
+    statutory_audit_threshold: int = 0              # turnover above which audit required
+    reporting_currency: str = ""                    # official reporting currency
+
+    # ── Compliance Automation ──
+    auto_compliance_checks: tuple = ()             # list of auto-check codes to run
+    grace_period_after_law_change_days: int = 90   # days to comply after law change
+    penalty_reference: str = ""                    # law section for non-compliance penalties
+    escalation_contact: str = ""                   # who to contact for compliance issues
 
 
 @dataclass(frozen=True)
@@ -247,6 +339,48 @@ class SetCountryPolicyRequest:
     active: bool
     actor_id: str
     issued_at: datetime
+    # ── Governance Memo Additions ──
+    e_invoicing_mandatory: bool = False
+    e_invoicing_system: str = ""
+    e_invoicing_deadline: str = ""
+    fiscal_device_required: bool = False
+    allowed_entity_types: tuple = ("B2B", "B2C")
+    ngo_tax_exempt: bool = False
+    government_procurement_rules: bool = False
+    cooperative_registration_required: bool = False
+    tax_exemption_categories: tuple = ()
+    vat_registration_threshold: int = 0
+    vat_registration_threshold_currency: str = ""
+    withholding_tax_applicable: bool = False
+    digital_services_tax: bool = False
+    digital_services_tax_rate: float = 0.0
+    document_language: str = "en"
+    secondary_document_language: str = ""
+    receipt_qr_code_required: bool = False
+    privacy_regime: str = "NONE"
+    privacy_regulator: str = ""
+    data_controller_model: str = "JOINT"
+    consent_required_for_processing: bool = False
+    consent_required_for_marketing: bool = False
+    data_localization_rule: str = "NONE"
+    cross_border_transfer_allowed: bool = True
+    cross_border_transfer_requires_adequacy: bool = False
+    cross_border_approved_countries: tuple = ()
+    breach_notification_hours: int = 72
+    data_subject_access_days: int = 30
+    right_to_erasure: bool = False
+    data_protection_officer_required: bool = False
+    privacy_impact_assessment_required: bool = False
+    fiscal_year_start_month: int = 1
+    vat_return_frequency: str = "MONTHLY"
+    income_tax_return_frequency: str = "ANNUAL"
+    statutory_audit_required: bool = False
+    statutory_audit_threshold: int = 0
+    reporting_currency: str = ""
+    auto_compliance_checks: tuple = ()
+    grace_period_after_law_change_days: int = 90
+    penalty_reference: str = ""
+    escalation_contact: str = ""
 
 
 # ══════════════════════════════════════════════════════════════
@@ -312,6 +446,55 @@ class TenantComplianceProjection:
             manual_review_required=payload.get("manual_review_required", False),
             active=payload.get("active", True),
             version=new_version,
+            # E-invoicing
+            e_invoicing_mandatory=payload.get("e_invoicing_mandatory", False),
+            e_invoicing_system=payload.get("e_invoicing_system", ""),
+            e_invoicing_deadline=payload.get("e_invoicing_deadline", ""),
+            fiscal_device_required=payload.get("fiscal_device_required", False),
+            # Entity types
+            allowed_entity_types=tuple(payload.get("allowed_entity_types", ("B2B", "B2C"))),
+            ngo_tax_exempt=payload.get("ngo_tax_exempt", False),
+            government_procurement_rules=payload.get("government_procurement_rules", False),
+            cooperative_registration_required=payload.get("cooperative_registration_required", False),
+            # Tax
+            tax_exemption_categories=tuple(payload.get("tax_exemption_categories", ())),
+            vat_registration_threshold=payload.get("vat_registration_threshold", 0),
+            vat_registration_threshold_currency=payload.get("vat_registration_threshold_currency", ""),
+            withholding_tax_applicable=payload.get("withholding_tax_applicable", False),
+            digital_services_tax=payload.get("digital_services_tax", False),
+            digital_services_tax_rate=float(payload.get("digital_services_tax_rate", 0)),
+            # Document
+            document_language=payload.get("document_language", "en"),
+            secondary_document_language=payload.get("secondary_document_language", ""),
+            document_numbering_authority=payload.get("document_numbering_authority", ""),
+            receipt_qr_code_required=payload.get("receipt_qr_code_required", False),
+            # Privacy & data governance
+            privacy_regime=payload.get("privacy_regime", "NONE"),
+            privacy_regulator=payload.get("privacy_regulator", ""),
+            data_controller_model=payload.get("data_controller_model", "JOINT"),
+            consent_required_for_processing=payload.get("consent_required_for_processing", False),
+            consent_required_for_marketing=payload.get("consent_required_for_marketing", False),
+            data_localization_rule=payload.get("data_localization_rule", "NONE"),
+            cross_border_transfer_allowed=payload.get("cross_border_transfer_allowed", True),
+            cross_border_transfer_requires_adequacy=payload.get("cross_border_transfer_requires_adequacy", False),
+            cross_border_approved_countries=tuple(payload.get("cross_border_approved_countries", ())),
+            breach_notification_hours=payload.get("breach_notification_hours", 72),
+            data_subject_access_days=payload.get("data_subject_access_days", 30),
+            right_to_erasure=payload.get("right_to_erasure", False),
+            data_protection_officer_required=payload.get("data_protection_officer_required", False),
+            privacy_impact_assessment_required=payload.get("privacy_impact_assessment_required", False),
+            # Reporting & fiscal
+            fiscal_year_start_month=payload.get("fiscal_year_start_month", 1),
+            vat_return_frequency=payload.get("vat_return_frequency", "MONTHLY"),
+            income_tax_return_frequency=payload.get("income_tax_return_frequency", "ANNUAL"),
+            statutory_audit_required=payload.get("statutory_audit_required", False),
+            statutory_audit_threshold=payload.get("statutory_audit_threshold", 0),
+            reporting_currency=payload.get("reporting_currency", ""),
+            # Compliance automation
+            auto_compliance_checks=tuple(payload.get("auto_compliance_checks", ())),
+            grace_period_after_law_change_days=payload.get("grace_period_after_law_change_days", 90),
+            penalty_reference=payload.get("penalty_reference", ""),
+            escalation_contact=payload.get("escalation_contact", ""),
         )
 
     # -- profile lifecycle ---------------------------------------
@@ -597,6 +780,54 @@ class TenantComplianceService:
             "active": request.active,
             "actor_id": request.actor_id,
             "issued_at": request.issued_at,
+            # E-invoicing
+            "e_invoicing_mandatory": request.e_invoicing_mandatory,
+            "e_invoicing_system": request.e_invoicing_system,
+            "e_invoicing_deadline": request.e_invoicing_deadline,
+            "fiscal_device_required": request.fiscal_device_required,
+            # Entity types
+            "allowed_entity_types": list(request.allowed_entity_types),
+            "ngo_tax_exempt": request.ngo_tax_exempt,
+            "government_procurement_rules": request.government_procurement_rules,
+            "cooperative_registration_required": request.cooperative_registration_required,
+            # Tax
+            "tax_exemption_categories": list(request.tax_exemption_categories),
+            "vat_registration_threshold": request.vat_registration_threshold,
+            "vat_registration_threshold_currency": request.vat_registration_threshold_currency,
+            "withholding_tax_applicable": request.withholding_tax_applicable,
+            "digital_services_tax": request.digital_services_tax,
+            "digital_services_tax_rate": request.digital_services_tax_rate,
+            # Document
+            "document_language": request.document_language,
+            "secondary_document_language": request.secondary_document_language,
+            "receipt_qr_code_required": request.receipt_qr_code_required,
+            # Privacy & data governance
+            "privacy_regime": request.privacy_regime,
+            "privacy_regulator": request.privacy_regulator,
+            "data_controller_model": request.data_controller_model,
+            "consent_required_for_processing": request.consent_required_for_processing,
+            "consent_required_for_marketing": request.consent_required_for_marketing,
+            "data_localization_rule": request.data_localization_rule,
+            "cross_border_transfer_allowed": request.cross_border_transfer_allowed,
+            "cross_border_transfer_requires_adequacy": request.cross_border_transfer_requires_adequacy,
+            "cross_border_approved_countries": list(request.cross_border_approved_countries),
+            "breach_notification_hours": request.breach_notification_hours,
+            "data_subject_access_days": request.data_subject_access_days,
+            "right_to_erasure": request.right_to_erasure,
+            "data_protection_officer_required": request.data_protection_officer_required,
+            "privacy_impact_assessment_required": request.privacy_impact_assessment_required,
+            # Reporting & fiscal
+            "fiscal_year_start_month": request.fiscal_year_start_month,
+            "vat_return_frequency": request.vat_return_frequency,
+            "income_tax_return_frequency": request.income_tax_return_frequency,
+            "statutory_audit_required": request.statutory_audit_required,
+            "statutory_audit_threshold": request.statutory_audit_threshold,
+            "reporting_currency": request.reporting_currency,
+            # Compliance automation
+            "auto_compliance_checks": list(request.auto_compliance_checks),
+            "grace_period_after_law_change_days": request.grace_period_after_law_change_days,
+            "penalty_reference": request.penalty_reference,
+            "escalation_contact": request.escalation_contact,
         }
         self._projection.apply(COUNTRY_POLICY_SET_V1, payload)
 

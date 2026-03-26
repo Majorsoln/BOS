@@ -57,3 +57,30 @@ export async function getComplianceStats() {
   const res = await api.get("/platform/compliance/stats");
   return res.data;
 }
+
+/* ── Compliance Audit Ledger ──────────────────────────────── */
+
+export async function getComplianceAuditTrail(params?: {
+  region_code?: string;
+  limit?: number;
+}) {
+  const res = await api.get("/platform/compliance/audit", { params });
+  return res.data;
+}
+
+/* ── Governance (Two-Level Admin Model) ───────────────────── */
+
+export async function getGovernanceAgents(regionCode: string) {
+  const res = await api.get("/platform/governance/agents", {
+    params: { region_code: regionCode },
+  });
+  return res.data;
+}
+
+export async function getGovernanceEscalations(params?: {
+  region_code?: string;
+  status?: string;
+}) {
+  const res = await api.get("/platform/governance/escalations", { params });
+  return res.data;
+}

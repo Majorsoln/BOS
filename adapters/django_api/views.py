@@ -4317,6 +4317,48 @@ def saas_set_country_policy_view(request: HttpRequest) -> JsonResponse:
             active=body.get("active", True),
             actor_id=body.get("actor_id", ""),
             issued_at=_dt_from_body(body),
+            # Governance fields
+            e_invoicing_mandatory=body.get("e_invoicing_mandatory", False),
+            e_invoicing_system=body.get("e_invoicing_system", ""),
+            e_invoicing_deadline=body.get("e_invoicing_deadline", ""),
+            fiscal_device_required=body.get("fiscal_device_required", False),
+            allowed_entity_types=tuple(body.get("allowed_entity_types", ("B2B", "B2C"))),
+            ngo_tax_exempt=body.get("ngo_tax_exempt", False),
+            government_procurement_rules=body.get("government_procurement_rules", False),
+            cooperative_registration_required=body.get("cooperative_registration_required", False),
+            tax_exemption_categories=tuple(body.get("tax_exemption_categories", ())),
+            vat_registration_threshold=body.get("vat_registration_threshold", 0),
+            vat_registration_threshold_currency=body.get("vat_registration_threshold_currency", ""),
+            withholding_tax_applicable=body.get("withholding_tax_applicable", False),
+            digital_services_tax=body.get("digital_services_tax", False),
+            digital_services_tax_rate=float(body.get("digital_services_tax_rate", 0)),
+            document_language=body.get("document_language", "en"),
+            secondary_document_language=body.get("secondary_document_language", ""),
+            receipt_qr_code_required=body.get("receipt_qr_code_required", False),
+            privacy_regime=body.get("privacy_regime", "NONE"),
+            privacy_regulator=body.get("privacy_regulator", ""),
+            data_controller_model=body.get("data_controller_model", "JOINT"),
+            consent_required_for_processing=body.get("consent_required_for_processing", False),
+            consent_required_for_marketing=body.get("consent_required_for_marketing", False),
+            data_localization_rule=body.get("data_localization_rule", "NONE"),
+            cross_border_transfer_allowed=body.get("cross_border_transfer_allowed", True),
+            cross_border_transfer_requires_adequacy=body.get("cross_border_transfer_requires_adequacy", False),
+            cross_border_approved_countries=tuple(body.get("cross_border_approved_countries", ())),
+            breach_notification_hours=body.get("breach_notification_hours", 72),
+            data_subject_access_days=body.get("data_subject_access_days", 30),
+            right_to_erasure=body.get("right_to_erasure", False),
+            data_protection_officer_required=body.get("data_protection_officer_required", False),
+            privacy_impact_assessment_required=body.get("privacy_impact_assessment_required", False),
+            fiscal_year_start_month=body.get("fiscal_year_start_month", 1),
+            vat_return_frequency=body.get("vat_return_frequency", "MONTHLY"),
+            income_tax_return_frequency=body.get("income_tax_return_frequency", "ANNUAL"),
+            statutory_audit_required=body.get("statutory_audit_required", False),
+            statutory_audit_threshold=body.get("statutory_audit_threshold", 0),
+            reporting_currency=body.get("reporting_currency", ""),
+            auto_compliance_checks=tuple(body.get("auto_compliance_checks", ())),
+            grace_period_after_law_change_days=body.get("grace_period_after_law_change_days", 90),
+            penalty_reference=body.get("penalty_reference", ""),
+            escalation_contact=body.get("escalation_contact", ""),
         )
     except (ValueError, KeyError) as exc:
         return _json_error("INVALID_REQUEST", str(exc), status=400)
@@ -4349,6 +4391,32 @@ def saas_country_policies_list_view(request: HttpRequest) -> JsonResponse:
                 "manual_review_required": p.manual_review_required,
                 "active": p.active,
                 "version": p.version,
+                # Governance fields
+                "e_invoicing_mandatory": p.e_invoicing_mandatory,
+                "e_invoicing_system": p.e_invoicing_system,
+                "e_invoicing_deadline": p.e_invoicing_deadline,
+                "fiscal_device_required": p.fiscal_device_required,
+                "allowed_entity_types": list(p.allowed_entity_types),
+                "ngo_tax_exempt": p.ngo_tax_exempt,
+                "tax_exemption_categories": list(p.tax_exemption_categories),
+                "vat_registration_threshold": p.vat_registration_threshold,
+                "withholding_tax_applicable": p.withholding_tax_applicable,
+                "digital_services_tax": p.digital_services_tax,
+                "digital_services_tax_rate": p.digital_services_tax_rate,
+                "document_language": p.document_language,
+                "receipt_qr_code_required": p.receipt_qr_code_required,
+                "privacy_regime": p.privacy_regime,
+                "privacy_regulator": p.privacy_regulator,
+                "data_controller_model": p.data_controller_model,
+                "consent_required_for_processing": p.consent_required_for_processing,
+                "data_localization_rule": p.data_localization_rule,
+                "cross_border_transfer_allowed": p.cross_border_transfer_allowed,
+                "breach_notification_hours": p.breach_notification_hours,
+                "right_to_erasure": p.right_to_erasure,
+                "fiscal_year_start_month": p.fiscal_year_start_month,
+                "vat_return_frequency": p.vat_return_frequency,
+                "reporting_currency": p.reporting_currency,
+                "penalty_reference": p.penalty_reference,
             }
             for p in policies
         ],
@@ -4763,4 +4831,116 @@ def platform_compliance_stats_view(request: HttpRequest) -> JsonResponse:
             "stuck_profile_ids": [p.profile_id for p in stuck[:20]],
             "rejection_reasons": rejection_reasons,
         },
+    })
+
+
+def platform_compliance_audit_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/compliance/audit — Compliance audit ledger trail."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    audit_svc = _get_platform_audit_service()
+    region_code = request.GET.get("region_code", "")
+    limit = min(int(request.GET.get("limit", "100")), 500)
+    entries = audit_svc.get_compliance_audit_trail(
+        region_code=region_code or None,
+        limit=limit,
+    )
+    return JsonResponse({
+        "status": "ok",
+        "data": [
+            {
+                "entry_id": str(e.entry_id),
+                "event_type": e.event_type,
+                "actor_id": e.actor_id,
+                "actor_type": e.actor_type,
+                "issued_at": e.issued_at.isoformat() if e.issued_at else None,
+                "subject_type": e.subject_type,
+                "subject_id": e.subject_id,
+                "region_code": e.region_code,
+                "payload": e.payload,
+                "notes": e.notes,
+            }
+            for e in entries
+        ],
+        "total": len(entries),
+    })
+
+
+@csrf_exempt
+def platform_governance_agents_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/governance/agents?region_code= — List region agents for governance."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    region_code = request.GET.get("region_code", "")
+    if not region_code:
+        return _json_error("MISSING_PARAM", "region_code is required", status=400)
+
+    from core.saas.resellers import ResellerProjection
+    svcs = _get_compliance_services()
+    # Access the reseller projection if available
+    try:
+        from adapters.django_api.wiring import _get_reseller_projection
+        reseller_proj = _get_reseller_projection()
+    except (ImportError, AttributeError):
+        return JsonResponse({"status": "ok", "data": [], "total": 0})
+
+    agents = reseller_proj.list_region_agents(region_code)
+    return JsonResponse({
+        "status": "ok",
+        "data": [
+            {
+                "reseller_id": str(a.reseller_id),
+                "governance_role": a.governance_role,
+                "region_code": a.region_code,
+                "can_file_taxes": a.can_file_taxes,
+                "governance_status": a.governance_status,
+                "max_tenants": a.max_tenants,
+                "permissions": [
+                    {"permission_code": p.permission_code, "granted_at": str(p.granted_at)}
+                    for p in a.permissions
+                ],
+            }
+            for a in agents
+        ],
+        "total": len(agents),
+    })
+
+
+@csrf_exempt
+def platform_governance_escalations_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/governance/escalations — List compliance escalations."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    region_code = request.GET.get("region_code", "")
+    status_filter = request.GET.get("status", "")
+
+    try:
+        from adapters.django_api.wiring import _get_reseller_projection
+        reseller_proj = _get_reseller_projection()
+    except (ImportError, AttributeError):
+        return JsonResponse({"status": "ok", "data": [], "total": 0})
+
+    escalations = reseller_proj.get_escalations(
+        region_code=region_code,
+        status=status_filter,
+    )
+    return JsonResponse({
+        "status": "ok",
+        "data": [
+            {
+                "escalation_id": e.escalation_id,
+                "region_code": e.region_code,
+                "agent_reseller_id": e.agent_reseller_id,
+                "subject_type": e.subject_type,
+                "subject_id": e.subject_id,
+                "description": e.description,
+                "severity": e.severity,
+                "status": e.status,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+                "resolved_at": e.resolved_at.isoformat() if e.resolved_at else None,
+                "resolved_by": e.resolved_by,
+            }
+            for e in escalations
+        ],
+        "total": len(escalations),
     })

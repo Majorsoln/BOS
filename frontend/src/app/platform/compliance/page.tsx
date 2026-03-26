@@ -52,6 +52,23 @@ interface CountryPolicyType {
   manual_review_required: boolean;
   active: boolean;
   version: number;
+  // Governance fields
+  e_invoicing_mandatory?: boolean;
+  e_invoicing_system?: string;
+  fiscal_device_required?: boolean;
+  privacy_regime?: string;
+  privacy_regulator?: string;
+  breach_notification_hours?: number;
+  data_subject_access_days?: number;
+  right_to_erasure?: boolean;
+  data_protection_officer_required?: boolean;
+  document_language?: string;
+  fiscal_year_start_month?: number;
+  vat_return_frequency?: string;
+  reporting_currency?: string;
+  receipt_qr_code_required?: boolean;
+  withholding_tax_applicable?: boolean;
+  digital_services_tax?: boolean;
 }
 
 interface ComplianceProfileType {
@@ -106,12 +123,31 @@ export default function CompliancePage() {
   const [publishData, setPublishData] = useState({
     region_code: "", display_name: "", effective_date: "", change_summary: "",
     tax_code: "", tax_rate: "", tax_description: "",
+    tax_category: "STANDARD",
     require_sequential_number: true, require_tax_number: true,
     require_qr_code: false, number_prefix_format: "RCP-{YYYY}-{NNNNN}",
     financial_records_years: "7", audit_log_years: "7", personal_data_years: "5",
+    consent_records_years: "5", tax_records_years: "7",
     region_law_reference: "",
     required_invoice_fields: "business_name,tax_id,date,invoice_number,line_items,total",
     optional_invoice_fields: "customer_tax_id,po_number,delivery_date",
+    // E-Invoicing
+    e_invoicing_active: false, e_invoicing_system: "", e_invoicing_regulatory_body: "",
+    e_invoicing_transmission_mode: "REAL_TIME",
+    e_invoicing_device_required: false, e_invoicing_qr_required: false,
+    e_invoicing_signature_required: false, e_invoicing_max_offline_hours: "24",
+    // Invoice Format
+    invoice_tax_breakdown_required: true, invoice_credit_note_ref_required: true,
+    invoice_document_language: "en", invoice_date_format: "YYYY-MM-DD",
+    // Cross-Border
+    cross_border_reverse_charge: false, cross_border_withholding: false,
+    cross_border_withholding_rate: "0", cross_border_transfer_pricing: false,
+    // Digital Signature
+    digital_signature_required: false, digital_signature_algorithm: "RSA-SHA256",
+    digital_signature_timestamp: false,
+    // Governance
+    fiscal_year_start_month: "1", vat_return_frequency: "MONTHLY",
+    law_reference_url: "",
   });
   const [publishing, setPublishing] = useState(false);
 
@@ -126,6 +162,21 @@ export default function CompliancePage() {
     requires_tax_id: false, requires_physical_address: false,
     default_trial_days: 180, grace_period_days: 30,
     manual_review_required: false, active: true,
+    // E-Invoicing
+    e_invoicing_mandatory: false, e_invoicing_system: "", fiscal_device_required: false,
+    // Privacy
+    privacy_regime: "NONE", privacy_regulator: "",
+    breach_notification_hours: 72, data_subject_access_days: 30,
+    right_to_erasure: false, data_protection_officer_required: false,
+    consent_required_for_processing: true, consent_required_for_marketing: true,
+    // Document & Tax
+    document_language: "en", receipt_qr_code_required: false,
+    withholding_tax_applicable: false, digital_services_tax: false,
+    // Fiscal & Reporting
+    fiscal_year_start_month: 1, vat_return_frequency: "MONTHLY",
+    reporting_currency: "", statutory_audit_required: false,
+    // Compliance Automation
+    auto_compliance_checks: true, escalation_contact: "",
   });
   const [savingPolicy, setSavingPolicy] = useState(false);
 
@@ -183,11 +234,13 @@ export default function CompliancePage() {
           rate: parseFloat(publishData.tax_rate) || 0,
           description: publishData.tax_description,
           applies_to: ["GOODS", "SERVICES"],
+          category: publishData.tax_category,
         }] : [],
         receipt_requirements: {
           require_sequential_number: publishData.require_sequential_number,
           require_tax_number: publishData.require_tax_number,
           require_qr_code: publishData.require_qr_code,
+          require_digital_signature: publishData.digital_signature_required,
           number_prefix_format: publishData.number_prefix_format,
         },
         data_retention: {
@@ -195,10 +248,47 @@ export default function CompliancePage() {
           audit_log_years: parseInt(publishData.audit_log_years) || 7,
           personal_data_years: parseInt(publishData.personal_data_years) || 5,
           region_law_reference: publishData.region_law_reference,
+          consent_records_years: parseInt(publishData.consent_records_years) || 5,
+          tax_records_years: parseInt(publishData.tax_records_years) || 7,
         },
         required_invoice_fields: publishData.required_invoice_fields.split(",").map((s) => s.trim()).filter(Boolean),
         optional_invoice_fields: publishData.optional_invoice_fields.split(",").map((s) => s.trim()).filter(Boolean),
         change_summary: publishData.change_summary,
+        // E-Invoicing
+        e_invoicing: publishData.e_invoicing_active ? {
+          mandate_active: true,
+          system_name: publishData.e_invoicing_system || undefined,
+          regulatory_body: publishData.e_invoicing_regulatory_body || undefined,
+          transmission_mode: publishData.e_invoicing_transmission_mode,
+          requires_device_registration: publishData.e_invoicing_device_required,
+          qr_code_required: publishData.e_invoicing_qr_required,
+          digital_signature_required: publishData.e_invoicing_signature_required,
+          max_offline_hours: parseInt(publishData.e_invoicing_max_offline_hours) || 24,
+        } : undefined,
+        // Invoice Format
+        invoice_format: {
+          document_language: publishData.invoice_document_language,
+          date_format: publishData.invoice_date_format,
+          tax_breakdown_required: publishData.invoice_tax_breakdown_required,
+          credit_note_must_reference_invoice: publishData.invoice_credit_note_ref_required,
+        },
+        // Cross-Border
+        cross_border: (publishData.cross_border_reverse_charge || publishData.cross_border_withholding) ? {
+          reverse_charge_on_imports: publishData.cross_border_reverse_charge,
+          withholding_on_foreign_services: publishData.cross_border_withholding,
+          withholding_rate: parseFloat(publishData.cross_border_withholding_rate) || 0,
+          transfer_pricing_doc_required: publishData.cross_border_transfer_pricing,
+        } : undefined,
+        // Digital Signature
+        digital_signature: publishData.digital_signature_required ? {
+          require_digital_signature: true,
+          signature_algorithm: publishData.digital_signature_algorithm,
+          timestamp_required: publishData.digital_signature_timestamp,
+        } : undefined,
+        // Governance
+        fiscal_year_start_month: parseInt(publishData.fiscal_year_start_month) || 1,
+        vat_return_frequency: publishData.vat_return_frequency,
+        law_reference_url: publishData.law_reference_url || undefined,
       });
       setToast({ message: "Compliance pack published", variant: "success" });
       setShowPublish(false);
@@ -228,6 +318,32 @@ export default function CompliancePage() {
         grace_period_days: policyData.grace_period_days,
         manual_review_required: policyData.manual_review_required,
         active: policyData.active,
+        // E-Invoicing
+        e_invoicing_mandatory: policyData.e_invoicing_mandatory,
+        e_invoicing_system: policyData.e_invoicing_system || undefined,
+        fiscal_device_required: policyData.fiscal_device_required,
+        // Privacy
+        privacy_regime: policyData.privacy_regime || undefined,
+        privacy_regulator: policyData.privacy_regulator || undefined,
+        breach_notification_hours: policyData.breach_notification_hours,
+        data_subject_access_days: policyData.data_subject_access_days,
+        right_to_erasure: policyData.right_to_erasure,
+        data_protection_officer_required: policyData.data_protection_officer_required,
+        consent_required_for_processing: policyData.consent_required_for_processing,
+        consent_required_for_marketing: policyData.consent_required_for_marketing,
+        // Document & Tax
+        document_language: policyData.document_language || undefined,
+        receipt_qr_code_required: policyData.receipt_qr_code_required,
+        withholding_tax_applicable: policyData.withholding_tax_applicable,
+        digital_services_tax: policyData.digital_services_tax,
+        // Fiscal & Reporting
+        fiscal_year_start_month: policyData.fiscal_year_start_month,
+        vat_return_frequency: policyData.vat_return_frequency || undefined,
+        reporting_currency: policyData.reporting_currency || undefined,
+        statutory_audit_required: policyData.statutory_audit_required,
+        // Compliance Automation
+        auto_compliance_checks: policyData.auto_compliance_checks,
+        escalation_contact: policyData.escalation_contact || undefined,
       });
       setToast({ message: `Policy for ${policyData.country_code} saved`, variant: "success" });
       setShowAddPolicy(false);
@@ -395,8 +511,9 @@ export default function CompliancePage() {
                       <TableHead>Country</TableHead>
                       <TableHead>Business Model</TableHead>
                       <TableHead>Requirements</TableHead>
+                      <TableHead>E-Invoicing</TableHead>
+                      <TableHead>Privacy</TableHead>
                       <TableHead>Trial</TableHead>
-                      <TableHead>Review</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -413,13 +530,29 @@ export default function CompliancePage() {
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
                             {p.vat_registration_required && <Badge variant="secondary" className="text-xs">VAT Reg</Badge>}
-                            {p.company_registration_required && <Badge variant="secondary" className="text-xs">Company Reg</Badge>}
                             {p.requires_tax_id && <Badge variant="secondary" className="text-xs">Tax ID</Badge>}
-                            {p.requires_physical_address && <Badge variant="secondary" className="text-xs">Address</Badge>}
+                            {p.withholding_tax_applicable && <Badge variant="secondary" className="text-xs">WHT</Badge>}
+                            {p.digital_services_tax && <Badge variant="secondary" className="text-xs">DST</Badge>}
                           </div>
                         </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {p.e_invoicing_mandatory ? (
+                              <Badge variant="purple" className="text-xs">{p.e_invoicing_system || "Required"}</Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">Not Required</Badge>
+                            )}
+                            {p.fiscal_device_required && <Badge variant="secondary" className="text-xs">Fiscal Device</Badge>}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {p.privacy_regime && p.privacy_regime !== "NONE" ? (
+                            <Badge variant="purple" className="text-xs">{p.privacy_regime.replace(/_/g, " ")}</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs">None</Badge>
+                          )}
+                        </TableCell>
                         <TableCell className="text-sm">{p.default_trial_days}d + {p.grace_period_days}d grace</TableCell>
-                        <TableCell>{p.manual_review_required ? <Badge variant="warning">Manual</Badge> : <Badge variant="success">Auto</Badge>}</TableCell>
                         <TableCell>
                           <Badge variant={p.active ? "success" : "secondary"}>
                             {p.active ? "Active" : "Inactive"}
@@ -587,11 +720,24 @@ export default function CompliancePage() {
 
         <Separator />
         <p className="text-sm font-semibold">Tax Rule</p>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>Tax Code</Label>
             <Input value={publishData.tax_code} onChange={(e) => setPublishData({ ...publishData, tax_code: e.target.value })} placeholder="VAT" />
           </div>
+          <div>
+            <Label>Tax Category</Label>
+            <Select value={publishData.tax_category} onChange={(e) => setPublishData({ ...publishData, tax_category: e.target.value })}>
+              <option value="STANDARD">Standard</option>
+              <option value="ZERO_RATED">Zero Rated</option>
+              <option value="EXEMPT">Exempt</option>
+              <option value="REVERSE_CHARGE">Reverse Charge</option>
+              <option value="REDUCED">Reduced</option>
+              <option value="WITHHOLDING">Withholding</option>
+            </Select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>Rate (0-1)</Label>
             <Input type="number" step="0.01" min="0" max="1" value={publishData.tax_rate} onChange={(e) => setPublishData({ ...publishData, tax_rate: e.target.value })} placeholder="0.16" />
@@ -620,6 +766,160 @@ export default function CompliancePage() {
         </div>
 
         <Separator />
+        <p className="text-sm font-semibold">E-Invoicing</p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={publishData.e_invoicing_active} onChange={(e) => setPublishData({ ...publishData, e_invoicing_active: e.target.checked })} />
+            E-Invoicing Mandate Active
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={publishData.e_invoicing_device_required} onChange={(e) => setPublishData({ ...publishData, e_invoicing_device_required: e.target.checked })} />
+            Device Registration Required
+          </label>
+        </div>
+        {publishData.e_invoicing_active && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>System Name</Label>
+              <Input value={publishData.e_invoicing_system} onChange={(e) => setPublishData({ ...publishData, e_invoicing_system: e.target.value })} placeholder="e.g. KRA eTIMS" />
+            </div>
+            <div>
+              <Label>Regulatory Body</Label>
+              <Input value={publishData.e_invoicing_regulatory_body} onChange={(e) => setPublishData({ ...publishData, e_invoicing_regulatory_body: e.target.value })} placeholder="e.g. Kenya Revenue Authority" />
+            </div>
+            <div>
+              <Label>Transmission Mode</Label>
+              <Select value={publishData.e_invoicing_transmission_mode} onChange={(e) => setPublishData({ ...publishData, e_invoicing_transmission_mode: e.target.value })}>
+                <option value="REAL_TIME">Real Time</option>
+                <option value="BATCH">Batch</option>
+                <option value="NEAR_REAL_TIME">Near Real Time</option>
+              </Select>
+            </div>
+            <div>
+              <Label>Max Offline Hours</Label>
+              <Input type="number" value={publishData.e_invoicing_max_offline_hours} onChange={(e) => setPublishData({ ...publishData, e_invoicing_max_offline_hours: e.target.value })} />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={publishData.e_invoicing_qr_required} onChange={(e) => setPublishData({ ...publishData, e_invoicing_qr_required: e.target.checked })} />
+              QR Code Required
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={publishData.e_invoicing_signature_required} onChange={(e) => setPublishData({ ...publishData, e_invoicing_signature_required: e.target.checked })} />
+              Digital Signature Required
+            </label>
+          </div>
+        )}
+
+        <Separator />
+        <p className="text-sm font-semibold">Invoice Format Rules</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Document Language</Label>
+            <Select value={publishData.invoice_document_language} onChange={(e) => setPublishData({ ...publishData, invoice_document_language: e.target.value })}>
+              <option value="en">English</option>
+              <option value="sw">Swahili</option>
+              <option value="fr">French</option>
+              <option value="ar">Arabic</option>
+              <option value="pt">Portuguese</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Date Format</Label>
+            <Select value={publishData.invoice_date_format} onChange={(e) => setPublishData({ ...publishData, invoice_date_format: e.target.value })}>
+              <option value="YYYY-MM-DD">YYYY-MM-DD (ISO)</option>
+              <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+              <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+            </Select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={publishData.invoice_tax_breakdown_required} onChange={(e) => setPublishData({ ...publishData, invoice_tax_breakdown_required: e.target.checked })} />
+            Tax Breakdown Required on Invoice
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={publishData.invoice_credit_note_ref_required} onChange={(e) => setPublishData({ ...publishData, invoice_credit_note_ref_required: e.target.checked })} />
+            Credit Note Must Reference Invoice
+          </label>
+        </div>
+
+        <Separator />
+        <p className="text-sm font-semibold">Cross-Border Rules</p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={publishData.cross_border_reverse_charge} onChange={(e) => setPublishData({ ...publishData, cross_border_reverse_charge: e.target.checked })} />
+            Reverse Charge on Imports
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={publishData.cross_border_withholding} onChange={(e) => setPublishData({ ...publishData, cross_border_withholding: e.target.checked })} />
+            Withholding on Foreign Services
+          </label>
+        </div>
+        {(publishData.cross_border_reverse_charge || publishData.cross_border_withholding) && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Withholding Rate (0-1)</Label>
+              <Input type="number" step="0.01" min="0" max="1" value={publishData.cross_border_withholding_rate} onChange={(e) => setPublishData({ ...publishData, cross_border_withholding_rate: e.target.value })} />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={publishData.cross_border_transfer_pricing} onChange={(e) => setPublishData({ ...publishData, cross_border_transfer_pricing: e.target.checked })} />
+              Transfer Pricing Docs Required
+            </label>
+          </div>
+        )}
+
+        <Separator />
+        <p className="text-sm font-semibold">Digital Signature</p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={publishData.digital_signature_required} onChange={(e) => setPublishData({ ...publishData, digital_signature_required: e.target.checked })} />
+            Require Digital Signature on Documents
+          </label>
+          {publishData.digital_signature_required && (
+            <>
+              <div>
+                <Label>Signature Algorithm</Label>
+                <Select value={publishData.digital_signature_algorithm} onChange={(e) => setPublishData({ ...publishData, digital_signature_algorithm: e.target.value })}>
+                  <option value="RSA-SHA256">RSA-SHA256</option>
+                  <option value="ECDSA-SHA256">ECDSA-SHA256</option>
+                  <option value="ED25519">ED25519</option>
+                </Select>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={publishData.digital_signature_timestamp} onChange={(e) => setPublishData({ ...publishData, digital_signature_timestamp: e.target.checked })} />
+                Timestamp Required
+              </label>
+            </>
+          )}
+        </div>
+
+        <Separator />
+        <p className="text-sm font-semibold">Fiscal Governance</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Fiscal Year Start Month</Label>
+            <Select value={publishData.fiscal_year_start_month} onChange={(e) => setPublishData({ ...publishData, fiscal_year_start_month: e.target.value })}>
+              {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map((m, i) => (
+                <option key={i + 1} value={String(i + 1)}>{m}</option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label>VAT Return Frequency</Label>
+            <Select value={publishData.vat_return_frequency} onChange={(e) => setPublishData({ ...publishData, vat_return_frequency: e.target.value })}>
+              <option value="MONTHLY">Monthly</option>
+              <option value="QUARTERLY">Quarterly</option>
+              <option value="BIANNUAL">Bi-Annual</option>
+              <option value="ANNUAL">Annual</option>
+            </Select>
+          </div>
+        </div>
+        <div>
+          <Label>Law Reference URL</Label>
+          <Input value={publishData.law_reference_url} onChange={(e) => setPublishData({ ...publishData, law_reference_url: e.target.value })} placeholder="https://..." />
+        </div>
+
+        <Separator />
         <p className="text-sm font-semibold">Data Retention</p>
         <div className="grid grid-cols-3 gap-3">
           <div>
@@ -633,6 +933,16 @@ export default function CompliancePage() {
           <div>
             <Label>Personal Data (years)</Label>
             <Input type="number" value={publishData.personal_data_years} onChange={(e) => setPublishData({ ...publishData, personal_data_years: e.target.value })} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Consent Records (years)</Label>
+            <Input type="number" value={publishData.consent_records_years} onChange={(e) => setPublishData({ ...publishData, consent_records_years: e.target.value })} />
+          </div>
+          <div>
+            <Label>Tax Records (years)</Label>
+            <Input type="number" value={publishData.tax_records_years} onChange={(e) => setPublishData({ ...publishData, tax_records_years: e.target.value })} />
           </div>
         </div>
 
@@ -707,6 +1017,152 @@ export default function CompliancePage() {
         </div>
 
         <Separator />
+        <p className="text-sm font-semibold">E-Invoicing</p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.e_invoicing_mandatory} onChange={(e) => setPolicyData({ ...policyData, e_invoicing_mandatory: e.target.checked })} />
+            E-Invoicing Mandatory
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.fiscal_device_required} onChange={(e) => setPolicyData({ ...policyData, fiscal_device_required: e.target.checked })} />
+            Fiscal Device Required
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>E-Invoicing System</Label>
+            <Select value={policyData.e_invoicing_system} onChange={(e) => setPolicyData({ ...policyData, e_invoicing_system: e.target.value })}>
+              <option value="">None</option>
+              <option value="KRA_ETIMS">KRA eTIMS (Kenya)</option>
+              <option value="TRA_EFDMS">TRA EFDMS (Tanzania)</option>
+              <option value="URA_EFRIS">URA EFRIS (Uganda)</option>
+              <option value="FIRS_MBS">FIRS MBS (Nigeria)</option>
+              <option value="RRA_EBM">RRA EBM (Rwanda)</option>
+              <option value="SARS_EFILING">SARS eFiling (South Africa)</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Receipt QR Code</Label>
+            <label className="mt-2 flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={policyData.receipt_qr_code_required} onChange={(e) => setPolicyData({ ...policyData, receipt_qr_code_required: e.target.checked })} />
+              QR Code Required on Receipts
+            </label>
+          </div>
+        </div>
+
+        <Separator />
+        <p className="text-sm font-semibold">Privacy & Data Governance</p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Privacy Regime</Label>
+            <Select value={policyData.privacy_regime} onChange={(e) => setPolicyData({ ...policyData, privacy_regime: e.target.value })}>
+              <option value="NONE">None</option>
+              <option value="KENYA_DPA">Kenya DPA 2019</option>
+              <option value="GDPR">GDPR (EU)</option>
+              <option value="POPIA">POPIA (South Africa)</option>
+              <option value="NIGERIA_NDPR">Nigeria NDPR</option>
+              <option value="TANZANIA_EDPA">Tanzania EDPA</option>
+              <option value="UGANDA_DPP">Uganda DPP</option>
+              <option value="RWANDA_DPL">Rwanda DPL</option>
+              <option value="AU_CONVENTION">AU Convention (Malabo)</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Privacy Regulator</Label>
+            <Input value={policyData.privacy_regulator} onChange={(e) => setPolicyData({ ...policyData, privacy_regulator: e.target.value })} placeholder="e.g. ODPC (Kenya)" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Breach Notification (hours)</Label>
+            <Input type="number" value={policyData.breach_notification_hours} onChange={(e) => setPolicyData({ ...policyData, breach_notification_hours: parseInt(e.target.value) || 72 })} />
+          </div>
+          <div>
+            <Label>Data Subject Access (days)</Label>
+            <Input type="number" value={policyData.data_subject_access_days} onChange={(e) => setPolicyData({ ...policyData, data_subject_access_days: parseInt(e.target.value) || 30 })} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.consent_required_for_processing} onChange={(e) => setPolicyData({ ...policyData, consent_required_for_processing: e.target.checked })} />
+            Consent for Processing
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.consent_required_for_marketing} onChange={(e) => setPolicyData({ ...policyData, consent_required_for_marketing: e.target.checked })} />
+            Consent for Marketing
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.right_to_erasure} onChange={(e) => setPolicyData({ ...policyData, right_to_erasure: e.target.checked })} />
+            Right to Erasure
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.data_protection_officer_required} onChange={(e) => setPolicyData({ ...policyData, data_protection_officer_required: e.target.checked })} />
+            DPO Required
+          </label>
+        </div>
+
+        <Separator />
+        <p className="text-sm font-semibold">Tax Configuration</p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.withholding_tax_applicable} onChange={(e) => setPolicyData({ ...policyData, withholding_tax_applicable: e.target.checked })} />
+            Withholding Tax Applicable
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.digital_services_tax} onChange={(e) => setPolicyData({ ...policyData, digital_services_tax: e.target.checked })} />
+            Digital Services Tax
+          </label>
+        </div>
+
+        <Separator />
+        <p className="text-sm font-semibold">Fiscal & Reporting</p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Document Language</Label>
+            <Select value={policyData.document_language} onChange={(e) => setPolicyData({ ...policyData, document_language: e.target.value })}>
+              <option value="en">English</option>
+              <option value="sw">Swahili</option>
+              <option value="fr">French</option>
+              <option value="ar">Arabic</option>
+              <option value="pt">Portuguese</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Fiscal Year Start Month</Label>
+            <Select value={String(policyData.fiscal_year_start_month)} onChange={(e) => setPolicyData({ ...policyData, fiscal_year_start_month: parseInt(e.target.value) })}>
+              {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map((m, i) => (
+                <option key={i + 1} value={i + 1}>{m} ({i + 1})</option>
+              ))}
+            </Select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>VAT Return Frequency</Label>
+            <Select value={policyData.vat_return_frequency} onChange={(e) => setPolicyData({ ...policyData, vat_return_frequency: e.target.value })}>
+              <option value="MONTHLY">Monthly</option>
+              <option value="QUARTERLY">Quarterly</option>
+              <option value="BIANNUAL">Bi-Annual</option>
+              <option value="ANNUAL">Annual</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Reporting Currency</Label>
+            <Input value={policyData.reporting_currency} onChange={(e) => setPolicyData({ ...policyData, reporting_currency: e.target.value.toUpperCase() })} placeholder="e.g. KES" maxLength={3} className="uppercase" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.statutory_audit_required} onChange={(e) => setPolicyData({ ...policyData, statutory_audit_required: e.target.checked })} />
+            Statutory Audit Required
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={policyData.auto_compliance_checks} onChange={(e) => setPolicyData({ ...policyData, auto_compliance_checks: e.target.checked })} />
+            Auto Compliance Checks
+          </label>
+        </div>
+
+        <Separator />
         <p className="text-sm font-semibold">Trial & Review</p>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -716,6 +1172,12 @@ export default function CompliancePage() {
           <div>
             <Label>Grace Period Days</Label>
             <Input type="number" value={policyData.grace_period_days} onChange={(e) => setPolicyData({ ...policyData, grace_period_days: parseInt(e.target.value) || 0 })} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Escalation Contact</Label>
+            <Input value={policyData.escalation_contact} onChange={(e) => setPolicyData({ ...policyData, escalation_contact: e.target.value })} placeholder="compliance@bos.africa" />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">

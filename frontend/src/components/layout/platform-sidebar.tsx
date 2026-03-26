@@ -23,6 +23,8 @@ import {
   Activity,
   ClipboardCheck,
   BadgeCheck,
+  Shield,
+  AlertTriangle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -77,6 +79,14 @@ const PLATFORM_NAV: NavGroup[] = [
       { label: "Compliance Packs", href: "/platform/compliance", icon: ShieldCheck },
       { label: "Review Queue", href: "/platform/reviews", icon: ClipboardCheck },
       { label: "Verification", href: "/platform/verification", icon: BadgeCheck },
+    ],
+  },
+  {
+    title: "Governance",
+    items: [
+      { label: "Region Agents", href: "/platform/governance/agents", icon: Shield },
+      { label: "Escalations", href: "/platform/governance/escalations", icon: AlertTriangle },
+      { label: "Compliance Audit", href: "/platform/governance/audit", icon: FileText },
     ],
   },
   {

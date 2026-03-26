@@ -22,6 +22,9 @@ import {
   Activity,
   ClipboardCheck,
   BadgeCheck,
+  Shield,
+  AlertTriangle,
+  Scale,
 } from "lucide-react";
 
 export default function PlatformDashboardPage() {
@@ -93,6 +96,29 @@ export default function PlatformDashboardPage() {
           description="Verification rates and bottleneck metrics"
           href="/platform/verification"
           icon={BadgeCheck}
+        />
+      </div>
+
+      {/* Governance */}
+      <h2 className="mt-8 mb-4 text-lg font-semibold">Governance</h2>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <QuickActionCard
+          title="Region Agents"
+          description="Two-level governance: delegate compliance to region agents"
+          href="/platform/governance/agents"
+          icon={Shield}
+        />
+        <QuickActionCard
+          title="Escalations"
+          description="Issues escalated from Region Agents requiring resolution"
+          href="/platform/governance/escalations"
+          icon={AlertTriangle}
+        />
+        <QuickActionCard
+          title="Compliance Audit"
+          description="Immutable evidence trail for all compliance decisions"
+          href="/platform/governance/audit"
+          icon={Scale}
         />
       </div>
 
