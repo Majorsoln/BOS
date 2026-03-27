@@ -7,24 +7,19 @@ import { useUIStore } from "@/stores/ui-store";
 import {
   LayoutDashboard,
   Package,
-  Layers,
-  Percent,
-  ClipboardList,
-  Clock,
   Tag,
   Users,
   ArrowLeft,
-  Globe,
   MapPin,
   Scale,
   UserCheck,
   ShieldCheck,
   FileText,
   Activity,
-  ClipboardCheck,
-  BadgeCheck,
   Shield,
   AlertTriangle,
+  DollarSign,
+  Briefcase,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -47,52 +42,47 @@ const PLATFORM_NAV: NavGroup[] = [
     ],
   },
   {
-    title: "Pricing",
+    title: "Regions & Compliance",
     items: [
-      { label: "Services", href: "/platform/services", icon: Package },
-      { label: "Capacity Tiers", href: "/platform/capacity", icon: Layers },
-      { label: "Reduction Rates", href: "/platform/reductions", icon: Percent },
-    ],
-  },
-  {
-    title: "Billing & Tax",
-    items: [
-      { label: "Regions", href: "/platform/regions", icon: MapPin },
-      { label: "Rate Governance", href: "/platform/rates", icon: Scale },
-      { label: "Trial Policy", href: "/platform/trial-policy", icon: ClipboardList },
-      { label: "Active Trials", href: "/platform/trials", icon: Clock },
-      { label: "Expansion Gates", href: "/platform/expansion-gates", icon: Globe },
+      { label: "Region Registry", href: "/platform/regions", icon: MapPin },
+      { label: "Compliance Packs", href: "/platform/compliance", icon: ShieldCheck },
+      { label: "Compliance Audit", href: "/platform/governance/audit", icon: FileText },
     ],
   },
   {
     title: "Agents",
     items: [
-      { label: "Agent Management", href: "/platform/agents", icon: UserCheck },
-      { label: "Promotions", href: "/platform/promotions", icon: Tag },
+      { label: "Region License Agents", href: "/platform/agents/rla", icon: Shield },
+      { label: "Remote Agents", href: "/platform/agents/remote", icon: UserCheck },
+      { label: "Commissions & Payouts", href: "/platform/agents/payouts", icon: DollarSign },
+      { label: "Escalations", href: "/platform/agents/escalations", icon: AlertTriangle },
     ],
   },
   {
-    title: "ACMV",
+    title: "Pricing & Billing",
+    items: [
+      { label: "Services & Pricing", href: "/platform/pricing", icon: Package },
+      { label: "Rate Governance", href: "/platform/rates", icon: Scale },
+      { label: "Trials & Subscriptions", href: "/platform/subscriptions", icon: Briefcase },
+    ],
+  },
+  {
+    title: "Audit & Monitoring",
     items: [
       { label: "Audit Log", href: "/platform/audit", icon: FileText },
       { label: "System Health", href: "/platform/health", icon: Activity },
-      { label: "Compliance Packs", href: "/platform/compliance", icon: ShieldCheck },
-      { label: "Review Queue", href: "/platform/reviews", icon: ClipboardCheck },
-      { label: "Verification", href: "/platform/verification", icon: BadgeCheck },
     ],
   },
   {
-    title: "Governance",
+    title: "Promotions",
     items: [
-      { label: "Region Agents", href: "/platform/governance/agents", icon: Shield },
-      { label: "Escalations", href: "/platform/governance/escalations", icon: AlertTriangle },
-      { label: "Compliance Audit", href: "/platform/governance/audit", icon: FileText },
+      { label: "Platform Promotions", href: "/platform/promotions", icon: Tag },
     ],
   },
   {
     title: "Tenants",
     items: [
-      { label: "Subscriptions", href: "/platform/subscriptions", icon: Users },
+      { label: "All Tenants", href: "/platform/tenants", icon: Users },
     ],
   },
 ];

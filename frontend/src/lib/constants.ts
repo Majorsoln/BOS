@@ -222,8 +222,8 @@ export const EXPANSION_GATES = [
 
 /** Agent types */
 export const AGENT_TYPES = [
-  { value: "GLOBAL", label: "Global Agent", description: "Remote agent, no office required. Can acquire tenants worldwide." },
-  { value: "REGIONAL", label: "Regional Agent", description: "Office required. Handles regional compliance. Gets override on territory tenants." },
+  { value: "REGION_LICENSE_AGENT", label: "Region License Agent", description: "Licensed operator for a specific region. Manages compliance, collects regional revenue, provides local support. One per region." },
+  { value: "REMOTE_AGENT", label: "Remote Agent", description: "Can sell and support tenants in any region that has an active Region License Agent. No territory lock." },
 ] as const;
 
 /** Agent statuses */
