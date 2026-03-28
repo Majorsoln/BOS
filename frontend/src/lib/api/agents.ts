@@ -16,23 +16,17 @@ export async function registerAgent(data: {
   agent_name: string;
   contact_email: string;
   contact_phone: string;
-  country: string;
-  agent_type: "GLOBAL" | "REGIONAL";
+  agent_type: "REGION_LICENSE_AGENT" | "REMOTE_AGENT" | "RESELLER";
+  territory?: string;
+  region_codes?: string[];
+  contact_person?: string;
+  payout_method?: string;
+  payout_phone?: string;
+  payout_bank_name?: string;
+  payout_account_number?: string;
   notes?: string;
 }) {
   const res = await api.post("/saas/agents/register", data);
-  return res.data;
-}
-
-export async function promoteToRegional(data: {
-  agent_id: string;
-  territory: string;
-  regional_override_pct: number;
-  office_address: string;
-  agreement_start_date: string;
-  agreement_duration_months: number;
-}) {
-  const res = await api.post("/saas/agents/promote-regional", data);
   return res.data;
 }
 
@@ -56,9 +50,31 @@ export async function updateAgent(data: {
   agent_name?: string;
   contact_email?: string;
   contact_phone?: string;
+  contact_person?: string;
   notes?: string;
 }) {
   const res = await api.post("/saas/agents/update", data);
+  return res.data;
+}
+
+/* ── Agent-Tenant Linking ───────────────────────────────────── */
+
+export async function linkTenantToAgent(data: {
+  agent_id: string;
+  business_id: string;
+}) {
+  const res = await api.post("/saas/agents/link-tenant", data);
+  return res.data;
+}
+
+export async function accrueCommission(data: {
+  agent_id: string;
+  business_id: string;
+  tenant_monthly_amount: number;
+  currency: string;
+  period: string;
+}) {
+  const res = await api.post("/saas/agents/accrue-commission", data);
   return res.data;
 }
 
@@ -95,6 +111,50 @@ export async function rejectPayout(data: { payout_id: string; reason: string }) 
   return res.data;
 }
 
+/* ── Governance ──────────────────────────────────────────── */
+
+export async function grantGovernance(data: {
+  agent_id: string;
+  governance_role: "LICENSE_AGENT" | "REGION_AGENT";
+  region_code: string;
+  can_file_taxes?: boolean;
+  max_tenants?: number;
+  can_appoint_sub_agents?: boolean;
+}) {
+  const res = await api.post("/saas/agents/grant-governance", data);
+  return res.data;
+}
+
+export async function revokeGovernance(data: {
+  agent_id: string;
+  reason: string;
+}) {
+  const res = await api.post("/saas/agents/revoke-governance", data);
+  return res.data;
+}
+
+/* ── Escalations ─────────────────────────────────────────── */
+
+export async function createEscalation(data: {
+  agent_id: string;
+  region_code: string;
+  subject_type: string;
+  subject_id?: string;
+  description: string;
+  severity: string;
+}) {
+  const res = await api.post("/saas/agents/escalations/create", data);
+  return res.data;
+}
+
+export async function resolveEscalation(data: {
+  escalation_id: string;
+  resolution: string;
+}) {
+  const res = await api.post("/saas/agents/escalations/resolve", data);
+  return res.data;
+}
+
 /* ── Tenant Transfers ────────────────────────────────────── */
 
 export async function getTransferRequests(params?: { status?: string }) {
@@ -109,23 +169,6 @@ export async function approveTransfer(data: { transfer_id: string }) {
 
 export async function denyTransfer(data: { transfer_id: string; reason: string }) {
   const res = await api.post("/saas/agents/transfers/deny", data);
-  return res.data;
-}
-
-/* ── Cost-Share Requests ─────────────────────────────────── */
-
-export async function getCostShareRequests(params?: { status?: string; agent_id?: string }) {
-  const res = await api.get("/saas/agents/cost-share-requests", { params });
-  return res.data;
-}
-
-export async function decideCostShare(data: {
-  request_id: string;
-  decision: "APPROVED" | "ADJUSTED" | "REJECTED";
-  platform_share_pct?: number;
-  notes?: string;
-}) {
-  const res = await api.post("/saas/agents/cost-share-requests/decide", data);
   return res.data;
 }
 

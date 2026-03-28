@@ -4944,3 +4944,613 @@ def platform_governance_escalations_view(request: HttpRequest) -> JsonResponse:
         ],
         "total": len(escalations),
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AGENT MANAGEMENT — Unified Agent API (bridges to reseller system)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Agent types: REGION_LICENSE_AGENT, REMOTE_AGENT, RESELLER
+# Backend stores all as "resellers" with agent_type metadata in governance overlay.
+
+def _agent_type_for_reseller(svcs, reseller_id) -> str:
+    """Determine agent type from governance record or default to RESELLER."""
+    gov = svcs._reseller_proj.get_agent_governance(reseller_id)
+    if gov and gov.governance_role == "LICENSE_AGENT":
+        return "REGION_LICENSE_AGENT"
+    if gov and gov.governance_role == "REGION_AGENT":
+        return "REMOTE_AGENT"
+    return "RESELLER"
+
+
+def _serialize_agent(r, svcs) -> dict:
+    """Serialize a ResellerRecord as an agent for the frontend."""
+    agent_type = _agent_type_for_reseller(svcs, r.reseller_id)
+    territory = None
+    if agent_type == "REGION_LICENSE_AGENT" and r.region_codes:
+        territory = r.region_codes[0] if r.region_codes else None
+    return {
+        "agent_id": str(r.reseller_id),
+        "agent_name": r.company_name,
+        "contact_person": r.contact_person,
+        "contact_email": r.email,
+        "contact_phone": r.phone,
+        "agent_type": agent_type,
+        "status": r.status.value,
+        "territory": territory,
+        "region_codes": list(r.region_codes),
+        "tier": r.tier.value,
+        "commission_rate": str(r.commission_rate),
+        "active_tenant_count": r.active_tenant_count,
+        "total_commission_earned": str(r.total_commission_earned),
+        "pending_commission": str(r.pending_commission),
+    }
+
+
+@csrf_exempt
+def saas_agents_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/agents — List agents with optional type/status/territory filters."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    resellers = svcs._reseller_proj.list_resellers(active_only=False)
+    type_filter = request.GET.get("type", "")
+    status_filter = request.GET.get("status", "")
+    territory_filter = request.GET.get("territory", "")
+
+    agents = []
+    for r in resellers:
+        a = _serialize_agent(r, svcs)
+        if type_filter and a["agent_type"] != type_filter:
+            continue
+        if status_filter and a["status"] != status_filter:
+            continue
+        if territory_filter and territory_filter not in a["region_codes"]:
+            continue
+        agents.append(a)
+
+    return JsonResponse({"status": "ok", "data": agents, "total": len(agents)})
+
+
+@csrf_exempt
+def saas_agents_register_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/register — Register a new agent (RLA, Remote, or Reseller)."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        agent_type = body.get("agent_type", "REMOTE_AGENT")
+        from core.saas.resellers import RegisterResellerRequest
+        region_codes = tuple(body.get("region_codes", []))
+        # For RLA, territory becomes the single region
+        if agent_type == "REGION_LICENSE_AGENT":
+            territory = body.get("territory", "")
+            if territory:
+                region_codes = (territory,)
+        req = RegisterResellerRequest(
+            company_name=body.get("agent_name", body.get("company_name", "")),
+            contact_person=body.get("contact_person", body.get("agent_name", "")),
+            phone=body.get("contact_phone", body.get("phone", "")),
+            email=body.get("contact_email", body.get("email", "")),
+            region_codes=region_codes,
+            payout_method=body.get("payout_method", "MPESA"),
+            payout_phone=body.get("payout_phone", ""),
+            payout_bank_name=body.get("payout_bank_name", ""),
+            payout_account_number=body.get("payout_account_number", ""),
+            payout_account_name=body.get("payout_account_name", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.register_reseller(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+
+    reseller_id = result["reseller_id"]
+    _persist_saas("save_reseller",
+                  reseller_id=reseller_id,
+                  company_name=req.company_name,
+                  contact_name=req.contact_person,
+                  contact_phone=req.phone,
+                  contact_email=req.email,
+                  tier=result["tier"],
+                  commission_rate=result["commission_rate"],
+                  payout_method=req.payout_method)
+
+    # Grant governance for RLA or Remote agents
+    governance_role = None
+    if agent_type == "REGION_LICENSE_AGENT":
+        governance_role = "LICENSE_AGENT"
+    elif agent_type == "REMOTE_AGENT":
+        governance_role = "REGION_AGENT"
+
+    if governance_role:
+        from core.saas.resellers import (
+            REGION_AGENT_PERMISSIONS, RegionAgentPermission,
+        )
+        from datetime import datetime, timezone
+        now = datetime.now(tz=timezone.utc)
+        permissions = tuple(
+            RegionAgentPermission(
+                permission_code=p, granted_at=now,
+                granted_by=body.get("actor_id", "SYSTEM"),
+            )
+            for p in REGION_AGENT_PERMISSIONS
+        )
+        region_code = region_codes[0] if region_codes else ""
+        svcs._reseller_proj.apply({
+            "event_type": "AGENT_GOVERNANCE_GRANTED_V1",
+            "reseller_id": reseller_id,
+            "governance_role": governance_role,
+            "region_code": region_code,
+            "permissions": permissions,
+            "can_file_taxes": agent_type == "REGION_LICENSE_AGENT",
+            "max_tenants": body.get("max_tenants", 0),
+            "can_appoint_sub_agents": agent_type == "REGION_LICENSE_AGENT",
+            "granted_at": now,
+            "granted_by": body.get("actor_id", "SYSTEM"),
+        })
+
+    return JsonResponse({
+        "status": "ok",
+        "agent_id": str(reseller_id),
+        "agent_type": agent_type,
+        "tier": result["tier"],
+        "commission_rate": result["commission_rate"],
+    })
+
+
+@csrf_exempt
+def saas_agents_detail_view(request: HttpRequest, agent_id: str) -> JsonResponse:
+    """GET /saas/agents/<id> — Get full agent detail."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    rid = _parse_uuid(agent_id, "agent_id")
+    r = svcs._reseller_proj.get_reseller(rid)
+    if r is None:
+        return _json_error("AGENT_NOT_FOUND", "Agent not found.", status=404)
+
+    agent = _serialize_agent(r, svcs)
+    # Enrich with detail
+    links = svcs._reseller_proj.get_tenant_links(rid)
+    commissions = svcs._reseller_proj.get_commissions(rid)
+    payouts = svcs._reseller_proj.get_payouts(rid)
+    gov = svcs._reseller_proj.get_agent_governance(rid)
+
+    agent["tenants"] = [
+        {"business_id": str(lnk.business_id), "is_active": lnk.is_active,
+         "linked_at": str(lnk.linked_at) if lnk.linked_at else None}
+        for lnk in links
+    ]
+    agent["commission_history"] = [
+        {"amount": str(c.amount), "currency": c.currency, "period": c.period,
+         "is_clawback": c.is_clawback}
+        for c in commissions[-20:]
+    ]
+    agent["payouts"] = [
+        {"payout_id": str(p.payout_id), "amount": str(p.amount),
+         "currency": p.currency, "status": p.status.value}
+        for p in payouts
+    ]
+    if gov:
+        agent["governance"] = {
+            "governance_role": gov.governance_role,
+            "governance_status": gov.governance_status,
+            "region_code": gov.region_code,
+            "can_file_taxes": gov.can_file_taxes,
+            "max_tenants": gov.max_tenants,
+            "can_appoint_sub_agents": gov.can_appoint_sub_agents,
+            "compliance_training_completed": gov.compliance_training_completed,
+            "last_audit_date": str(gov.last_audit_date) if gov.last_audit_date else None,
+            "next_audit_due": str(gov.next_audit_due) if gov.next_audit_due else None,
+            "permissions": [
+                {"permission_code": p.permission_code, "granted_at": str(p.granted_at)}
+                for p in gov.permissions
+            ],
+        }
+    else:
+        agent["governance"] = None
+
+    return JsonResponse({"status": "ok", "data": agent})
+
+
+@csrf_exempt
+def saas_agents_suspend_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/suspend — Suspend an agent."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        reseller_id = _parse_uuid(body["agent_id"], "agent_id")
+        reason = body.get("reason", "")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    from core.saas.resellers import SuspendResellerRequest
+    req = SuspendResellerRequest(
+        reseller_id=reseller_id, reason=reason,
+        actor_id=body.get("actor_id", ""), issued_at=_dt_from_body(body),
+    )
+    result = svcs._reseller_service.suspend_reseller(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("update_reseller_status", reseller_id=reseller_id, status="SUSPENDED")
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_agents_reinstate_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/reinstate — Reinstate a suspended agent."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        reseller_id = _parse_uuid(body["agent_id"], "agent_id")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    from core.saas.resellers import ReinstateResellerRequest
+    req = ReinstateResellerRequest(
+        reseller_id=reseller_id,
+        actor_id=body.get("actor_id", ""), issued_at=_dt_from_body(body),
+    )
+    result = svcs._reseller_service.reinstate_reseller(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("update_reseller_status", reseller_id=reseller_id, status="ACTIVE")
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_agents_terminate_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/terminate — Terminate an agent."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        reseller_id = _parse_uuid(body["agent_id"], "agent_id")
+        reason = body.get("reason", "")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    from core.saas.resellers import TerminateResellerRequest
+    req = TerminateResellerRequest(
+        reseller_id=reseller_id, reason=reason,
+        actor_id=body.get("actor_id", ""), issued_at=_dt_from_body(body),
+    )
+    result = svcs._reseller_service.terminate_reseller(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("update_reseller_status", reseller_id=reseller_id, status="TERMINATED")
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_agents_update_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/update — Update agent profile."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.resellers import UpdateResellerRequest
+        req = UpdateResellerRequest(
+            reseller_id=_parse_uuid(body["agent_id"], "agent_id"),
+            company_name=body.get("agent_name"),
+            contact_person=body.get("contact_person"),
+            phone=body.get("contact_phone"),
+            email=body.get("contact_email"),
+            region_codes=tuple(body["region_codes"]) if "region_codes" in body else None,
+            payout_method=body.get("payout_method"),
+            payout_phone=body.get("payout_phone"),
+            payout_bank_name=body.get("payout_bank_name"),
+            payout_account_number=body.get("payout_account_number"),
+            payout_account_name=body.get("payout_account_name"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.update_reseller(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_agents_payouts_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/agents/payouts — List pending payouts across all agents."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    svcs = _get_saas_services()
+    agent_id_filter = request.GET.get("agent_id", "")
+    status_filter = request.GET.get("status", "")
+
+    all_resellers = svcs._reseller_proj.list_resellers(active_only=False)
+    payouts = []
+    for r in all_resellers:
+        if agent_id_filter:
+            if str(r.reseller_id) != agent_id_filter:
+                continue
+        agent_payouts = svcs._reseller_proj.get_payouts(r.reseller_id)
+        for p in agent_payouts:
+            if status_filter and p.status.value != status_filter:
+                continue
+            payouts.append({
+                "payout_id": str(p.payout_id),
+                "agent_id": str(r.reseller_id),
+                "agent_name": r.company_name,
+                "agent_type": _agent_type_for_reseller(svcs, r.reseller_id),
+                "amount": str(p.amount),
+                "currency": p.currency,
+                "method": p.method,
+                "status": p.status.value,
+                "requested_at": str(p.requested_at) if p.requested_at else None,
+            })
+
+    return JsonResponse({"status": "ok", "data": payouts, "total": len(payouts)})
+
+
+@csrf_exempt
+def saas_agents_approve_payout_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/payouts/approve — Approve a payout."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        payout_id = _parse_uuid(body["payout_id"], "payout_id")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    from core.saas.resellers import ApprovePayoutRequest
+    req = ApprovePayoutRequest(
+        payout_id=payout_id,
+        actor_id=body.get("actor_id", ""), issued_at=_dt_from_body(body),
+    )
+    result = svcs._reseller_service.approve_payout(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("update_payout_status", payout_id=payout_id, status="COMPLETED")
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_agents_reject_payout_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/payouts/reject — Reject a payout."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        payout_id = _parse_uuid(body["payout_id"], "payout_id")
+        reason = body.get("reason", "")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    from core.saas.resellers import RejectPayoutRequest
+    req = RejectPayoutRequest(
+        payout_id=payout_id, reason=reason,
+        actor_id=body.get("actor_id", ""), issued_at=_dt_from_body(body),
+    )
+    result = svcs._reseller_service.reject_payout(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("update_payout_status", payout_id=payout_id, status="FAILED")
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_agents_commission_ranges_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/agents/commission-ranges — Get commission configuration."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    from core.saas.resellers import TIER_CONFIG
+    ranges = []
+    for tier_name, config in TIER_CONFIG.items():
+        ranges.append({
+            "tier": tier_name,
+            "min_tenants": config["min_tenants"],
+            "max_tenants": config["max_tenants"],
+            "rate_pct": float(config["commission_rate"]) * 100,
+        })
+    return JsonResponse({"status": "ok", "data": {"ranges": ranges}})
+
+
+@csrf_exempt
+def saas_agents_commission_ranges_set_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/commission-ranges/set — Update commission configuration."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    # Commission rates are currently tier-based in backend, not volume-based
+    # This endpoint acknowledges the request but rates are managed via tier system
+    return JsonResponse({"status": "ok", "message": "Commission ranges noted. Tier-based rates apply."})
+
+
+# ── Governance Mutations ──────────────────────────────────────────────────────
+
+@csrf_exempt
+def saas_agents_grant_governance_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/grant-governance — Grant governance role to an agent."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        reseller_id = _parse_uuid(body["agent_id"], "agent_id")
+        governance_role = body.get("governance_role", "REGION_AGENT")
+        region_code = body.get("region_code", "")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    r = svcs._reseller_proj.get_reseller(reseller_id)
+    if r is None:
+        return _json_error("AGENT_NOT_FOUND", "Agent not found.", status=404)
+
+    from core.saas.resellers import REGION_AGENT_PERMISSIONS, RegionAgentPermission
+    from datetime import datetime, timezone
+    now = datetime.now(tz=timezone.utc)
+    permissions = tuple(
+        RegionAgentPermission(
+            permission_code=p, granted_at=now,
+            granted_by=body.get("actor_id", "SYSTEM"),
+        )
+        for p in REGION_AGENT_PERMISSIONS
+    )
+    svcs._reseller_proj.apply({
+        "event_type": "AGENT_GOVERNANCE_GRANTED_V1",
+        "reseller_id": reseller_id,
+        "governance_role": governance_role,
+        "region_code": region_code,
+        "permissions": permissions,
+        "can_file_taxes": body.get("can_file_taxes", governance_role == "LICENSE_AGENT"),
+        "max_tenants": body.get("max_tenants", 0),
+        "can_appoint_sub_agents": body.get("can_appoint_sub_agents", governance_role == "LICENSE_AGENT"),
+        "granted_at": now,
+        "granted_by": body.get("actor_id", "SYSTEM"),
+    })
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_agents_revoke_governance_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/revoke-governance — Revoke governance from an agent."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        reseller_id = _parse_uuid(body["agent_id"], "agent_id")
+        reason = body.get("reason", "")
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    from datetime import datetime, timezone
+    svcs._reseller_proj.apply({
+        "event_type": "AGENT_GOVERNANCE_REVOKED_V1",
+        "reseller_id": reseller_id,
+        "reason": reason,
+        "revoked_at": datetime.now(tz=timezone.utc),
+        "revoked_by": body.get("actor_id", "SYSTEM"),
+    })
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_agents_create_escalation_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/escalations/create — Create a compliance escalation."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    from datetime import datetime, timezone
+    escalation_id = str(uuid.uuid4())
+    svcs._reseller_proj.apply({
+        "event_type": "AGENT_ESCALATION_CREATED_V1",
+        "escalation_id": escalation_id,
+        "region_code": body.get("region_code", ""),
+        "agent_reseller_id": body.get("agent_id", ""),
+        "subject_type": body.get("subject_type", "OTHER"),
+        "subject_id": body.get("subject_id", ""),
+        "description": body.get("description", ""),
+        "severity": body.get("severity", "NORMAL"),
+        "created_at": datetime.now(tz=timezone.utc),
+    })
+    return JsonResponse({"status": "ok", "escalation_id": escalation_id})
+
+
+@csrf_exempt
+def saas_agents_resolve_escalation_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/escalations/resolve — Resolve an escalation."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    from datetime import datetime, timezone
+    svcs._reseller_proj.apply({
+        "event_type": "AGENT_ESCALATION_RESOLVED_V1",
+        "escalation_id": body.get("escalation_id", ""),
+        "resolution": body.get("resolution", ""),
+        "resolved_at": datetime.now(tz=timezone.utc),
+        "resolved_by": body.get("actor_id", "SYSTEM"),
+    })
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+def saas_agents_link_tenant_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/link-tenant — Link a tenant to an agent."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.resellers import LinkTenantRequest
+        req = LinkTenantRequest(
+            reseller_id=_parse_uuid(body["agent_id"], "agent_id"),
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.link_tenant(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    _persist_saas("save_reseller_tenant_link",
+                  reseller_id=req.reseller_id,
+                  business_id=req.business_id,
+                  linked_at=req.issued_at)
+    return JsonResponse({"status": "ok", "new_tier": result["new_tier"]})
+
+
+@csrf_exempt
+def saas_agents_accrue_commission_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/agents/accrue-commission — Accrue commission for an agent."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        from core.saas.resellers import AccrueCommissionRequest
+        req = AccrueCommissionRequest(
+            reseller_id=_parse_uuid(body["agent_id"], "agent_id"),
+            business_id=_parse_uuid(body["business_id"], "business_id"),
+            tenant_monthly_amount=int(body["tenant_monthly_amount"]),
+            currency=body.get("currency", "KES"),
+            period=body.get("period", ""),
+            actor_id=body.get("actor_id", ""),
+            issued_at=_dt_from_body(body),
+        )
+    except (ValueError, KeyError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    svcs = _get_saas_services()
+    result = svcs._reseller_service.accrue_commission(req)
+    rej = _saas_rejection_response(result)
+    if rej:
+        return rej
+    return JsonResponse({"status": "ok", "commission_amount": str(result.get("commission_amount", 0))})

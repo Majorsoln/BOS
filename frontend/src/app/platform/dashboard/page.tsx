@@ -24,6 +24,8 @@ import {
   MapPin,
   ShieldCheck,
   Briefcase,
+  Award,
+  BarChart3,
 } from "lucide-react";
 
 export default function PlatformDashboardPage() {
@@ -35,7 +37,8 @@ export default function PlatformDashboardPage() {
   const allAgents = agents.data?.data ?? [];
   const rlaAgents = allAgents.filter((a: { agent_type: string; status: string }) => a.agent_type === "REGION_LICENSE_AGENT" && (a.status === "ACTIVE" || a.status === "PROBATION"))?.length ?? 0;
   const remoteAgents = allAgents.filter((a: { agent_type: string; status: string }) => a.agent_type === "REMOTE_AGENT" && (a.status === "ACTIVE" || a.status === "PROBATION"))?.length ?? 0;
-  const activeAgents = rlaAgents + remoteAgents;
+  const resellerAgents = allAgents.filter((a: { agent_type: string; status: string }) => a.agent_type === "RESELLER" && (a.status === "ACTIVE" || a.status === "PROBATION"))?.length ?? 0;
+  const activeAgents = rlaAgents + remoteAgents + resellerAgents;
 
   const allSubs = subs.data?.data ?? [];
   const activeTenants = allSubs.filter((s: { status: string }) => s.status === "ACTIVE")?.length ?? "—";
@@ -56,7 +59,7 @@ export default function PlatformDashboardPage() {
           title="Active Agents"
           value={activeAgents}
           icon={UserCheck}
-          description={`${rlaAgents} RLA, ${remoteAgents} remote`}
+          description={`${rlaAgents} RLA, ${remoteAgents} remote, ${resellerAgents} reseller`}
         />
         <StatCard title="Active Promotions" value={activePromos} icon={Tag} />
       </div>
@@ -107,10 +110,22 @@ export default function PlatformDashboardPage() {
           icon={UserCheck}
         />
         <QuickActionCard
+          title="Resellers (Wakala)"
+          description="Referral partners — tiered commission, 90-day clawback"
+          href="/platform/agents/resellers"
+          icon={Award}
+        />
+        <QuickActionCard
           title="Commissions & Payouts"
           description="Commission settings and payout approvals"
           href="/platform/agents/payouts"
           icon={DollarSign}
+        />
+        <QuickActionCard
+          title="Performance"
+          description="Cross-agent leaderboard and performance metrics"
+          href="/platform/agents/performance"
+          icon={BarChart3}
         />
         <QuickActionCard
           title="Escalations"

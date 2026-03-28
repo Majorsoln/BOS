@@ -224,6 +224,7 @@ export const EXPANSION_GATES = [
 export const AGENT_TYPES = [
   { value: "REGION_LICENSE_AGENT", label: "Region License Agent", description: "Licensed operator for a specific region. Manages compliance, collects regional revenue, provides local support. One per region." },
   { value: "REMOTE_AGENT", label: "Remote Agent", description: "Can sell and support tenants in any region that has an active Region License Agent. No territory lock." },
+  { value: "RESELLER", label: "Reseller (Wakala)", description: "Referral partner who earns commission by connecting businesses to BOS. Tiered rates: Bronze 10%, Silver 15%, Gold 20%." },
 ] as const;
 
 /** Agent statuses */
