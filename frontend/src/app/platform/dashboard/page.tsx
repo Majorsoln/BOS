@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
-import { Card, CardContent } from "@/components/ui";
-import { getPromos, getSubscriptions } from "@/lib/api/saas";
+import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui";
+import { getPromos, getSubscriptions, getTrials } from "@/lib/api/saas";
 import { getAgents } from "@/lib/api/agents";
 import {
   Users,
@@ -25,48 +25,176 @@ import {
   ShieldCheck,
   Briefcase,
   BarChart3,
+  Eye,
 } from "lucide-react";
 
 export default function PlatformDashboardPage() {
   const promos = useQuery({ queryKey: ["saas", "promos"], queryFn: getPromos });
   const agents = useQuery({ queryKey: ["saas", "agents"], queryFn: () => getAgents() });
   const subs = useQuery({ queryKey: ["saas", "subscriptions"], queryFn: () => getSubscriptions() });
+  const trials = useQuery({ queryKey: ["saas", "trials"], queryFn: () => getTrials({}) });
 
-  const activePromos = promos.data?.data?.filter((p: { status: string }) => p.status === "ACTIVE")?.length ?? "—";
+  const activePromos = promos.data?.data?.filter((p: { status: string }) => p.status === "ACTIVE")?.length ?? 0;
   const allAgents = agents.data?.data ?? [];
   const rlaAgents = allAgents.filter((a: { agent_type: string; status: string }) => a.agent_type === "REGION_LICENSE_AGENT" && (a.status === "ACTIVE" || a.status === "PROBATION"))?.length ?? 0;
   const remoteAgents = allAgents.filter((a: { agent_type: string; status: string }) => a.agent_type === "REMOTE_AGENT" && (a.status === "ACTIVE" || a.status === "PROBATION"))?.length ?? 0;
   const activeAgents = rlaAgents + remoteAgents;
 
+  const suspendedAgents = allAgents.filter((a: { status: string }) => a.status === "SUSPENDED")?.length ?? 0;
+  const probationAgents = allAgents.filter((a: { status: string }) => a.status === "PROBATION")?.length ?? 0;
+
   const allSubs = subs.data?.data ?? [];
-  const activeTenants = allSubs.filter((s: { status: string }) => s.status === "ACTIVE")?.length ?? "—";
-  const trialTenants = allSubs.filter((s: { status: string }) => s.status === "TRIAL")?.length ?? "—";
+  const activeTenants = allSubs.filter((s: { status: string }) => s.status === "ACTIVE")?.length ?? 0;
+  const trialTenants = allSubs.filter((s: { status: string }) => s.status === "TRIAL")?.length ?? 0;
+
+  const allTrials = trials.data?.data ?? [];
+  const convertedTrials = allTrials.filter((t: { status: string }) => t.status === "CONVERTED")?.length ?? 0;
+  const totalTrials = allTrials.length;
+  const conversionRate = totalTrials > 0 ? `${Math.round((convertedTrials / totalTrials) * 100)}%` : "—";
 
   return (
     <div>
       <PageHeader
-        title="Platform Dashboard"
-        description="Overview of BOS platform status and key metrics"
+        title="Platform Administration"
+        description="Oversee operations, manage agents, set limits. Authorize, don't operate."
       />
+
+      {/* Oversight Doctrine */}
+      <Card className="mb-6 border-bos-purple/20 bg-bos-purple-light/30 dark:border-bos-purple/10 dark:bg-bos-purple-light/10">
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-3">
+            <Eye className="mt-0.5 h-5 w-5 text-bos-purple" />
+            <div className="text-sm">
+              <p className="font-semibold text-bos-purple">Platform Doctrine: Authorize, Don&apos;t Operate</p>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="rounded-md bg-white/60 p-2 dark:bg-neutral-900/60">
+                  <p className="font-medium text-neutral-800 dark:text-neutral-200">Set Limits</p>
+                  <p className="text-xs text-bos-silver-dark">Trial policy, discount caps, rate governance</p>
+                </div>
+                <div className="rounded-md bg-white/60 p-2 dark:bg-neutral-900/60">
+                  <p className="font-medium text-neutral-800 dark:text-neutral-200">Oversee Agents</p>
+                  <p className="text-xs text-bos-silver-dark">Activity, health, service delivery, escalations</p>
+                </div>
+                <div className="rounded-md bg-white/60 p-2 dark:bg-neutral-900/60">
+                  <p className="font-medium text-neutral-800 dark:text-neutral-200">Intervene When Needed</p>
+                  <p className="text-xs text-bos-silver-dark">Adjust contracts, extend trials, deactivate promos</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Active Tenants" value={activeTenants} icon={Users} description="Paying subscribers" />
-        <StatCard title="Tenants on Trial" value={trialTenants} icon={Clock} description="Free trial period" />
+        <StatCard title="Paying Tenants" value={activeTenants} icon={Users} description="Active subscribers" />
+        <StatCard title="Tenants on Trial" value={trialTenants} icon={Clock} description="Onboarded by agents" />
         <StatCard
           title="Active Agents"
           value={activeAgents}
           icon={UserCheck}
           description={`${rlaAgents} RLA, ${remoteAgents} remote`}
         />
-        <StatCard title="Active Promotions" value={activePromos} icon={Tag} />
+        <StatCard title="Trial Conversion" value={conversionRate} icon={TrendingUp} description={`${convertedTrials}/${totalTrials} trials converted`} />
       </div>
 
+      {/* Agent Health Alerts */}
+      {(suspendedAgents > 0 || probationAgents > 0) && (
+        <Card className="mt-4 border-amber-200 dark:border-amber-800">
+          <CardContent className="flex items-center gap-4 p-4">
+            <AlertTriangle className="h-5 w-5 text-amber-600" />
+            <div className="flex-1 text-sm">
+              {suspendedAgents > 0 && (
+                <span className="mr-4">
+                  <Badge variant="destructive">{suspendedAgents} suspended</Badge> agent{suspendedAgents > 1 ? "s" : ""} need attention
+                </span>
+              )}
+              {probationAgents > 0 && (
+                <span>
+                  <Badge variant="gold">{probationAgents} on probation</Badge> — monitor onboarding progress
+                </span>
+              )}
+            </div>
+            <Link href="/platform/agents/activity" className="text-sm text-bos-purple hover:underline">View Activity</Link>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard title="Active Promotions" value={activePromos} icon={Tag} description="Created by agents" />
         <StatCard title="Services" value="5" icon={Package} description="Retail, Restaurant, Hotel, Workshop, HR" />
-        <StatCard title="Pending Payouts" value="—" icon={DollarSign} description="Agent commission payouts" />
+        <StatCard title="Pending Payouts" value="—" icon={DollarSign} description="Agent commissions" />
         <StatCard title="Monthly Revenue" value="—" icon={TrendingUp} description="Estimated from active subs" />
-        <StatCard title="Trial Conversion" value="—" icon={TrendingUp} description="Converted / total trials" />
+      </div>
+
+      {/* Agent Management */}
+      <h2 className="mt-8 mb-4 text-lg font-semibold">Agent Management</h2>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <QuickActionCard
+          title="Region License Agents"
+          description="Appoint RLAs with market share, license, discount limits"
+          href="/platform/agents/rla"
+          icon={Shield}
+        />
+        <QuickActionCard
+          title="Remote Agents"
+          description="Sell in any region with active RLA, earn commission"
+          href="/platform/agents/remote"
+          icon={UserCheck}
+        />
+        <QuickActionCard
+          title="Activity & Oversight"
+          description="Agent business health, service delivery, contracts"
+          href="/platform/agents/activity"
+          icon={Eye}
+        />
+        <QuickActionCard
+          title="Performance"
+          description="Cross-agent leaderboard and metrics"
+          href="/platform/agents/performance"
+          icon={BarChart3}
+        />
+        <QuickActionCard
+          title="Commissions & Payouts"
+          description="Commission accrual and payout approvals"
+          href="/platform/agents/payouts"
+          icon={DollarSign}
+        />
+        <QuickActionCard
+          title="Escalations"
+          description="Issues from agents requiring platform resolution"
+          href="/platform/agents/escalations"
+          icon={AlertTriangle}
+        />
+      </div>
+
+      {/* Oversight & Limits */}
+      <h2 className="mt-8 mb-4 text-lg font-semibold">Oversight & Limits</h2>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <QuickActionCard
+          title="Services & Pricing"
+          description="Set rates per region — only regions with active RLAs"
+          href="/platform/pricing"
+          icon={Package}
+        />
+        <QuickActionCard
+          title="Rate Governance"
+          description="Rate change history and 90-day notice enforcement"
+          href="/platform/rates"
+          icon={Scale}
+        />
+        <QuickActionCard
+          title="Trials & Subscriptions"
+          description="Oversee all trials and subs — agents create, platform monitors"
+          href="/platform/subscriptions"
+          icon={Briefcase}
+        />
+        <QuickActionCard
+          title="Promotions"
+          description="Monitor agent promos — deactivate if policy violated"
+          href="/platform/promotions"
+          icon={Tag}
+        />
       </div>
 
       {/* Regions & Compliance */}
@@ -86,72 +214,14 @@ export default function PlatformDashboardPage() {
         />
         <QuickActionCard
           title="Compliance Audit"
-          description="Immutable evidence trail for all compliance decisions"
+          description="Immutable evidence trail for compliance decisions"
           href="/platform/governance/audit"
           icon={Scale}
         />
       </div>
 
-      {/* Agents */}
-      <h2 className="mt-8 mb-4 text-lg font-semibold">Agent Management</h2>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <QuickActionCard
-          title="Region License Agents"
-          description="Appoint RLA with market share, license, discount limits"
-          href="/platform/agents/rla"
-          icon={Shield}
-        />
-        <QuickActionCard
-          title="Remote Agents"
-          description="Sell in any region with an active RLA, earn commission"
-          href="/platform/agents/remote"
-          icon={UserCheck}
-        />
-        <QuickActionCard
-          title="Performance"
-          description="Cross-agent leaderboard and performance metrics"
-          href="/platform/agents/performance"
-          icon={BarChart3}
-        />
-        <QuickActionCard
-          title="Commissions & Payouts"
-          description="Commission settings and payout approvals"
-          href="/platform/agents/payouts"
-          icon={DollarSign}
-        />
-        <QuickActionCard
-          title="Escalations"
-          description="Issues escalated from agents requiring resolution"
-          href="/platform/agents/escalations"
-          icon={AlertTriangle}
-        />
-      </div>
-
-      {/* Pricing & Billing */}
-      <h2 className="mt-8 mb-4 text-lg font-semibold">Pricing & Billing</h2>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <QuickActionCard
-          title="Services & Pricing"
-          description="Set rates per region — only regions with active RLAs"
-          href="/platform/pricing"
-          icon={Package}
-        />
-        <QuickActionCard
-          title="Rate Governance"
-          description="Rate change history and 90-day notice enforcement"
-          href="/platform/rates"
-          icon={Scale}
-        />
-        <QuickActionCard
-          title="Trials & Subscriptions"
-          description="Manage trial agreements, subscriptions, and trial policy"
-          href="/platform/subscriptions"
-          icon={Briefcase}
-        />
-      </div>
-
-      {/* Audit & Monitoring */}
-      <h2 className="mt-8 mb-4 text-lg font-semibold">Audit & Monitoring</h2>
+      {/* Audit & Tenants */}
+      <h2 className="mt-8 mb-4 text-lg font-semibold">Audit & Tenants</h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <QuickActionCard
           title="Audit Log"
@@ -165,17 +235,6 @@ export default function PlatformDashboardPage() {
           href="/platform/health"
           icon={Activity}
         />
-        <QuickActionCard
-          title="Platform Promotions"
-          description="Create and manage promo codes"
-          href="/platform/promotions"
-          icon={Tag}
-        />
-      </div>
-
-      {/* Tenants */}
-      <h2 className="mt-8 mb-4 text-lg font-semibold">Tenants</h2>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <QuickActionCard
           title="All Tenants"
           description="Browse and manage all registered tenants"

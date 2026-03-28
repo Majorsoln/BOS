@@ -21,6 +21,7 @@ import {
   DollarSign,
   Briefcase,
   BarChart3,
+  Eye,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -51,21 +52,23 @@ const PLATFORM_NAV: NavGroup[] = [
     ],
   },
   {
-    title: "Agents",
+    title: "Agent Management",
     items: [
       { label: "Region License Agents", href: "/platform/agents/rla", icon: Shield },
       { label: "Remote Agents", href: "/platform/agents/remote", icon: UserCheck },
+      { label: "Activity & Oversight", href: "/platform/agents/activity", icon: Eye },
       { label: "Commissions & Payouts", href: "/platform/agents/payouts", icon: DollarSign },
       { label: "Performance", href: "/platform/agents/performance", icon: BarChart3 },
       { label: "Escalations", href: "/platform/agents/escalations", icon: AlertTriangle },
     ],
   },
   {
-    title: "Pricing & Billing",
+    title: "Oversight & Limits",
     items: [
       { label: "Services & Pricing", href: "/platform/pricing", icon: Package },
       { label: "Rate Governance", href: "/platform/rates", icon: Scale },
       { label: "Trials & Subscriptions", href: "/platform/subscriptions", icon: Briefcase },
+      { label: "Promotions", href: "/platform/promotions", icon: Tag },
     ],
   },
   {
@@ -73,12 +76,6 @@ const PLATFORM_NAV: NavGroup[] = [
     items: [
       { label: "Audit Log", href: "/platform/audit", icon: FileText },
       { label: "System Health", href: "/platform/health", icon: Activity },
-    ],
-  },
-  {
-    title: "Promotions",
-    items: [
-      { label: "Platform Promotions", href: "/platform/promotions", icon: Tag },
     ],
   },
   {
