@@ -20,7 +20,6 @@ import {
   AlertTriangle,
   DollarSign,
   Briefcase,
-  Award,
   BarChart3,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -56,7 +55,6 @@ const PLATFORM_NAV: NavGroup[] = [
     items: [
       { label: "Region License Agents", href: "/platform/agents/rla", icon: Shield },
       { label: "Remote Agents", href: "/platform/agents/remote", icon: UserCheck },
-      { label: "Resellers (Wakala)", href: "/platform/agents/resellers", icon: Award },
       { label: "Commissions & Payouts", href: "/platform/agents/payouts", icon: DollarSign },
       { label: "Performance", href: "/platform/agents/performance", icon: BarChart3 },
       { label: "Escalations", href: "/platform/agents/escalations", icon: AlertTriangle },

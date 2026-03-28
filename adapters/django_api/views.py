@@ -4949,17 +4949,16 @@ def platform_governance_escalations_view(request: HttpRequest) -> JsonResponse:
 # ═══════════════════════════════════════════════════════════════════════════════
 # AGENT MANAGEMENT — Unified Agent API (bridges to reseller system)
 # ═══════════════════════════════════════════════════════════════════════════════
-# Agent types: REGION_LICENSE_AGENT, REMOTE_AGENT, RESELLER
-# Backend stores all as "resellers" with agent_type metadata in governance overlay.
+# Agent types: REGION_LICENSE_AGENT, REMOTE_AGENT
+# RLA = LICENSE_AGENT governance role (one per region, collects revenue, manages compliance)
+# Remote Agent = REGION_AGENT governance role (sells anywhere with active RLA, earns commission)
 
 def _agent_type_for_reseller(svcs, reseller_id) -> str:
-    """Determine agent type from governance record or default to RESELLER."""
+    """Determine agent type from governance record."""
     gov = svcs._reseller_proj.get_agent_governance(reseller_id)
     if gov and gov.governance_role == "LICENSE_AGENT":
         return "REGION_LICENSE_AGENT"
-    if gov and gov.governance_role == "REGION_AGENT":
-        return "REMOTE_AGENT"
-    return "RESELLER"
+    return "REMOTE_AGENT"
 
 
 def _serialize_agent(r, svcs) -> dict:
@@ -4968,7 +4967,9 @@ def _serialize_agent(r, svcs) -> dict:
     territory = None
     if agent_type == "REGION_LICENSE_AGENT" and r.region_codes:
         territory = r.region_codes[0] if r.region_codes else None
-    return {
+
+    gov = svcs._reseller_proj.get_agent_governance(r.reseller_id)
+    result = {
         "agent_id": str(r.reseller_id),
         "agent_name": r.company_name,
         "contact_person": r.contact_person,
@@ -4984,6 +4985,16 @@ def _serialize_agent(r, svcs) -> dict:
         "total_commission_earned": str(r.total_commission_earned),
         "pending_commission": str(r.pending_commission),
     }
+
+    # RLA-specific fields: market share, license, discount limits
+    if gov and agent_type == "REGION_LICENSE_AGENT":
+        result["market_share_pct"] = getattr(gov, "market_share_pct", 30)
+        result["license_number"] = getattr(gov, "license_number", None)
+        result["license_issued_at"] = str(getattr(gov, "license_issued_at", "")) or None
+        result["max_platform_discount_pct"] = getattr(gov, "max_platform_discount_pct", 15)
+        result["max_trial_days"] = getattr(gov, "max_trial_days", 180)
+
+    return result
 
 
 @csrf_exempt
@@ -5013,19 +5024,23 @@ def saas_agents_list_view(request: HttpRequest) -> JsonResponse:
 
 @csrf_exempt
 def saas_agents_register_view(request: HttpRequest) -> JsonResponse:
-    """POST /saas/agents/register — Register a new agent (RLA, Remote, or Reseller)."""
+    """POST /saas/agents/register — Register a new agent (RLA or Remote Agent)."""
     if request.method != "POST":
         return _method_not_allowed()
     try:
         body = _parse_json_body(request)
         agent_type = body.get("agent_type", "REMOTE_AGENT")
+        if agent_type not in ("REGION_LICENSE_AGENT", "REMOTE_AGENT"):
+            return _json_error("INVALID_AGENT_TYPE", "agent_type must be REGION_LICENSE_AGENT or REMOTE_AGENT", status=400)
+
         from core.saas.resellers import RegisterResellerRequest
         region_codes = tuple(body.get("region_codes", []))
         # For RLA, territory becomes the single region
         if agent_type == "REGION_LICENSE_AGENT":
             territory = body.get("territory", "")
-            if territory:
-                region_codes = (territory,)
+            if not territory:
+                return _json_error("MISSING_TERRITORY", "RLA requires a territory (region code)", status=400)
+            region_codes = (territory,)
         req = RegisterResellerRequest(
             company_name=body.get("agent_name", body.get("company_name", "")),
             contact_person=body.get("contact_person", body.get("agent_name", "")),
@@ -5060,47 +5075,69 @@ def saas_agents_register_view(request: HttpRequest) -> JsonResponse:
                   commission_rate=result["commission_rate"],
                   payout_method=req.payout_method)
 
-    # Grant governance for RLA or Remote agents
-    governance_role = None
+    # Grant governance role
+    from core.saas.resellers import (
+        REGION_AGENT_PERMISSIONS, MAIN_ADMIN_EXCLUSIVE_PERMISSIONS,
+        RegionAgentPermission,
+    )
+    from datetime import datetime, timezone
+    import hashlib
+    now = datetime.now(tz=timezone.utc)
+
+    governance_role = "LICENSE_AGENT" if agent_type == "REGION_LICENSE_AGENT" else "REGION_AGENT"
+    region_code = region_codes[0] if region_codes else ""
+
+    permissions = tuple(
+        RegionAgentPermission(
+            permission_code=p, granted_at=now,
+            granted_by=body.get("actor_id", "SYSTEM"),
+        )
+        for p in REGION_AGENT_PERMISSIONS
+    )
+
+    gov_event = {
+        "event_type": "AGENT_GOVERNANCE_GRANTED_V1",
+        "reseller_id": reseller_id,
+        "governance_role": governance_role,
+        "region_code": region_code,
+        "permissions": permissions,
+        "can_file_taxes": agent_type == "REGION_LICENSE_AGENT",
+        "max_tenants": body.get("max_tenants", 0),
+        "can_appoint_sub_agents": agent_type == "REGION_LICENSE_AGENT",
+        "granted_at": now,
+        "granted_by": body.get("actor_id", "SYSTEM"),
+    }
+
+    # RLA-specific: market share + auto-generate license
+    license_number = None
     if agent_type == "REGION_LICENSE_AGENT":
-        governance_role = "LICENSE_AGENT"
-    elif agent_type == "REMOTE_AGENT":
-        governance_role = "REGION_AGENT"
+        market_share_pct = body.get("market_share_pct", 30)
+        max_platform_discount_pct = body.get("max_platform_discount_pct", 15)
+        max_trial_days = body.get("max_trial_days", 180)
+        # Generate license number: BOS-RLA-{REGION}-{YEAR}-{HASH}
+        license_hash = hashlib.sha256(
+            f"{reseller_id}:{region_code}:{now.isoformat()}".encode()
+        ).hexdigest()[:8].upper()
+        license_number = f"BOS-RLA-{region_code}-{now.year}-{license_hash}"
+        gov_event["market_share_pct"] = market_share_pct
+        gov_event["license_number"] = license_number
+        gov_event["license_issued_at"] = now
+        gov_event["max_platform_discount_pct"] = max_platform_discount_pct
+        gov_event["max_trial_days"] = max_trial_days
 
-    if governance_role:
-        from core.saas.resellers import (
-            REGION_AGENT_PERMISSIONS, RegionAgentPermission,
-        )
-        from datetime import datetime, timezone
-        now = datetime.now(tz=timezone.utc)
-        permissions = tuple(
-            RegionAgentPermission(
-                permission_code=p, granted_at=now,
-                granted_by=body.get("actor_id", "SYSTEM"),
-            )
-            for p in REGION_AGENT_PERMISSIONS
-        )
-        region_code = region_codes[0] if region_codes else ""
-        svcs._reseller_proj.apply({
-            "event_type": "AGENT_GOVERNANCE_GRANTED_V1",
-            "reseller_id": reseller_id,
-            "governance_role": governance_role,
-            "region_code": region_code,
-            "permissions": permissions,
-            "can_file_taxes": agent_type == "REGION_LICENSE_AGENT",
-            "max_tenants": body.get("max_tenants", 0),
-            "can_appoint_sub_agents": agent_type == "REGION_LICENSE_AGENT",
-            "granted_at": now,
-            "granted_by": body.get("actor_id", "SYSTEM"),
-        })
+    svcs._reseller_proj.apply(gov_event)
 
-    return JsonResponse({
+    response = {
         "status": "ok",
         "agent_id": str(reseller_id),
         "agent_type": agent_type,
         "tier": result["tier"],
         "commission_rate": result["commission_rate"],
-    })
+    }
+    if license_number:
+        response["license_number"] = license_number
+
+    return JsonResponse(response)
 
 
 @csrf_exempt
@@ -5554,3 +5591,126 @@ def saas_agents_accrue_commission_view(request: HttpRequest) -> JsonResponse:
     if rej:
         return rej
     return JsonResponse({"status": "ok", "commission_amount": str(result.get("commission_amount", 0))})
+
+
+# ── Discount Governance ──────────────────────────────────────────────────────
+# Platform sets global limits. RLA sets actual values within those limits.
+# RLA-funded discounts come from RLA's own market share (no platform limit).
+
+# In-memory storage for discount governance (same pattern as projections)
+_discount_governance = {
+    # Platform-wide limits set by Main Admin
+    "platform_limits": {
+        "max_platform_discount_pct": 15,   # Max discount Platform funds
+        "max_trial_days": 180,             # Max trial days any RLA can offer
+        "max_rla_funded_discount_pct": 50, # Max discount RLA can fund from market share
+    },
+    # Per-RLA discount settings (set by RLA within platform limits)
+    "rla_settings": {},  # keyed by agent_id
+}
+
+
+@csrf_exempt
+def saas_discount_governance_view(request: HttpRequest) -> JsonResponse:
+    """GET /saas/discount-governance — Get platform discount limits."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    return JsonResponse({
+        "status": "ok",
+        "data": _discount_governance["platform_limits"],
+    })
+
+
+@csrf_exempt
+def saas_discount_governance_set_view(request: HttpRequest) -> JsonResponse:
+    """POST /saas/discount-governance/set — Set platform-wide discount limits (Main Admin only)."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    limits = _discount_governance["platform_limits"]
+    if "max_platform_discount_pct" in body:
+        v = float(body["max_platform_discount_pct"])
+        if v < 0 or v > 50:
+            return _json_error("INVALID_VALUE", "max_platform_discount_pct must be 0-50", status=400)
+        limits["max_platform_discount_pct"] = v
+    if "max_trial_days" in body:
+        v = int(body["max_trial_days"])
+        if v < 0 or v > 365:
+            return _json_error("INVALID_VALUE", "max_trial_days must be 0-365", status=400)
+        limits["max_trial_days"] = v
+    if "max_rla_funded_discount_pct" in body:
+        v = float(body["max_rla_funded_discount_pct"])
+        if v < 0 or v > 100:
+            return _json_error("INVALID_VALUE", "max_rla_funded_discount_pct must be 0-100", status=400)
+        limits["max_rla_funded_discount_pct"] = v
+
+    return JsonResponse({"status": "ok", "data": limits})
+
+
+@csrf_exempt
+def saas_rla_discount_settings_view(request: HttpRequest) -> JsonResponse:
+    """GET/POST /saas/agents/rla-discount-settings
+    GET: Get RLA's current discount settings.
+    POST: RLA sets their discount/trial values (within platform limits).
+    """
+    if request.method == "GET":
+        agent_id = request.GET.get("agent_id", "")
+        settings = _discount_governance["rla_settings"].get(agent_id, {})
+        return JsonResponse({"status": "ok", "data": settings})
+
+    if request.method != "POST":
+        return _method_not_allowed()
+
+    try:
+        body = _parse_json_body(request)
+        agent_id = body.get("agent_id", "")
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+
+    limits = _discount_governance["platform_limits"]
+    settings = _discount_governance["rla_settings"].get(agent_id, {})
+
+    # Platform-funded discount (limited by platform max)
+    if "platform_discount_pct" in body:
+        v = float(body["platform_discount_pct"])
+        if v > limits["max_platform_discount_pct"]:
+            return _json_error(
+                "EXCEEDS_LIMIT",
+                f"Platform discount cannot exceed {limits['max_platform_discount_pct']}% (platform limit)",
+                status=400,
+            )
+        settings["platform_discount_pct"] = v
+
+    # RLA-funded discount (from market share — no platform limit, but capped at market share)
+    if "rla_funded_discount_pct" in body:
+        v = float(body["rla_funded_discount_pct"])
+        # Check against RLA's market share
+        svcs = _get_saas_services()
+        rid = _parse_uuid(agent_id, "agent_id")
+        gov = svcs._reseller_proj.get_agent_governance(rid)
+        rla_market_share = getattr(gov, "market_share_pct", 30) if gov else 30
+        if v > rla_market_share:
+            return _json_error(
+                "EXCEEDS_MARKET_SHARE",
+                f"RLA-funded discount ({v}%) cannot exceed your market share ({rla_market_share}%)",
+                status=400,
+            )
+        settings["rla_funded_discount_pct"] = v
+
+    # Trial days (limited by platform max)
+    if "trial_days" in body:
+        v = int(body["trial_days"])
+        if v > limits["max_trial_days"]:
+            return _json_error(
+                "EXCEEDS_LIMIT",
+                f"Trial days cannot exceed {limits['max_trial_days']} (platform limit)",
+                status=400,
+            )
+        settings["trial_days"] = v
+
+    _discount_governance["rla_settings"][agent_id] = settings
+    return JsonResponse({"status": "ok", "data": settings})

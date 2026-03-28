@@ -172,6 +172,37 @@ export async function denyTransfer(data: { transfer_id: string; reason: string }
   return res.data;
 }
 
+/* ── Discount Governance ─────────────────────────────────── */
+
+export async function getDiscountGovernance() {
+  const res = await api.get("/saas/discount-governance");
+  return res.data;
+}
+
+export async function setDiscountGovernance(data: {
+  max_platform_discount_pct?: number;
+  max_trial_days?: number;
+  max_rla_funded_discount_pct?: number;
+}) {
+  const res = await api.post("/saas/discount-governance/set", data);
+  return res.data;
+}
+
+export async function getRlaDiscountSettings(agentId: string) {
+  const res = await api.get("/saas/agents/rla-discount-settings", { params: { agent_id: agentId } });
+  return res.data;
+}
+
+export async function setRlaDiscountSettings(data: {
+  agent_id: string;
+  platform_discount_pct?: number;
+  rla_funded_discount_pct?: number;
+  trial_days?: number;
+}) {
+  const res = await api.post("/saas/agents/rla-discount-settings", data);
+  return res.data;
+}
+
 /* ── Agent Agreements ────────────────────────────────────── */
 
 export async function getAgentAgreements(agentId: string) {

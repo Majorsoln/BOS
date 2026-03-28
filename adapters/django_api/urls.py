@@ -208,4 +208,8 @@ urlpatterns = [
     path("saas/agents/escalations/create", views.saas_agents_create_escalation_view),
     path("saas/agents/escalations/resolve", views.saas_agents_resolve_escalation_view),
     path("saas/agents/<str:agent_id>", views.saas_agents_detail_view),
+    # ── Discount Governance ──────────────────────────────────────────────────
+    path("saas/discount-governance", views.saas_discount_governance_view),
+    path("saas/discount-governance/set", views.saas_discount_governance_set_view),
+    path("saas/agents/rla-discount-settings", views.saas_rla_discount_settings_view),
 ]

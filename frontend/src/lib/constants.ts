@@ -223,8 +223,24 @@ export const EXPANSION_GATES = [
 /** Agent types */
 export const AGENT_TYPES = [
   { value: "REGION_LICENSE_AGENT", label: "Region License Agent", description: "Licensed operator for a specific region. Manages compliance, collects regional revenue, provides local support. One per region." },
-  { value: "REMOTE_AGENT", label: "Remote Agent", description: "Can sell and support tenants in any region that has an active Region License Agent. No territory lock." },
-  { value: "RESELLER", label: "Reseller (Wakala)", description: "Referral partner who earns commission by connecting businesses to BOS. Tiered rates: Bronze 10%, Silver 15%, Gold 20%." },
+  { value: "REMOTE_AGENT", label: "Remote Agent", description: "Sells and supports tenants in any region with an active RLA. Earns commission per sale. No territory lock." },
+] as const;
+
+/**
+ * RLA Market Share — set by Platform Admin when appointing.
+ * This is the % of regional revenue the RLA retains.
+ * Platform keeps the rest.
+ */
+export const DEFAULT_RLA_MARKET_SHARE_PCT = 30;
+
+/**
+ * Discount Types:
+ * PLATFORM_DISCOUNT — Platform-funded, limited by platform max.
+ * RLA_FUNDED_DISCOUNT — RLA pays from own market share. No platform limit.
+ */
+export const DISCOUNT_TYPES = [
+  { value: "PLATFORM_DISCOUNT", label: "Platform Discount", description: "Discount funded by platform. Capped by platform-set maximum." },
+  { value: "RLA_FUNDED_DISCOUNT", label: "RLA-Funded Discount", description: "Discount funded by RLA from their market share. RLA can set any amount." },
 ] as const;
 
 /** Agent statuses */
