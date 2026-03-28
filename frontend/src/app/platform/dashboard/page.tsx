@@ -26,6 +26,9 @@ import {
   Briefcase,
   BarChart3,
   Eye,
+  PiggyBank,
+  CheckCircle,
+  Settings,
 } from "lucide-react";
 
 export default function PlatformDashboardPage() {
@@ -155,16 +158,33 @@ export default function PlatformDashboardPage() {
           icon={BarChart3}
         />
         <QuickActionCard
-          title="Commissions & Payouts"
-          description="Commission accrual and payout approvals"
-          href="/platform/agents/payouts"
-          icon={DollarSign}
-        />
-        <QuickActionCard
           title="Escalations"
           description="Issues from agents requiring platform resolution"
           href="/platform/agents/escalations"
           icon={AlertTriangle}
+        />
+      </div>
+
+      {/* Finance */}
+      <h2 className="mt-8 mb-4 text-lg font-semibold">Finance — Pesa Zote</h2>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <QuickActionCard
+          title="Revenue & Collections"
+          description="All revenue, RLA collections, projections, platform ledger"
+          href="/platform/finance"
+          icon={PiggyBank}
+        />
+        <QuickActionCard
+          title="Payout Approvals"
+          description="Approve or reject agent commission payout requests"
+          href="/platform/finance/approvals"
+          icon={CheckCircle}
+        />
+        <QuickActionCard
+          title="Payment Rules"
+          description="Commission tiers, settlement schedules, clawback, thresholds"
+          href="/platform/finance/rules"
+          icon={Settings}
         />
       </div>
 

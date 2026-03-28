@@ -22,6 +22,10 @@ import {
   Briefcase,
   BarChart3,
   Eye,
+  Wallet,
+  PiggyBank,
+  CheckCircle,
+  Settings,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -57,9 +61,16 @@ const PLATFORM_NAV: NavGroup[] = [
       { label: "Region License Agents", href: "/platform/agents/rla", icon: Shield },
       { label: "Remote Agents", href: "/platform/agents/remote", icon: UserCheck },
       { label: "Activity & Oversight", href: "/platform/agents/activity", icon: Eye },
-      { label: "Commissions & Payouts", href: "/platform/agents/payouts", icon: DollarSign },
       { label: "Performance", href: "/platform/agents/performance", icon: BarChart3 },
       { label: "Escalations", href: "/platform/agents/escalations", icon: AlertTriangle },
+    ],
+  },
+  {
+    title: "Finance",
+    items: [
+      { label: "Revenue & Collections", href: "/platform/finance", icon: PiggyBank },
+      { label: "Payout Approvals", href: "/platform/finance/approvals", icon: CheckCircle },
+      { label: "Payment Rules", href: "/platform/finance/rules", icon: Settings },
     ],
   },
   {
