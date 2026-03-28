@@ -16,7 +16,8 @@ import {
 } from "@/lib/api/agents";
 import { REGIONS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
-import { UserCheck, Plus, XCircle, Play, Shield, AlertTriangle, Users, Globe } from "lucide-react";
+import { UserCheck, Plus, XCircle, Play, Shield, AlertTriangle, Users, Globe, TrendingUp } from "lucide-react";
+import Link from "next/link";
 
 type ToastState = { message: string; variant: "success" | "error" } | null;
 
@@ -74,6 +75,7 @@ export default function RemoteAgentsPage() {
     agent_id: string; agent_name: string; agent_type: string;
     territory?: string; status: string; tenant_count?: number;
     contact_email: string; contact_phone?: string; created_at?: string;
+    tier?: string; commission_rate?: string;
   }> = agents.data?.data ?? [];
 
   const activeCount = agentList.filter((a) => a.status === "ACTIVE").length;
@@ -122,8 +124,8 @@ export default function RemoteAgentsPage() {
               <ul className="mt-1 list-disc pl-4 text-neutral-600 dark:text-neutral-400 space-y-0.5">
                 <li><strong>Can sell anywhere</strong> — in any region that has an active RLA</li>
                 <li><strong>No territory lock</strong> — not bound to a single region</li>
-                <li><strong>Commission per sale</strong> — earns commission on tenants they onboard</li>
-                <li><strong>No compliance responsibility</strong> — compliance is handled by the region's RLA</li>
+                <li><strong>Commission tiers</strong> — Bronze (10%), Silver (15%), Gold (20%) based on active tenants</li>
+                <li><strong>No compliance responsibility</strong> — compliance is handled by the region&apos;s RLA</li>
                 <li><strong>Probation period</strong> — must onboard 5 tenants within 90 days</li>
               </ul>
             </div>
@@ -154,27 +156,38 @@ export default function RemoteAgentsPage() {
                   <TableHead>Agent</TableHead>
                   <TableHead>Contact</TableHead>
                   <TableHead>Base Country</TableHead>
+                  <TableHead className="text-center">Tier</TableHead>
+                  <TableHead className="text-center">Commission</TableHead>
                   <TableHead className="text-center">Status</TableHead>
                   <TableHead className="text-right">Tenants</TableHead>
-                  <TableHead>Registered</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {agentList.map((a) => {
                   const region = REGIONS.find((r) => r.code === a.territory);
+                  const tierVariant = a.tier === "GOLD" ? "warning" : a.tier === "SILVER" ? "secondary" : "outline";
                   return (
                     <TableRow key={a.agent_id}>
-                      <TableCell className="font-medium">{a.agent_name}</TableCell>
+                      <TableCell className="font-medium">
+                        <Link href={`/platform/agents/${a.agent_id}`} className="text-bos-purple hover:underline">
+                          {a.agent_name}
+                        </Link>
+                      </TableCell>
                       <TableCell>
                         <p className="text-sm text-bos-silver-dark">{a.contact_email}</p>
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">{a.territory || "—"} {region?.name ? `— ${region.name}` : ""}</Badge>
                       </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={tierVariant}>{a.tier || "BRONZE"}</Badge>
+                      </TableCell>
+                      <TableCell className="text-center font-mono text-sm">
+                        {((parseFloat(a.commission_rate || "0") || 0.1) * 100).toFixed(0)}%
+                      </TableCell>
                       <TableCell className="text-center"><StatusBadge status={a.status} /></TableCell>
                       <TableCell className="text-right font-mono">{a.tenant_count ?? 0}</TableCell>
-                      <TableCell className="text-sm text-bos-silver-dark">{formatDate(a.created_at)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           {a.status === "SUSPENDED" && (

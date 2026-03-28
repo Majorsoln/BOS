@@ -66,13 +66,9 @@ export default function AgentDetailPage() {
   if (query.isLoading) return <div className="p-8 text-center text-bos-silver-dark">Loading agent...</div>;
   if (!agent) return <div className="p-8 text-center text-bos-silver-dark">Agent not found</div>;
 
-  const agentTypeLabel =
-    agent.agent_type === "REGION_LICENSE_AGENT" ? "Region License Agent" :
-    agent.agent_type === "REMOTE_AGENT" ? "Remote Agent" : "Reseller (Wakala)";
-
-  const backHref =
-    agent.agent_type === "REGION_LICENSE_AGENT" ? "/platform/agents/rla" :
-    agent.agent_type === "REMOTE_AGENT" ? "/platform/agents/remote" : "/platform/agents/resellers";
+  const isRLA = agent.agent_type === "REGION_LICENSE_AGENT";
+  const agentTypeLabel = isRLA ? "Region License Agent" : "Remote Agent";
+  const backHref = isRLA ? "/platform/agents/rla" : "/platform/agents/remote";
 
   const activeTenants = (agent.tenants ?? []).filter((t: { is_active: boolean }) => t.is_active).length;
   const totalCommission = parseFloat(agent.total_commission_earned || "0");
@@ -172,6 +168,30 @@ export default function AgentDetailPage() {
                   <dd><Badge variant="purple">{agent.territory}</Badge></dd>
                 </div>
               )}
+              {isRLA && agent.license_number && (
+                <div className="flex justify-between">
+                  <dt className="text-bos-silver-dark">License Number</dt>
+                  <dd className="font-mono text-xs">{agent.license_number}</dd>
+                </div>
+              )}
+              {isRLA && agent.market_share_pct != null && (
+                <div className="flex justify-between">
+                  <dt className="text-bos-silver-dark">Market Share</dt>
+                  <dd className="font-mono">{agent.market_share_pct}%</dd>
+                </div>
+              )}
+              {isRLA && agent.max_platform_discount_pct != null && (
+                <div className="flex justify-between">
+                  <dt className="text-bos-silver-dark">Max Platform Discount</dt>
+                  <dd className="font-mono">{agent.max_platform_discount_pct}%</dd>
+                </div>
+              )}
+              {isRLA && agent.max_trial_days != null && (
+                <div className="flex justify-between">
+                  <dt className="text-bos-silver-dark">Max Trial Days</dt>
+                  <dd className="font-mono">{agent.max_trial_days}</dd>
+                </div>
+              )}
             </dl>
           </CardContent>
         </Card>
@@ -227,7 +247,7 @@ export default function AgentDetailPage() {
               </dl>
             ) : (
               <p className="text-sm text-bos-silver-dark">
-                No governance role assigned. This agent operates as a basic reseller.
+                No governance role assigned. This agent operates as a standard remote agent.
               </p>
             )}
           </CardContent>

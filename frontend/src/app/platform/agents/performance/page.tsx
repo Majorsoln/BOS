@@ -10,7 +10,7 @@ import {
 } from "@/components/ui";
 import { getAgents } from "@/lib/api/agents";
 import {
-  Users, TrendingUp, Award, BarChart3, Shield, UserCheck, DollarSign,
+  Users, TrendingUp, BarChart3, Shield, UserCheck, DollarSign,
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import Link from "next/link";
@@ -24,11 +24,6 @@ export default function AgentPerformancePage() {
     queryKey: ["saas", "agents", "REMOTE_AGENT"],
     queryFn: () => getAgents({ type: "REMOTE_AGENT" }),
   });
-  const resellerQuery = useQuery({
-    queryKey: ["saas", "agents", "RESELLER"],
-    queryFn: () => getAgents({ type: "RESELLER" }),
-  });
-
   type AgentRow = {
     agent_id: string; agent_name: string; agent_type: string;
     status: string; active_tenant_count: number; commission_rate: string;
@@ -38,8 +33,7 @@ export default function AgentPerformancePage() {
 
   const rlas: AgentRow[] = rlaQuery.data?.data ?? [];
   const remotes: AgentRow[] = remoteQuery.data?.data ?? [];
-  const resellers: AgentRow[] = resellerQuery.data?.data ?? [];
-  const allAgents = [...rlas, ...remotes, ...resellers];
+  const allAgents = [...rlas, ...remotes];
   const activeAgents = allAgents.filter((a) => a.status === "ACTIVE" || a.status === "PROBATION");
 
   const totalTenants = activeAgents.reduce((s, a) => s + (a.active_tenant_count || 0), 0);
@@ -50,12 +44,10 @@ export default function AgentPerformancePage() {
   const leaderboard = [...activeAgents].sort((a, b) => (b.active_tenant_count || 0) - (a.active_tenant_count || 0));
 
   const agentTypeLabel = (t: string) =>
-    t === "REGION_LICENSE_AGENT" ? "RLA" :
-    t === "REMOTE_AGENT" ? "Remote" : "Reseller";
+    t === "REGION_LICENSE_AGENT" ? "RLA" : "Remote";
 
   const agentTypeColor = (t: string) =>
-    t === "REGION_LICENSE_AGENT" ? "purple" :
-    t === "REMOTE_AGENT" ? "success" : "warning";
+    t === "REGION_LICENSE_AGENT" ? "purple" : "success";
 
   return (
     <div>
@@ -66,14 +58,14 @@ export default function AgentPerformancePage() {
 
       {/* Summary Stats */}
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard title="Active Agents" value={activeAgents.length} icon={Users} description={`${rlas.filter(a => a.status === "ACTIVE").length} RLA, ${remotes.filter(a => a.status === "ACTIVE").length} Remote, ${resellers.filter(a => a.status === "ACTIVE").length} Reseller`} />
+        <StatCard title="Active Agents" value={activeAgents.length} icon={Users} description={`${rlas.filter(a => a.status === "ACTIVE").length} RLA, ${remotes.filter(a => a.status === "ACTIVE").length} Remote`} />
         <StatCard title="Total Tenants" value={totalTenants} icon={TrendingUp} description="Across all agents" />
         <StatCard title="Total Earned" value={totalEarned.toLocaleString()} icon={DollarSign} description="All-time commissions" />
         <StatCard title="Pending Payouts" value={totalPending.toLocaleString()} icon={DollarSign} description="Awaiting disbursement" />
       </div>
 
       {/* Agent Type Breakdown */}
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Shield className="h-4 w-4 text-purple-600" /> Region License Agents</CardTitle></CardHeader>
           <CardContent>
@@ -91,22 +83,12 @@ export default function AgentPerformancePage() {
               <div className="flex justify-between"><span className="text-bos-silver-dark">Active</span><span className="font-mono">{remotes.filter(a => a.status === "ACTIVE").length}</span></div>
               <div className="flex justify-between"><span className="text-bos-silver-dark">Total Tenants</span><span className="font-mono">{remotes.reduce((s, a) => s + (a.active_tenant_count || 0), 0)}</span></div>
               <div className="flex justify-between"><span className="text-bos-silver-dark">Commission Earned</span><span className="font-mono">{remotes.reduce((s, a) => s + parseFloat(a.total_commission_earned || "0"), 0).toLocaleString()}</span></div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Award className="h-4 w-4 text-amber-600" /> Resellers (Wakala)</CardTitle></CardHeader>
-          <CardContent>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-bos-silver-dark">Active</span><span className="font-mono">{resellers.filter(a => a.status === "ACTIVE").length}</span></div>
-              <div className="flex justify-between"><span className="text-bos-silver-dark">Total Tenants</span><span className="font-mono">{resellers.reduce((s, a) => s + (a.active_tenant_count || 0), 0)}</span></div>
-              <div className="flex justify-between"><span className="text-bos-silver-dark">Commission Earned</span><span className="font-mono">{resellers.reduce((s, a) => s + parseFloat(a.total_commission_earned || "0"), 0).toLocaleString()}</span></div>
               <div className="flex justify-between">
                 <span className="text-bos-silver-dark">Tier Split</span>
                 <span className="flex gap-1">
-                  <Badge variant="outline" className="text-xs">{resellers.filter(a => a.tier === "BRONZE").length} B</Badge>
-                  <Badge variant="outline" className="text-xs">{resellers.filter(a => a.tier === "SILVER").length} S</Badge>
-                  <Badge variant="warning" className="text-xs">{resellers.filter(a => a.tier === "GOLD").length} G</Badge>
+                  <Badge variant="outline" className="text-xs">{remotes.filter(a => a.tier === "BRONZE").length} B</Badge>
+                  <Badge variant="outline" className="text-xs">{remotes.filter(a => a.tier === "SILVER").length} S</Badge>
+                  <Badge variant="warning" className="text-xs">{remotes.filter(a => a.tier === "GOLD").length} G</Badge>
                 </span>
               </div>
             </div>
