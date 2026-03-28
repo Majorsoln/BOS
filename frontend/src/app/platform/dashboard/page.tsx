@@ -175,6 +175,12 @@ export default function PlatformDashboardPage() {
           icon={PiggyBank}
         />
         <QuickActionCard
+          title="Revenue Ledger"
+          description="Per-sale breakdown: gross, tax, fees, net, shares, settlement"
+          href="/platform/finance/ledger"
+          icon={FileText}
+        />
+        <QuickActionCard
           title="Payout Approvals"
           description="Approve or reject agent commission payout requests"
           href="/platform/finance/approvals"

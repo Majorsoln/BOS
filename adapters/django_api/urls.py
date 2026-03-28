@@ -212,4 +212,14 @@ urlpatterns = [
     path("saas/discount-governance", views.saas_discount_governance_view),
     path("saas/discount-governance/set", views.saas_discount_governance_set_view),
     path("saas/agents/rla-discount-settings", views.saas_rla_discount_settings_view),
+    # ── Revenue Ledger ───────────────────────────────────────────────────────
+    path("saas/ledger/entries", views.saas_ledger_entries_view),
+    path("saas/ledger/entry/<str:entry_id>", views.saas_ledger_entry_detail_view),
+    path("saas/ledger/record-sale", views.saas_ledger_record_sale_view),
+    path("saas/ledger/reverse", views.saas_ledger_reverse_view),
+    path("saas/ledger/settle", views.saas_ledger_settle_view),
+    path("saas/ledger/summary", views.saas_ledger_summary_view),
+    path("saas/ledger/rules", views.saas_ledger_rules_view),
+    path("saas/ledger/rules/set", views.saas_ledger_rules_set_view),
+    path("saas/ledger/operating-laws", views.saas_ledger_operating_laws_view),
 ]

@@ -23,6 +23,7 @@ import {
   BarChart3,
   Eye,
   Wallet,
+  BookOpen,
   PiggyBank,
   CheckCircle,
   Settings,
@@ -69,6 +70,7 @@ const PLATFORM_NAV: NavGroup[] = [
     title: "Finance",
     items: [
       { label: "Revenue & Collections", href: "/platform/finance", icon: PiggyBank },
+      { label: "Revenue Ledger", href: "/platform/finance/ledger", icon: BookOpen },
       { label: "Payout Approvals", href: "/platform/finance/approvals", icon: CheckCircle },
       { label: "Payment Rules", href: "/platform/finance/rules", icon: Settings },
     ],

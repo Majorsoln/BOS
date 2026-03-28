@@ -30,7 +30,7 @@ export default function FinanceDashboardPage() {
     { key: "overview", label: "Revenue Overview" },
     { key: "collections", label: "RLA Collections" },
     { key: "projections", label: "Projections" },
-    { key: "ledger", label: "Platform Ledger" },
+    { key: "ledger", label: "Payouts Ledger" },
   ];
 
   return (
@@ -568,9 +568,14 @@ function PlatformLedgerTab() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm">All Payout Transactions</CardTitle>
-            <Link href="/platform/finance/approvals" className="text-sm text-bos-purple hover:underline">
-              Go to Approvals &rarr;
-            </Link>
+            <div className="flex gap-4">
+              <Link href="/platform/finance/ledger" className="text-sm text-bos-purple hover:underline">
+                Revenue Ledger &rarr;
+              </Link>
+              <Link href="/platform/finance/approvals" className="text-sm text-bos-purple hover:underline">
+                Approvals &rarr;
+              </Link>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">

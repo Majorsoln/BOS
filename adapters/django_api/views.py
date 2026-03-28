@@ -5714,3 +5714,250 @@ def saas_rla_discount_settings_view(request: HttpRequest) -> JsonResponse:
 
     _discount_governance["rla_settings"][agent_id] = settings
     return JsonResponse({"status": "ok", "data": settings})
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Revenue Ledger Views
+# BOS = source of truth. RLA holds money. BOS holds records and rules.
+# ═══════════════════════════════════════════════════════════════════════════
+
+_ledger_service = None
+
+
+def _get_ledger_service():
+    global _ledger_service
+    if _ledger_service is None:
+        from core.saas.ledger import LedgerService
+        _ledger_service = LedgerService()
+    return _ledger_service
+
+
+@csrf_exempt
+def saas_ledger_entries_view(request):
+    """GET /saas/ledger/entries — list ledger entries with filters."""
+    if request.method != "GET":
+        return _json_error("METHOD_NOT_ALLOWED", status=405)
+    svc = _get_ledger_service()
+    entries = svc.list_entries(
+        region_code=request.GET.get("region_code", ""),
+        rla_id=request.GET.get("rla_id", ""),
+        period=request.GET.get("period", ""),
+        status=request.GET.get("status", ""),
+        limit=int(request.GET.get("limit", "100")),
+    )
+    return JsonResponse({"status": "ok", "data": [_serialize_ledger_entry(e) for e in entries]})
+
+
+@csrf_exempt
+def saas_ledger_entry_detail_view(request, entry_id):
+    """GET /saas/ledger/entry/{id} — full entry detail with all shares."""
+    if request.method != "GET":
+        return _json_error("METHOD_NOT_ALLOWED", status=405)
+    svc = _get_ledger_service()
+    entry = svc.get_entry(entry_id)
+    if not entry:
+        return _json_error("NOT_FOUND", f"Entry {entry_id} not found", status=404)
+    return JsonResponse({"status": "ok", "data": _serialize_ledger_entry(entry)})
+
+
+@csrf_exempt
+def saas_ledger_record_sale_view(request):
+    """POST /saas/ledger/record-sale — record a sale and compute distribution."""
+    if request.method != "POST":
+        return _json_error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return _json_error("INVALID_JSON", status=400)
+
+    from decimal import Decimal as D
+
+    required = ["tenant_id", "region_code", "rla_id", "gross_amount", "currency"]
+    for f in required:
+        if f not in body:
+            return _json_error("MISSING_FIELD", f"Missing: {f}", status=400)
+
+    svc = _get_ledger_service()
+    entry = svc.record_sale(
+        tenant_id=body["tenant_id"],
+        tenant_name=body.get("tenant_name", ""),
+        region_code=body["region_code"],
+        rla_id=body["rla_id"],
+        rla_name=body.get("rla_name", ""),
+        remote_agent_id=body.get("remote_agent_id", ""),
+        remote_agent_name=body.get("remote_agent_name", ""),
+        sale_reference=body.get("sale_reference", ""),
+        gross_amount=int(body["gross_amount"]),
+        currency=body["currency"],
+        tax_treatment=body.get("tax_treatment", "INCLUSIVE"),
+        tax_amount=int(body.get("tax_amount", 0)),
+        gateway_provider=body.get("gateway_provider", ""),
+        gateway_fee=int(body.get("gateway_fee", 0)),
+        rla_market_share_pct=D(str(body.get("rla_market_share_pct", "30"))),
+        remote_agent_commission_pct=D(str(body.get("remote_agent_commission_pct", "0"))),
+        contract_version=body.get("contract_version", ""),
+        period=body.get("period", ""),
+        notes=body.get("notes", ""),
+    )
+    return JsonResponse({"status": "ok", "data": _serialize_ledger_entry(entry)})
+
+
+@csrf_exempt
+def saas_ledger_reverse_view(request):
+    """POST /saas/ledger/reverse — create reversal (refund/chargeback)."""
+    if request.method != "POST":
+        return _json_error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return _json_error("INVALID_JSON", status=400)
+    entry_id = body.get("entry_id", "")
+    reason = body.get("reason", "")
+    if not entry_id or not reason:
+        return _json_error("MISSING_FIELD", "entry_id and reason required", status=400)
+
+    svc = _get_ledger_service()
+    try:
+        reversal = svc.reverse_entry(entry_id, reason)
+    except ValueError as exc:
+        return _json_error("NOT_FOUND", str(exc), status=404)
+    return JsonResponse({"status": "ok", "data": _serialize_ledger_entry(reversal)})
+
+
+@csrf_exempt
+def saas_ledger_settle_view(request):
+    """POST /saas/ledger/settle — mark entry as settled by provider."""
+    if request.method != "POST":
+        return _json_error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return _json_error("INVALID_JSON", status=400)
+    entry_id = body.get("entry_id", "")
+    if not entry_id:
+        return _json_error("MISSING_FIELD", "entry_id required", status=400)
+    svc = _get_ledger_service()
+    try:
+        entry = svc.settle_entry(entry_id)
+    except ValueError as exc:
+        return _json_error("NOT_FOUND", str(exc), status=404)
+    return JsonResponse({"status": "ok", "data": _serialize_ledger_entry(entry)})
+
+
+@csrf_exempt
+def saas_ledger_summary_view(request):
+    """GET /saas/ledger/summary?period=2026-03 — period aggregate."""
+    if request.method != "GET":
+        return _json_error("METHOD_NOT_ALLOWED", status=405)
+    period = request.GET.get("period", "")
+    if not period:
+        from datetime import datetime
+        period = datetime.utcnow().strftime("%Y-%m")
+    svc = _get_ledger_service()
+    summary = svc.get_period_summary(period)
+    return JsonResponse({"status": "ok", "data": summary})
+
+
+@csrf_exempt
+def saas_ledger_rules_view(request):
+    """GET /saas/ledger/rules — current distribution rules."""
+    if request.method != "GET":
+        return _json_error("METHOD_NOT_ALLOWED", status=405)
+    svc = _get_ledger_service()
+    rules = svc.get_active_rules()
+    return JsonResponse({"status": "ok", "data": {
+        "version": rules.version,
+        "created_at": rules.created_at,
+        "default_platform_royalty_pct": str(rules.default_platform_royalty_pct),
+        "hold_period_days": rules.hold_period_days,
+        "gateway_fee_bearer": rules.gateway_fee_bearer,
+        "reserve_pct": str(rules.reserve_pct),
+        "tax_deducted_before_split": rules.tax_deducted_before_split,
+    }})
+
+
+@csrf_exempt
+def saas_ledger_rules_set_view(request):
+    """POST /saas/ledger/rules/set — update distribution rules (versioned)."""
+    if request.method != "POST":
+        return _json_error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return _json_error("INVALID_JSON", status=400)
+
+    from decimal import Decimal as D
+    from core.saas.ledger import DistributionRules
+    from datetime import datetime
+
+    rules = DistributionRules(
+        version=body.get("version", f"v{datetime.utcnow().strftime('%Y.%m.%d')}"),
+        created_at=datetime.utcnow().isoformat(),
+        default_platform_royalty_pct=D(str(body.get("default_platform_royalty_pct", "70"))),
+        hold_period_days=int(body.get("hold_period_days", 7)),
+        gateway_fee_bearer=body.get("gateway_fee_bearer", "RLA"),
+        reserve_pct=D(str(body.get("reserve_pct", "0"))),
+        tax_deducted_before_split=body.get("tax_deducted_before_split", True),
+    )
+    svc = _get_ledger_service()
+    svc.set_rules(rules)
+    return JsonResponse({"status": "ok", "data": {
+        "version": rules.version,
+        "message": "Distribution rules updated. Old rules preserved in history.",
+    }})
+
+
+@csrf_exempt
+def saas_ledger_operating_laws_view(request):
+    """GET /saas/ledger/operating-laws — the 10 operating laws."""
+    if request.method != "GET":
+        return _json_error("METHOD_NOT_ALLOWED", status=405)
+    from core.saas.ledger import OPERATING_LAWS
+    return JsonResponse({"status": "ok", "data": list(OPERATING_LAWS)})
+
+
+def _serialize_ledger_entry(entry):
+    """Serialize a LedgerEntry for JSON response."""
+    return {
+        "entry_id": entry.entry_id,
+        "created_at": entry.created_at,
+        "tenant_id": entry.tenant_id,
+        "tenant_name": entry.tenant_name,
+        "region_code": entry.region_code,
+        "rla_id": entry.rla_id,
+        "rla_name": entry.rla_name,
+        "remote_agent_id": entry.remote_agent_id,
+        "remote_agent_name": entry.remote_agent_name,
+        "sale_reference": entry.sale_reference,
+        "contract_version": entry.contract_version,
+        "commission_rule_version": entry.commission_rule_version,
+        "gross_amount": entry.gross_amount,
+        "currency": entry.currency,
+        "tax_treatment": entry.tax_treatment,
+        "tax_amount": entry.tax_amount,
+        "gateway_provider": entry.gateway_provider,
+        "gateway_fee": entry.gateway_fee,
+        "net_distributable": entry.net_distributable,
+        "shares": [
+            {
+                "share_type": s.share_type,
+                "party_id": s.party_id,
+                "party_name": s.party_name,
+                "rate_pct": str(s.rate_pct),
+                "amount": s.amount,
+                "currency": s.currency,
+                "rule_version": s.rule_version,
+                "notes": s.notes,
+            }
+            for s in entry.shares
+        ],
+        "status": entry.status,
+        "settled_at": entry.settled_at,
+        "hold_until": entry.hold_until,
+        "payable_at": entry.payable_at,
+        "paid_at": entry.paid_at,
+        "reversal_reason": entry.reversal_reason,
+        "reversal_entry_id": entry.reversal_entry_id,
+        "period": entry.period,
+        "notes": entry.notes,
+    }

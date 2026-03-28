@@ -596,3 +596,65 @@ export async function getComplianceProfile(businessId: string) {
   });
   return res.data;
 }
+
+/* ── Revenue Ledger ───────────────────────────────────────── */
+
+export async function getLedgerEntries(params?: {
+  region_code?: string; rla_id?: string; period?: string; status?: string; limit?: number;
+}) {
+  const res = await api.get("/saas/ledger/entries", { params });
+  return res.data;
+}
+
+export async function getLedgerEntry(entryId: string) {
+  const res = await api.get(`/saas/ledger/entry/${entryId}`);
+  return res.data;
+}
+
+export async function recordSale(data: {
+  tenant_id: string; tenant_name?: string; region_code: string;
+  rla_id: string; rla_name?: string;
+  remote_agent_id?: string; remote_agent_name?: string;
+  sale_reference?: string; gross_amount: number; currency: string;
+  tax_treatment?: string; tax_amount?: number;
+  gateway_provider?: string; gateway_fee?: number;
+  rla_market_share_pct?: number; remote_agent_commission_pct?: number;
+  contract_version?: string; period?: string; notes?: string;
+}) {
+  const res = await api.post("/saas/ledger/record-sale", data);
+  return res.data;
+}
+
+export async function reverseLedgerEntry(data: { entry_id: string; reason: string }) {
+  const res = await api.post("/saas/ledger/reverse", data);
+  return res.data;
+}
+
+export async function settleLedgerEntry(data: { entry_id: string }) {
+  const res = await api.post("/saas/ledger/settle", data);
+  return res.data;
+}
+
+export async function getLedgerSummary(period?: string) {
+  const res = await api.get("/saas/ledger/summary", { params: { period } });
+  return res.data;
+}
+
+export async function getLedgerRules() {
+  const res = await api.get("/saas/ledger/rules");
+  return res.data;
+}
+
+export async function setLedgerRules(data: {
+  version?: string; default_platform_royalty_pct?: number;
+  hold_period_days?: number; gateway_fee_bearer?: string;
+  reserve_pct?: number; tax_deducted_before_split?: boolean;
+}) {
+  const res = await api.post("/saas/ledger/rules/set", data);
+  return res.data;
+}
+
+export async function getOperatingLaws() {
+  const res = await api.get("/saas/ledger/operating-laws");
+  return res.data;
+}
