@@ -5,8 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui";
-import { getPromos, getSubscriptions, getTrials } from "@/lib/api/saas";
-import { getAgents } from "@/lib/api/agents";
+import { getPromos, getSubscriptions, getTrials, getLedgerSummary } from "@/lib/api/saas";
+import { getAgents, getAgentPayouts } from "@/lib/api/agents";
 import {
   Users,
   Clock,
@@ -36,6 +36,10 @@ export default function PlatformDashboardPage() {
   const agents = useQuery({ queryKey: ["saas", "agents"], queryFn: () => getAgents() });
   const subs = useQuery({ queryKey: ["saas", "subscriptions"], queryFn: () => getSubscriptions() });
   const trials = useQuery({ queryKey: ["saas", "trials"], queryFn: () => getTrials({}) });
+  const payouts = useQuery({ queryKey: ["saas", "agents", "payouts"], queryFn: () => getAgentPayouts({}) });
+  const now = new Date();
+  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const ledgerSummary = useQuery({ queryKey: ["saas", "ledger", "summary", currentPeriod], queryFn: () => getLedgerSummary(currentPeriod) });
 
   const activePromos = promos.data?.data?.filter((p: { status: string }) => p.status === "ACTIVE")?.length ?? 0;
   const allAgents = agents.data?.data ?? [];
@@ -54,6 +58,13 @@ export default function PlatformDashboardPage() {
   const convertedTrials = allTrials.filter((t: { status: string }) => t.status === "CONVERTED")?.length ?? 0;
   const totalTrials = allTrials.length;
   const conversionRate = totalTrials > 0 ? `${Math.round((convertedTrials / totalTrials) * 100)}%` : "—";
+
+  const allPayouts: Array<Record<string, unknown>> = payouts.data?.data ?? [];
+  const pendingPayoutCount = allPayouts.filter((p) => p.status === "PENDING").length;
+
+  const summary = ledgerSummary.data?.data as Record<string, unknown> | undefined;
+  const monthlyGross = (summary?.total_gross as number) ?? 0;
+  const platformShare = (summary?.total_platform_share as number) ?? 0;
 
   return (
     <div>
@@ -126,8 +137,22 @@ export default function PlatformDashboardPage() {
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Active Promotions" value={activePromos} icon={Tag} description="Created by agents" />
         <StatCard title="Services" value="5" icon={Package} description="Retail, Restaurant, Hotel, Workshop, HR" />
-        <StatCard title="Pending Payouts" value="—" icon={DollarSign} description="Agent commissions" />
-        <StatCard title="Monthly Revenue" value="—" icon={TrendingUp} description="Estimated from active subs" />
+        <StatCard
+          title="Pending Payouts"
+          value={pendingPayoutCount > 0 ? pendingPayoutCount : "—"}
+          icon={DollarSign}
+          description={pendingPayoutCount > 0 ? (
+            <Link href="/platform/finance/approvals" className="text-bos-purple hover:underline">Review &rarr;</Link>
+          ) : "Agent commissions"}
+        />
+        <StatCard
+          title="Monthly Revenue"
+          value={monthlyGross > 0 ? monthlyGross.toLocaleString() : "—"}
+          icon={TrendingUp}
+          description={platformShare > 0 ? `Platform: ${platformShare.toLocaleString()}` : (
+            <Link href="/platform/finance/ledger" className="text-bos-purple hover:underline">Revenue Ledger &rarr;</Link>
+          )}
+        />
       </div>
 
       {/* Agent Management */}

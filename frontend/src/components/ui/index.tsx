@@ -219,6 +219,52 @@ export function TableCell({ className, ...props }: React.TdHTMLAttributes<HTMLTa
   return <td className={cn("p-4 align-middle", className)} {...props} />;
 }
 
+/* ── Dialog ────────────────────────────────────────────── */
+
+export function Dialog({
+  open,
+  onOpenChange,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/50" onClick={() => onOpenChange(false)} />
+      <div className="relative z-50">{children}</div>
+    </div>
+  );
+}
+
+export function DialogContent({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn(
+        "w-full max-w-lg rounded-lg border border-bos-silver/30 bg-white p-6 shadow-lg dark:border-bos-silver/20 dark:bg-neutral-950",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("mb-4 flex flex-col space-y-1.5", className)} {...props} />;
+}
+
+export function DialogTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+  return <h2 className={cn("text-lg font-semibold leading-none tracking-tight", className)} {...props} />;
+}
+
+export function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("mt-4 flex justify-end gap-2", className)} {...props} />;
+}
+
 /* ── Toast (simple) ─────────────────────────────────────── */
 
 export function Toast({

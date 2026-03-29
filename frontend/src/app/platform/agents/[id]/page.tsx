@@ -13,6 +13,7 @@ import {
   Input,
 } from "@/components/ui";
 import { getAgent, suspendAgent, reinstateAgent, terminateAgent, grantGovernance, revokeGovernance } from "@/lib/api/agents";
+import { getLedgerEntries } from "@/lib/api/saas";
 import { formatDate } from "@/lib/utils";
 import {
   Users, DollarSign, Shield, TrendingUp, Pause, Play, XCircle,
@@ -32,6 +33,12 @@ export default function AgentDetailPage() {
   const query = useQuery({
     queryKey: ["saas", "agents", id],
     queryFn: () => getAgent(id),
+    enabled: !!id,
+  });
+
+  const ledgerQuery = useQuery({
+    queryKey: ["saas", "ledger", "agent", id],
+    queryFn: () => getLedgerEntries({ rla_id: id, limit: 20 }),
     enabled: !!id,
   });
 
@@ -352,6 +359,79 @@ export default function AgentDetailPage() {
               </TableBody>
             </Table>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Revenue Ledger Entries */}
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Revenue Ledger (Recent)</CardTitle>
+            <Link href="/platform/finance/ledger" className="text-sm text-bos-purple hover:underline">
+              Full Ledger &rarr;
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {(() => {
+            type LedgerEntry = {
+              entry_id: string; tenant_name: string; gross_amount: number; net_distributable: number;
+              currency: string; status: string; created_at: string; period: string;
+              shares?: Array<{ share_type: string; amount: number }>;
+            };
+            const entries: LedgerEntry[] = ledgerQuery.data?.data ?? [];
+            if (entries.length === 0) {
+              return <div className="p-6 text-center text-sm text-bos-silver-dark">No revenue ledger entries for this agent yet</div>;
+            }
+            const totalGross = entries.reduce((s, e) => s + (e.gross_amount || 0), 0);
+            const totalNet = entries.reduce((s, e) => s + (e.net_distributable || 0), 0);
+            const agentTotal = entries.reduce((s, e) => {
+              const share = (e.shares ?? []).find((sh) => sh.share_type === "RLA_SHARE" || sh.share_type === "REMOTE_AGENT_SHARE");
+              return s + (share?.amount || 0);
+            }, 0);
+            return (
+              <>
+                <div className="grid grid-cols-3 gap-4 p-4 text-center border-b border-bos-silver/30">
+                  <div>
+                    <p className="text-xs text-bos-silver-dark">Gross Revenue</p>
+                    <p className="font-mono font-bold">{totalGross.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-bos-silver-dark">Net Distributable</p>
+                    <p className="font-mono font-bold text-green-600">{totalNet.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-bos-silver-dark">Agent Share</p>
+                    <p className="font-mono font-bold text-purple-600">{agentTotal.toLocaleString()}</p>
+                  </div>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Tenant</TableHead>
+                      <TableHead className="text-right">Gross</TableHead>
+                      <TableHead className="text-right">Net</TableHead>
+                      <TableHead>Currency</TableHead>
+                      <TableHead className="text-center">Status</TableHead>
+                      <TableHead>Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {entries.map((e) => (
+                      <TableRow key={e.entry_id}>
+                        <TableCell className="text-sm">{e.tenant_name || "—"}</TableCell>
+                        <TableCell className="text-right font-mono">{(e.gross_amount || 0).toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-mono text-green-600">{(e.net_distributable || 0).toLocaleString()}</TableCell>
+                        <TableCell className="text-xs">{e.currency}</TableCell>
+                        <TableCell className="text-center"><StatusBadge status={e.status} /></TableCell>
+                        <TableCell className="text-xs text-bos-silver-dark">{e.created_at ? formatDate(e.created_at) : "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </>
+            );
+          })()}
         </CardContent>
       </Card>
 
