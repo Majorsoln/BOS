@@ -9,7 +9,6 @@ import { EmptyState } from "@/components/shared/empty-state";
 import {
   Card, CardContent, CardHeader, CardTitle, Badge, Select,
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
-  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui";
 import {
   getLedgerEntries, getLedgerEntry, getLedgerSummary, getOperatingLaws,
@@ -279,19 +278,26 @@ function LedgerEntriesTab() {
         </CardContent>
       </Card>
 
-      {/* Entry Detail Dialog */}
-      <Dialog open={!!selectedEntryId} onOpenChange={() => setSelectedEntryId(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Ledger Entry Detail</DialogTitle>
-          </DialogHeader>
-          {selectedEntry ? (
-            <EntryDetail entry={selectedEntry} />
-          ) : (
-            <p className="text-sm text-bos-silver-dark">Loading...</p>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Entry Detail Panel */}
+      {selectedEntryId && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm">Ledger Entry Detail</CardTitle>
+              <button onClick={() => setSelectedEntryId(null)} className="text-xs text-bos-purple hover:underline">
+                Close
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {selectedEntry ? (
+              <EntryDetail entry={selectedEntry} />
+            ) : (
+              <p className="text-sm text-bos-silver-dark">Loading...</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
