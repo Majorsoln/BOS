@@ -52,8 +52,8 @@ export default function AgentDashboardPage() {
   return (
     <div>
       <PageHeader
-        title="RLA Dashboard — Makao Makuu"
-        description="Simamia eneo lako, wapangaji, mawakala, na mapato yako yote."
+        title="RLA Dashboard"
+        description="Manage your region, tenants, agents, and all your revenue."
       />
 
       {/* RLA Doctrine */}
@@ -62,7 +62,7 @@ export default function AgentDashboardPage() {
           <div className="flex items-start gap-3">
             <Shield className="mt-0.5 h-5 w-5 text-bos-purple" />
             <div className="text-sm">
-              <p className="font-semibold text-bos-purple">Region License Agent — Wakala wa Eneo</p>
+              <p className="font-semibold text-bos-purple">Region License Agent</p>
               <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-4">
                 <div className="rounded-md bg-white/60 p-2 dark:bg-neutral-900/60">
                   <p className="font-medium text-neutral-800 dark:text-neutral-200">Onboard Tenants</p>
@@ -154,7 +154,7 @@ export default function AgentDashboardPage() {
       )}
 
       {/* Quick Actions */}
-      <h2 className="mt-8 mb-4 text-lg font-semibold">Quick Actions — Vitendo vya Haraka</h2>
+      <h2 className="mt-8 mb-4 text-lg font-semibold">Quick Actions</h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <QuickAction title="Onboard Tenant" description="Register a new business on BOS" href="/agent/onboard" icon={UserPlus} />
         <QuickAction title="Revenue Ledger" description="Per-sale breakdown and distribution" href="/agent/revenue/ledger" icon={BookOpen} />
@@ -167,7 +167,7 @@ export default function AgentDashboardPage() {
       </div>
 
       {/* Recent Revenue Ledger Entries */}
-      <h2 className="mt-8 mb-4 text-lg font-semibold">Recent Revenue — Mapato ya Hivi Karibuni</h2>
+      <h2 className="mt-8 mb-4 text-lg font-semibold">Recent Revenue</h2>
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">

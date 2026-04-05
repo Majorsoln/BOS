@@ -183,6 +183,9 @@ export async function setDiscountGovernance(data: {
   max_platform_discount_pct?: number;
   max_trial_days?: number;
   max_rla_funded_discount_pct?: number;
+  max_budget_per_period?: number;
+  max_fixed_amount?: number;
+  max_bundle_discount_pct?: number;
 }) {
   const res = await api.post("/saas/discount-governance/set", data);
   return res.data;
@@ -259,7 +262,12 @@ export async function getMyPromotions() {
 
 export async function createMyPromotion(data: {
   promo_code: string;
-  discount_pct: number;
+  strategy?: string;
+  discount_pct?: number;
+  fixed_amount?: number;
+  extra_trial_days?: number;
+  bundle_discount_pct?: number;
+  free_months?: number;
   max_uses: number;
   valid_until: string;
   description?: string;
@@ -329,5 +337,38 @@ export async function requestAgentTransfer(data: {
   reason: string;
 }) {
   const res = await api.post("/agent/tenants/request-transfer", data);
+  return res.data;
+}
+
+/* ── Pricing Governance (Platform Admin) ──────────────────── */
+
+export async function getPricingGovernance() {
+  const res = await api.get("/saas/pricing-governance");
+  return res.data;
+}
+
+export async function setPricingGovernance(data: {
+  service_key: string;
+  region_code: string;
+  currency: string;
+  min_amount: number;
+  max_amount: number;
+}) {
+  const res = await api.post("/saas/pricing-governance/set", data);
+  return res.data;
+}
+
+/* ── Agent Pricing (RLA sets own prices) ──────────────────── */
+
+export async function getMyPricing() {
+  const res = await api.get("/agent/pricing");
+  return res.data;
+}
+
+export async function setMyPrice(data: {
+  service_key: string;
+  amount: number;
+}) {
+  const res = await api.post("/agent/pricing/set", data);
   return res.data;
 }

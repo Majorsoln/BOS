@@ -55,7 +55,7 @@ export default function RevenuePage() {
   return (
     <div>
       <PageHeader
-        title="Revenue Overview — Muhtasari wa Mapato"
+        title="Revenue Overview"
         description="Your regional revenue, market share earnings, and distribution."
       />
 
@@ -65,7 +65,7 @@ export default function RevenuePage() {
           <div className="flex items-start gap-3">
             <PiggyBank className="mt-0.5 h-5 w-5 text-green-600" />
             <div className="text-sm">
-              <p className="font-semibold text-green-700 dark:text-green-400">Mtiririko wa Pesa — Revenue Flow</p>
+              <p className="font-semibold text-green-700 dark:text-green-400">Revenue Flow</p>
               <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-4">
                 <div className="rounded-md bg-white/60 p-2 dark:bg-neutral-900/60">
                   <p className="font-medium text-neutral-800 dark:text-neutral-200">1. Tenant Pays</p>
@@ -110,7 +110,7 @@ export default function RevenuePage() {
 
           {/* Distribution Breakdown */}
           <Card className="mt-6">
-            <CardHeader><CardTitle className="text-sm">Distribution — Mgao wa {period}</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm">Distribution — {period}</CardTitle></CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                 <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4 text-center dark:border-blue-800 dark:bg-blue-950">

@@ -21,7 +21,7 @@ export function PlatformTopbar() {
         <div className="flex items-center gap-2">
           <Crown className="h-4 w-4 text-bos-gold" />
           <span className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-            Platform Administration
+            Main Administration
           </span>
         </div>
       </div>

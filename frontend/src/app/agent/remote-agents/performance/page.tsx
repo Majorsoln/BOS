@@ -37,7 +37,7 @@ export default function AgentPerformancePage() {
   return (
     <div>
       <PageHeader
-        title="Agent Performance — Utendaji wa Mawakala"
+        title="Agent Performance"
         description="Leaderboard and metrics for remote agents in your region."
       />
 
@@ -51,7 +51,7 @@ export default function AgentPerformancePage() {
       </div>
 
       <Card className="mt-6">
-        <CardHeader><CardTitle className="text-sm">Leaderboard — Bao la Utendaji</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm">Leaderboard</CardTitle></CardHeader>
         <CardContent className="p-0">
           {agents.length === 0 ? (
             <EmptyState title="No agents" description="Agent performance data will appear here" />

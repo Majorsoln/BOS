@@ -23,12 +23,12 @@ type StaffMember = {
 };
 
 const STAFF_ROLES = [
-  { value: "OFFICE_MANAGER", label: "Office Manager — Meneja wa Ofisi" },
-  { value: "SALES_REP", label: "Sales Representative — Mwakilishi wa Mauzo" },
-  { value: "SUPPORT_AGENT", label: "Support Agent — Wakala wa Msaada" },
-  { value: "ACCOUNTANT", label: "Accountant — Mhasibu" },
-  { value: "FIELD_AGENT", label: "Field Agent — Wakala wa Shambani" },
-  { value: "TRAINER", label: "Trainer — Mkufunzi" },
+  { value: "OFFICE_MANAGER", label: "Office Manager" },
+  { value: "SALES_REP", label: "Sales Representative" },
+  { value: "SUPPORT_AGENT", label: "Support Agent" },
+  { value: "ACCOUNTANT", label: "Accountant" },
+  { value: "FIELD_AGENT", label: "Field Agent" },
+  { value: "TRAINER", label: "Trainer" },
 ];
 
 export default function StaffPage() {
@@ -47,7 +47,7 @@ export default function StaffPage() {
   return (
     <div>
       <PageHeader
-        title="Staff Management — Wafanyakazi"
+        title="Staff Management"
         description="Manage your office team. Assign roles and track who handles what."
         action={
           <Button onClick={() => setShowAddStaff(true)}>
@@ -66,7 +66,7 @@ export default function StaffPage() {
       {/* Role Descriptions */}
       <Card className="mt-4 border-blue-200/50 bg-blue-50/30 dark:border-blue-800/30 dark:bg-blue-950/20">
         <CardContent className="pt-6">
-          <p className="text-sm font-semibold text-blue-700 dark:text-blue-400 mb-2">Majukumu ya Wafanyakazi — Staff Roles</p>
+          <p className="text-sm font-semibold text-blue-700 dark:text-blue-400 mb-2">Staff Roles</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {STAFF_ROLES.map((r) => (
               <div key={r.value} className="rounded-md bg-white/60 p-2 dark:bg-neutral-900/60">
@@ -124,7 +124,7 @@ export default function StaffPage() {
       {/* Add Staff Dialog */}
       <Dialog open={showAddStaff} onOpenChange={setShowAddStaff}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Staff Member — Ongeza Mfanyakazi</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Add Staff Member</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
               <label className="text-sm font-medium">Name</label>

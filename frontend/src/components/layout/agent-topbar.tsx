@@ -23,7 +23,7 @@ export function AgentTopbar() {
         </button>
         <div className="flex items-center gap-2">
           <UserCheck className="h-4 w-4 text-bos-purple" />
-          <span className="text-sm font-semibold text-bos-purple">Agent Portal</span>
+          <span className="text-sm font-semibold text-bos-purple">Region License Agents Portal</span>
         </div>
       </div>
 

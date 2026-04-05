@@ -69,7 +69,7 @@ export default function TrialsPage() {
   return (
     <div>
       <PageHeader
-        title="Trials & Subscriptions — Majaribio"
+        title="Trials & Subscriptions"
         description="Manage trials, convert to paying, extend when needed."
       />
 
@@ -94,7 +94,7 @@ export default function TrialsPage() {
         <Card className="mt-4 border-amber-200 dark:border-amber-800">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm text-amber-700">
-              <AlertTriangle className="h-4 w-4" /> Trials Expiring Soon — Fuatilia!
+              <AlertTriangle className="h-4 w-4" /> Trials Expiring Soon — Follow Up!
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">

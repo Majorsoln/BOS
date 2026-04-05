@@ -114,7 +114,7 @@ export function PlatformSidebar() {
         </div>
         <div className="flex flex-col">
           <span className="text-sm font-bold leading-tight tracking-tight">BOS</span>
-          <span className="text-[10px] font-medium uppercase tracking-widest text-bos-gold">Platform</span>
+          <span className="text-[10px] font-medium uppercase tracking-widest text-bos-gold">Main Admin</span>
         </div>
       </div>
 

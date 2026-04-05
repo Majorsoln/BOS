@@ -44,7 +44,7 @@ export default function AgentActivityPage() {
           <div className="flex items-start gap-3">
             <Eye className="mt-0.5 h-5 w-5 text-blue-600" />
             <div className="text-sm">
-              <p className="font-semibold text-blue-700 dark:text-blue-400">Platform Oversight — Kila Kitu Kireportiwe</p>
+              <p className="font-semibold text-blue-700 dark:text-blue-400">Platform Oversight — Full Transparency</p>
               <ul className="mt-1 list-disc pl-4 text-neutral-600 dark:text-neutral-400 space-y-0.5">
                 <li><strong>Business Health</strong> — how each agent&apos;s business is performing (tenants, revenue, growth)</li>
                 <li><strong>Service Delivery</strong> — are agents supporting their tenants well? Escalations, response times</li>

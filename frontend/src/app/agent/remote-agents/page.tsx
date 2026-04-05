@@ -35,7 +35,7 @@ export default function RemoteAgentsPage() {
   return (
     <div>
       <PageHeader
-        title="Remote Agents — Mawakala wa Mbali"
+        title="Remote Agents"
         description="Remote agents selling BOS subscriptions in your region. You earn from their sales too."
       />
 
@@ -50,9 +50,9 @@ export default function RemoteAgentsPage() {
       <Card className="mt-4 border-blue-200/50 bg-blue-50/30 dark:border-blue-800/30 dark:bg-blue-950/20">
         <CardContent className="pt-6">
           <p className="text-sm text-blue-700 dark:text-blue-400">
-            <strong>Jinsi Remote Agents wanavyofanya kazi:</strong> Wanauza BOS subscriptions katika eneo lako.
-            Unapokea market share yako kwa kila sale wanayofanya. Wao wanapata commission yao.
-            BOS ina-calculate mgao kwa kila sale kiotomatiki.
+            <strong>How Remote Agents work:</strong> They sell BOS subscriptions in your region.
+            You receive your market share on every sale they make. They earn their commission.
+            BOS calculates the distribution for every sale automatically.
           </p>
         </CardContent>
       </Card>

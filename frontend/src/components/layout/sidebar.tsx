@@ -126,7 +126,7 @@ export function Sidebar() {
           )}
         >
           <Crown className="h-4 w-4" />
-          Platform Admin
+          Main Admin
         </Link>
       </div>
     </aside>

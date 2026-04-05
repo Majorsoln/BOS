@@ -577,7 +577,7 @@ function OperatingLawsTab() {
             <Scale className="mt-0.5 h-5 w-5 text-amber-600" />
             <div>
               <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
-                BOS Revenue Operating Laws — Sheria za Mapato
+                BOS Revenue Operating Laws
               </p>
               <p className="mt-1 text-xs text-bos-silver-dark">
                 These 10 laws govern all revenue distribution, settlement, and payout on the BOS platform.

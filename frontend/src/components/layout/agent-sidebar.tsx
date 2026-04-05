@@ -52,7 +52,7 @@ const AGENT_NAV: NavGroup[] = [
     ],
   },
   {
-    title: "Tenants — Wapangaji",
+    title: "Tenants",
     items: [
       { label: "Onboard Tenant", href: "/agent/onboard", icon: UserPlus },
       { label: "My Tenants", href: "/agent/tenants", icon: Users },
@@ -60,7 +60,7 @@ const AGENT_NAV: NavGroup[] = [
     ],
   },
   {
-    title: "Remote Agents — Mawakala",
+    title: "Remote Agents",
     rlaOnly: true,
     items: [
       { label: "My Agents", href: "/agent/remote-agents", icon: UserCheck },
@@ -68,7 +68,7 @@ const AGENT_NAV: NavGroup[] = [
     ],
   },
   {
-    title: "Revenue — Mapato",
+    title: "Revenue",
     items: [
       { label: "Revenue Overview", href: "/agent/revenue", icon: PiggyBank, rlaOnly: true },
       { label: "Revenue Ledger", href: "/agent/revenue/ledger", icon: BookOpen, rlaOnly: true },
@@ -77,13 +77,20 @@ const AGENT_NAV: NavGroup[] = [
     ],
   },
   {
-    title: "Promotions — Matangazo",
+    title: "Pricing",
+    rlaOnly: true,
+    items: [
+      { label: "Service Pricing", href: "/agent/pricing", icon: DollarSign },
+    ],
+  },
+  {
+    title: "Promotions",
     items: [
       { label: "My Promotions", href: "/agent/promotions", icon: Tag },
     ],
   },
   {
-    title: "Operations — Shughuli",
+    title: "Operations",
     items: [
       { label: "Support Tickets", href: "/agent/support", icon: LifeBuoy },
       { label: "Compliance", href: "/agent/compliance", icon: FileCheck, rlaOnly: true },
@@ -91,14 +98,14 @@ const AGENT_NAV: NavGroup[] = [
     ],
   },
   {
-    title: "Staff — Wafanyakazi",
+    title: "Staff",
     rlaOnly: true,
     items: [
       { label: "My Staff", href: "/agent/staff", icon: UsersRound },
     ],
   },
   {
-    title: "Account — Akaunti",
+    title: "Account",
     items: [
       { label: "My Agreement", href: "/agent/agreement", icon: FileText },
       { label: "Profile & License", href: "/agent/profile", icon: Building2, rlaOnly: true },
@@ -126,7 +133,7 @@ export function AgentSidebar() {
         <div className="flex flex-col">
           <span className="text-sm font-bold leading-tight tracking-tight">BOS</span>
           <span className="text-[10px] font-medium uppercase tracking-widest text-bos-gold">
-            {isRLA ? "RLA Portal" : "Agent Portal"}
+            {isRLA ? "RLA Portal" : "Remote Agent"}
           </span>
         </div>
       </div>

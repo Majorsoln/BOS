@@ -32,7 +32,7 @@ export default function PaymentRulesPage() {
   return (
     <div>
       <PageHeader
-        title="Payment Rules — Sheria za Malipo"
+        title="Payment Rules"
         description="Set commission tiers, settlement schedules, clawback policies, and payout thresholds for all agents."
       />
 

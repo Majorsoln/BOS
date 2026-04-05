@@ -51,8 +51,8 @@ export default function RlaLedgerPage() {
   return (
     <div>
       <PageHeader
-        title="Revenue Ledger — Daftari la Mapato"
-        description="Per-sale breakdown showing exactly how every shilling is distributed."
+        title="Revenue Ledger"
+        description="Per-sale breakdown showing exactly how every unit of currency is distributed."
       />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
@@ -76,7 +76,7 @@ export default function RlaLedgerPage() {
 
       <Card className="mt-4">
         <CardHeader>
-          <CardTitle className="text-sm">All Ledger Entries — Kila Sale, Kila Mgao</CardTitle>
+          <CardTitle className="text-sm">All Ledger Entries</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {entries.length === 0 ? (

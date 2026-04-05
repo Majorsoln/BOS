@@ -69,7 +69,7 @@ export default function PlatformDashboardPage() {
   return (
     <div>
       <PageHeader
-        title="Platform Administration"
+        title="Main Administration"
         description="Oversee operations, manage agents, set limits. Authorize, don't operate."
       />
 
@@ -191,7 +191,7 @@ export default function PlatformDashboardPage() {
       </div>
 
       {/* Finance */}
-      <h2 className="mt-8 mb-4 text-lg font-semibold">Finance — Pesa Zote</h2>
+      <h2 className="mt-8 mb-4 text-lg font-semibold">Finance</h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <QuickActionCard
           title="Revenue & Collections"

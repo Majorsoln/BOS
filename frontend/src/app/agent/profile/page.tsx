@@ -43,7 +43,7 @@ export default function ProfilePage() {
   return (
     <div>
       <PageHeader
-        title="Profile & License — Wasifu na Leseni"
+        title="Profile & License"
         description="Your RLA profile, contract terms, and license details."
       />
 

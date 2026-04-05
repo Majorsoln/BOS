@@ -41,7 +41,7 @@ export default function RemittancePage() {
   return (
     <div>
       <PageHeader
-        title="Remittance — Uwasilishaji wa Pesa"
+        title="Remittance"
         description="Remit platform royalty share. Track what you owe and what you've sent."
       />
 
@@ -52,7 +52,7 @@ export default function RemittancePage() {
             <Send className="mt-0.5 h-5 w-5 text-purple-600" />
             <div className="text-sm">
               <p className="font-semibold text-purple-700 dark:text-purple-400">
-                Sheria ya Uwasilishaji — Remittance Rules
+                Remittance Rules
               </p>
               <p className="mt-1 text-xs text-bos-silver-dark">
                 BOS calculates the platform share automatically from every sale.
@@ -147,7 +147,7 @@ export default function RemittancePage() {
       {/* Remittance History */}
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle className="text-sm">Remittance History — Historia ya Uwasilishaji</CardTitle>
+          <CardTitle className="text-sm">Remittance History</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {remittanceHistory.length === 0 ? (
