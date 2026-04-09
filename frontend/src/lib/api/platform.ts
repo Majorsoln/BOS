@@ -1,4 +1,65 @@
 import api from "./client";
+import type { PlatformAdminRole } from "@/stores/platform-auth-store";
+
+/* ── Platform Identity ───────────────────────────────────── */
+
+export async function getPlatformMe(email?: string) {
+  const params = email ? { email } : {};
+  const res = await api.get("/platform/me", { params });
+  return res.data;
+}
+
+/* ── Platform Admin Management ───────────────────────────── */
+
+export async function getPlatformAdmins(role?: PlatformAdminRole) {
+  const params = role ? { role } : {};
+  const res = await api.get("/platform/admins", { params });
+  return res.data;
+}
+
+export async function addPlatformAdmin(data: {
+  name: string;
+  email: string;
+  role: PlatformAdminRole;
+  created_by?: string;
+}) {
+  const res = await api.post("/platform/admins/add", data);
+  return res.data;
+}
+
+export async function updatePlatformAdminRole(data: {
+  admin_id: string;
+  role: PlatformAdminRole;
+}) {
+  const res = await api.post("/platform/admins/update-role", data);
+  return res.data;
+}
+
+export async function suspendPlatformAdmin(admin_id: string) {
+  const res = await api.post("/platform/admins/suspend", { admin_id });
+  return res.data;
+}
+
+export async function reinstatePlatformAdmin(admin_id: string) {
+  const res = await api.post("/platform/admins/reinstate", { admin_id });
+  return res.data;
+}
+
+/* ── Regional Rollup ─────────────────────────────────────── */
+
+export async function getRegionsRollup(period?: string) {
+  const params = period ? { period } : {};
+  const res = await api.get("/platform/regions/rollup", { params });
+  return res.data;
+}
+
+/* ── Remittance Oversight ────────────────────────────────── */
+
+export async function getRemittanceOverdue(grace_days?: number) {
+  const params = grace_days !== undefined ? { grace_days } : {};
+  const res = await api.get("/platform/remittance/overdue", { params });
+  return res.data;
+}
 
 /* ── Platform Audit Log ──────────────────────────────────── */
 

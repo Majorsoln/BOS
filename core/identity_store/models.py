@@ -185,6 +185,82 @@ class RoleAssignment(models.Model):
         return f"{self.actor_id}:{self.role_id}:{self.status}"
 
 
+class PlatformAdminRole(models.TextChoices):
+    SUPER_ADMIN = "SUPER_ADMIN", "Super Admin"
+    FINANCE_ADMIN = "FINANCE_ADMIN", "Finance Admin"
+    AGENT_MANAGER = "AGENT_MANAGER", "Agent Manager"
+    COMPLIANCE_OFFICER = "COMPLIANCE_OFFICER", "Compliance Officer"
+    VIEWER = "VIEWER", "Viewer"
+
+
+class PlatformAdminStatus(models.TextChoices):
+    ACTIVE = "ACTIVE", "Active"
+    SUSPENDED = "SUSPENDED", "Suspended"
+
+
+class PlatformAdminUser(models.Model):
+    """
+    Platform-level administrator with role-based access.
+    Completely separate from tenant/business actors.
+    """
+    admin_id = models.UUIDField(primary_key=True, editable=False)
+    name = models.CharField(max_length=255)
+    email = models.EmailField(unique=True)
+    role = models.CharField(
+        max_length=30,
+        choices=PlatformAdminRole.choices,
+        default=PlatformAdminRole.VIEWER,
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=PlatformAdminStatus.choices,
+        default=PlatformAdminStatus.ACTIVE,
+    )
+    api_key_hash = models.CharField(max_length=64, unique=True, blank=True, default="")
+    created_by = models.UUIDField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_active_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "bos_platform_admin_users"
+        ordering = ["role", "name"]
+        indexes = [
+            models.Index(fields=["role", "status"], name="idx_padmin_role_status"),
+            models.Index(fields=["email"], name="idx_padmin_email"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.role})"
+
+
+# ---------- ROLE PERMISSIONS MATRIX ----------
+# Which nav sections each role can access. Enforced in the frontend sidebar
+# and used by backend guards. Extend here when new sections are added.
+
+PLATFORM_ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
+    "SUPER_ADMIN": frozenset([
+        "dashboard", "agents", "finance", "pricing", "rates",
+        "subscriptions", "trials", "promotions", "regions", "compliance",
+        "audit", "health", "tenants", "admins", "governance",
+    ]),
+    "FINANCE_ADMIN": frozenset([
+        "dashboard", "finance", "rates", "subscriptions", "trials",
+        "audit", "health",
+    ]),
+    "AGENT_MANAGER": frozenset([
+        "dashboard", "agents", "tenants", "promotions", "subscriptions",
+        "trials", "audit",
+    ]),
+    "COMPLIANCE_OFFICER": frozenset([
+        "dashboard", "compliance", "regions", "governance", "audit", "health",
+    ]),
+    "VIEWER": frozenset([
+        "dashboard", "audit",
+    ]),
+}
+
+
 class CustomerProfileStatus(models.TextChoices):
     ACTIVE = "ACTIVE", "Active"
     INACTIVE = "INACTIVE", "Inactive"

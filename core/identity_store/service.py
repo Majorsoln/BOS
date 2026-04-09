@@ -1098,3 +1098,100 @@ def get_customer_profile(
             f"Customer '{canonical_cid}' not found for business '{business.business_id}'."
         )
     return _serialize_customer_profile(profile)
+
+
+# ─────────────────────────────────────────────────────────────
+#  PLATFORM ADMIN USERS
+# ─────────────────────────────────────────────────────────────
+
+def _serialize_platform_admin(admin) -> dict[str, Any]:
+    from core.identity_store.models import PLATFORM_ROLE_PERMISSIONS
+    return {
+        "admin_id": str(admin.admin_id),
+        "name": admin.name,
+        "email": admin.email,
+        "role": admin.role,
+        "status": admin.status,
+        "permissions": sorted(PLATFORM_ROLE_PERMISSIONS.get(admin.role, frozenset())),
+        "created_at": admin.created_at.isoformat() if admin.created_at else None,
+        "last_active_at": admin.last_active_at.isoformat() if admin.last_active_at else None,
+    }
+
+
+def add_platform_admin(
+    *,
+    name: str,
+    email: str,
+    role: str,
+    created_by: uuid.UUID | str | None = None,
+) -> dict[str, Any]:
+    """Create a new platform admin user."""
+    from core.identity_store.models import PlatformAdminUser, PlatformAdminRole
+    if role not in PlatformAdminRole.values:
+        raise ValueError(f"Invalid role '{role}'. Valid: {PlatformAdminRole.values}")
+    admin = PlatformAdminUser.objects.create(
+        admin_id=uuid.uuid4(),
+        name=name,
+        email=email,
+        role=role,
+        created_by=uuid.UUID(str(created_by)) if created_by else None,
+    )
+    return _serialize_platform_admin(admin)
+
+
+def update_platform_admin_role(
+    *,
+    admin_id: str,
+    role: str,
+) -> dict[str, Any]:
+    """Change a platform admin's role."""
+    from core.identity_store.models import PlatformAdminUser, PlatformAdminRole
+    if role not in PlatformAdminRole.values:
+        raise ValueError(f"Invalid role '{role}'. Valid: {PlatformAdminRole.values}")
+    try:
+        admin = PlatformAdminUser.objects.get(admin_id=uuid.UUID(admin_id))
+    except PlatformAdminUser.DoesNotExist:
+        raise ValueError(f"Platform admin '{admin_id}' not found.")
+    admin.role = role
+    admin.save(update_fields=["role", "updated_at"])
+    return _serialize_platform_admin(admin)
+
+
+def suspend_platform_admin(admin_id: str) -> dict[str, Any]:
+    """Suspend a platform admin."""
+    from core.identity_store.models import PlatformAdminUser, PlatformAdminStatus
+    try:
+        admin = PlatformAdminUser.objects.get(admin_id=uuid.UUID(admin_id))
+    except PlatformAdminUser.DoesNotExist:
+        raise ValueError(f"Platform admin '{admin_id}' not found.")
+    admin.status = PlatformAdminStatus.SUSPENDED
+    admin.save(update_fields=["status", "updated_at"])
+    return _serialize_platform_admin(admin)
+
+
+def reinstate_platform_admin(admin_id: str) -> dict[str, Any]:
+    """Reinstate a suspended platform admin."""
+    from core.identity_store.models import PlatformAdminUser, PlatformAdminStatus
+    try:
+        admin = PlatformAdminUser.objects.get(admin_id=uuid.UUID(admin_id))
+    except PlatformAdminUser.DoesNotExist:
+        raise ValueError(f"Platform admin '{admin_id}' not found.")
+    admin.status = PlatformAdminStatus.ACTIVE
+    admin.save(update_fields=["status", "updated_at"])
+    return _serialize_platform_admin(admin)
+
+
+def list_platform_admins(role: str | None = None) -> tuple[dict[str, Any], ...]:
+    """List all platform admins, optionally filtered by role."""
+    from core.identity_store.models import PlatformAdminUser
+    qs = PlatformAdminUser.objects.all()
+    if role:
+        qs = qs.filter(role=role)
+    return tuple(_serialize_platform_admin(a) for a in qs)
+
+
+def get_platform_admin_by_email(email: str) -> dict[str, Any] | None:
+    """Lookup a platform admin by email (used for session/auth)."""
+    from core.identity_store.models import PlatformAdminUser
+    admin = PlatformAdminUser.objects.filter(email=email, status="ACTIVE").first()
+    return _serialize_platform_admin(admin) if admin else None

@@ -7,6 +7,7 @@ import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui";
 import { getPromos, getSubscriptions, getTrials, getLedgerSummary } from "@/lib/api/saas";
 import { getAgents, getAgentPayouts } from "@/lib/api/agents";
+import { getRegionsRollup, getRemittanceOverdue } from "@/lib/api/platform";
 import {
   Users,
   Clock,
@@ -29,6 +30,7 @@ import {
   PiggyBank,
   CheckCircle,
   Settings,
+  Banknote,
 } from "lucide-react";
 
 export default function PlatformDashboardPage() {
@@ -40,6 +42,8 @@ export default function PlatformDashboardPage() {
   const now = new Date();
   const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const ledgerSummary = useQuery({ queryKey: ["saas", "ledger", "summary", currentPeriod], queryFn: () => getLedgerSummary(currentPeriod) });
+  const regionsRollup = useQuery({ queryKey: ["platform", "regions", "rollup", currentPeriod], queryFn: () => getRegionsRollup(currentPeriod) });
+  const remittanceOverdue = useQuery({ queryKey: ["platform", "remittance", "overdue"], queryFn: () => getRemittanceOverdue(3) });
 
   const activePromos = promos.data?.data?.filter((p: { status: string }) => p.status === "ACTIVE")?.length ?? 0;
   const allAgents = agents.data?.data ?? [];
@@ -65,6 +69,21 @@ export default function PlatformDashboardPage() {
   const summary = ledgerSummary.data?.data as Record<string, unknown> | undefined;
   const monthlyGross = (summary?.total_gross as number) ?? 0;
   const platformShare = (summary?.total_platform_share as number) ?? 0;
+
+  type RegionRow = {
+    region_code: string; region_name: string; currency: string;
+    active_rlas: number; total_tenants: number; monthly_revenue: number;
+    converted_trials: number; period: string;
+  };
+  const regionRows: RegionRow[] = regionsRollup.data?.data ?? [];
+
+  type OverdueRow = {
+    agent_id: string; agent_name: string; region_codes: string[];
+    overdue_entries: number; total_platform_share_overdue: number;
+    currency: string; days_overdue: number;
+  };
+  const overdueRows: OverdueRow[] = remittanceOverdue.data?.data ?? [];
+  const overdueCount = remittanceOverdue.data?.count ?? 0;
 
   return (
     <div>
@@ -154,6 +173,89 @@ export default function PlatformDashboardPage() {
           )}
         />
       </div>
+
+      {/* ── Remittance Overdue Alert ─────────────────────────── */}
+      {overdueCount > 0 && (
+        <Card className="mt-4 border-red-200 dark:border-red-800">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Banknote className="h-5 w-5 text-red-600" />
+              <CardTitle className="text-sm text-red-700 dark:text-red-400">
+                {overdueCount} RLA{overdueCount > 1 ? "s" : ""} with Overdue Platform Share Remittance
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-red-100 dark:border-red-900">
+                    <th className="px-4 py-2 text-left text-xs font-medium text-red-600">RLA</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-red-600">Region</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-red-600">Amount Due</th>
+                    <th className="px-4 py-2 text-center text-xs font-medium text-red-600">Days Overdue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overdueRows.slice(0, 5).map((r) => (
+                    <tr key={r.agent_id} className="border-b border-red-50 last:border-0 dark:border-red-950">
+                      <td className="px-4 py-2 font-medium">{r.agent_name}</td>
+                      <td className="px-4 py-2 text-xs text-bos-silver-dark">{r.region_codes.join(", ") || "—"}</td>
+                      <td className="px-4 py-2 text-right font-mono text-red-600">
+                        {r.currency} {r.total_platform_share_overdue.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-2 text-center">
+                        <Badge variant="destructive">{r.days_overdue}d</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {overdueCount > 5 && (
+              <div className="px-4 py-2 text-xs text-red-600">
+                +{overdueCount - 5} more overdue remittances —{" "}
+                <Link href="/platform/finance/approvals" className="underline">View all</Link>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Regional Breakdown ───────────────────────────────── */}
+      {regionRows.length > 0 && (
+        <>
+          <h2 className="mt-8 mb-4 text-lg font-semibold">Regional Performance — {currentPeriod}</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {regionRows.map((r) => (
+              <Link key={r.region_code} href={`/platform/regions/${r.region_code}`}>
+                <Card className="group cursor-pointer transition-shadow hover:shadow-md">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-4 w-4 text-bos-purple" />
+                          <span className="font-semibold text-sm">{r.region_name}</span>
+                          <Badge variant="outline" className="font-mono text-xs">{r.region_code}</Badge>
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-bos-silver-dark">
+                          <span>{r.active_rlas} RLA{r.active_rlas !== 1 ? "s" : ""}</span>
+                          <span>{r.total_tenants} tenants</span>
+                          <span>{r.converted_trials} conversions</span>
+                          <span className="text-green-600 font-medium">
+                            {r.currency} {r.monthly_revenue.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                      <ArrowRight className="mt-1 h-4 w-4 text-bos-silver opacity-0 transition-opacity group-hover:opacity-100" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Agent Management */}
       <h2 className="mt-8 mb-4 text-lg font-semibold">Agent Management</h2>

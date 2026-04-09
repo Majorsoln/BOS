@@ -5961,3 +5961,226 @@ def _serialize_ledger_entry(entry):
         "period": entry.period,
         "notes": entry.notes,
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PLATFORM ADMIN MANAGEMENT
+# ═══════════════════════════════════════════════════════════════
+
+@csrf_exempt
+def platform_admins_list_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/admins — list all platform admin users."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    from core.identity_store.service import list_platform_admins
+    role = request.GET.get("role")
+    admins = list_platform_admins(role=role or None)
+    return JsonResponse({"status": "ok", "data": list(admins)})
+
+
+@csrf_exempt
+def platform_admin_add_view(request: HttpRequest) -> JsonResponse:
+    """POST /platform/admins/add — add a new platform admin."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        name = body["name"]
+        email = body["email"]
+        role = body["role"]
+        created_by = body.get("created_by")
+    except (KeyError, ValueError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    from core.identity_store.service import add_platform_admin
+    try:
+        admin = add_platform_admin(name=name, email=email, role=role, created_by=created_by)
+    except ValueError as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    return JsonResponse({"status": "ok", "data": admin})
+
+
+@csrf_exempt
+def platform_admin_update_role_view(request: HttpRequest) -> JsonResponse:
+    """POST /platform/admins/update-role — change a platform admin's role."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        admin_id = body["admin_id"]
+        role = body["role"]
+    except (KeyError, ValueError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    from core.identity_store.service import update_platform_admin_role
+    try:
+        admin = update_platform_admin_role(admin_id=admin_id, role=role)
+    except ValueError as exc:
+        return _json_error("NOT_FOUND", str(exc), status=404)
+    return JsonResponse({"status": "ok", "data": admin})
+
+
+@csrf_exempt
+def platform_admin_suspend_view(request: HttpRequest) -> JsonResponse:
+    """POST /platform/admins/suspend — suspend a platform admin."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        admin_id = body["admin_id"]
+    except (KeyError, ValueError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    from core.identity_store.service import suspend_platform_admin
+    try:
+        admin = suspend_platform_admin(admin_id)
+    except ValueError as exc:
+        return _json_error("NOT_FOUND", str(exc), status=404)
+    return JsonResponse({"status": "ok", "data": admin})
+
+
+@csrf_exempt
+def platform_admin_reinstate_view(request: HttpRequest) -> JsonResponse:
+    """POST /platform/admins/reinstate — reinstate a suspended platform admin."""
+    if request.method != "POST":
+        return _method_not_allowed()
+    try:
+        body = _parse_json_body(request)
+        admin_id = body["admin_id"]
+    except (KeyError, ValueError) as exc:
+        return _json_error("INVALID_REQUEST", str(exc), status=400)
+    from core.identity_store.service import reinstate_platform_admin
+    try:
+        admin = reinstate_platform_admin(admin_id)
+    except ValueError as exc:
+        return _json_error("NOT_FOUND", str(exc), status=404)
+    return JsonResponse({"status": "ok", "data": admin})
+
+
+@csrf_exempt
+def platform_me_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/me — identify the current platform admin from API key header.
+    In production this resolves from session/JWT. For now, accepts ?email= for demo."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    email = request.GET.get("email", "")
+    if not email:
+        # Default to SUPER_ADMIN for demo/dev until auth is wired
+        return JsonResponse({"status": "ok", "data": {
+            "admin_id": "00000000-0000-0000-0000-000000000001",
+            "name": "Platform Admin",
+            "email": "admin@bos.platform",
+            "role": "SUPER_ADMIN",
+            "status": "ACTIVE",
+            "permissions": [
+                "dashboard", "agents", "finance", "pricing", "rates",
+                "subscriptions", "trials", "promotions", "regions", "compliance",
+                "audit", "health", "tenants", "admins", "governance",
+            ],
+        }})
+    from core.identity_store.service import get_platform_admin_by_email
+    admin = get_platform_admin_by_email(email)
+    if admin is None:
+        return _json_error("NOT_FOUND", f"No active platform admin with email '{email}'.", status=404)
+    return JsonResponse({"status": "ok", "data": admin})
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PLATFORM REGIONAL ROLLUP
+# ═══════════════════════════════════════════════════════════════
+
+@csrf_exempt
+def platform_regions_rollup_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/regions/rollup — all active regions with key metrics in one call.
+    Aggregates: tenant count, active RLAs, monthly revenue, remittance status."""
+    if request.method != "GET":
+        return _method_not_allowed()
+    from core.saas.models import SaaSRegion
+    period = request.GET.get("period", "")
+    if not period:
+        from datetime import datetime, timezone
+        period = datetime.now(tz=timezone.utc).strftime("%Y-%m")
+
+    svcs = _get_saas_services()
+    try:
+        regions = SaaSRegion.objects.filter(status="ACTIVE").order_by("code")
+    except Exception:
+        return JsonResponse({"status": "ok", "data": []})
+
+    rollup = []
+    for region in regions:
+        try:
+            perf = svcs._reseller_service.get_regional_performance(region.code, period)
+        except Exception:
+            perf = {}
+        rollup.append({
+            "region_code": region.code,
+            "region_name": region.name,
+            "currency": region.currency,
+            "status": region.status,
+            "active_rlas": perf.get("active_resellers", 0),
+            "total_tenants": perf.get("total_tenants", 0),
+            "monthly_revenue": perf.get("total_revenue", 0),
+            "converted_trials": perf.get("converted_trials", 0),
+            "period": period,
+        })
+    return JsonResponse({"status": "ok", "data": rollup})
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PLATFORM REMITTANCE OVERSIGHT
+# ═══════════════════════════════════════════════════════════════
+
+@csrf_exempt
+def platform_remittance_overdue_view(request: HttpRequest) -> JsonResponse:
+    """GET /platform/remittance/overdue — list RLAs with overdue platform share remittances.
+    An RLA is overdue if they collected revenue > grace_period_days ago and have not remitted."""
+    if request.method != "GET":
+        return _method_not_allowed()
+
+    from core.saas.models import SaaSAgent
+    from datetime import datetime, timezone, timedelta
+
+    grace_days = int(request.GET.get("grace_days", 3))
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=grace_days)
+
+    overdue = []
+    try:
+        rlas = SaaSAgent.objects.filter(
+            agent_type="REGION_LICENSE_AGENT",
+            status__in=["ACTIVE", "PROBATION"],
+        )
+        for rla in rlas:
+            # Check ledger: any RECORDED entries (not yet SETTLED) older than grace period
+            from core.saas.models import SaaSLedgerEntry
+            pending_entries = SaaSLedgerEntry.objects.filter(
+                rla_id=rla.agent_id,
+                status="RECORDED",
+                created_at__lt=cutoff,
+            )
+            if not pending_entries.exists():
+                continue
+            total_overdue = sum(
+                float(e.platform_share or 0) for e in pending_entries
+            )
+            oldest = pending_entries.order_by("created_at").first()
+            overdue.append({
+                "agent_id": str(rla.agent_id),
+                "agent_name": rla.agent_name,
+                "region_codes": rla.region_codes or [],
+                "overdue_entries": pending_entries.count(),
+                "total_platform_share_overdue": total_overdue,
+                "currency": rla.currency or "KES",
+                "oldest_entry_at": oldest.created_at.isoformat() if oldest else None,
+                "days_overdue": (
+                    datetime.now(tz=timezone.utc) - oldest.created_at
+                ).days if oldest else 0,
+            })
+    except Exception:
+        # Models may not be fully populated in dev — return empty gracefully
+        pass
+
+    overdue.sort(key=lambda x: x["days_overdue"], reverse=True)
+    return JsonResponse({
+        "status": "ok",
+        "data": overdue,
+        "count": len(overdue),
+        "grace_days": grace_days,
+    })

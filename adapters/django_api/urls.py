@@ -222,4 +222,15 @@ urlpatterns = [
     path("saas/ledger/rules", views.saas_ledger_rules_view),
     path("saas/ledger/rules/set", views.saas_ledger_rules_set_view),
     path("saas/ledger/operating-laws", views.saas_ledger_operating_laws_view),
+    # ── Platform Admin Management ────────────────────────────────────────────
+    path("platform/me", views.platform_me_view),
+    path("platform/admins", views.platform_admins_list_view),
+    path("platform/admins/add", views.platform_admin_add_view),
+    path("platform/admins/update-role", views.platform_admin_update_role_view),
+    path("platform/admins/suspend", views.platform_admin_suspend_view),
+    path("platform/admins/reinstate", views.platform_admin_reinstate_view),
+    # ── Platform Regional Rollup ─────────────────────────────────────────────
+    path("platform/regions/rollup", views.platform_regions_rollup_view),
+    # ── Platform Remittance Oversight ────────────────────────────────────────
+    path("platform/remittance/overdue", views.platform_remittance_overdue_view),
 ]
