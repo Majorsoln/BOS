@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/stores/ui-store";
+import { useAgentAuthStore } from "@/stores/agent-auth-store";
 import {
   LayoutDashboard,
   UserPlus,
@@ -117,11 +118,15 @@ const AGENT_NAV: NavGroup[] = [
 export function AgentSidebar() {
   const pathname = usePathname();
   const { sidebarOpen } = useUIStore();
-
-  // TODO: Get from auth context. For now, default to RLA to show all sections.
-  const isRLA = true;
+  const { isRLA, agentName, regionCode, contractStatus } = useAgentAuthStore();
 
   if (!sidebarOpen) return null;
+
+  const portalLabel = isRLA ? "RLA Portal" : "Remote Agent";
+  const contractWarning =
+    contractStatus === "TERMINATED_REVERSIBLE" ||
+    contractStatus === "TERMINATED_PERMANENT" ||
+    contractStatus === "SUSPENDED";
 
   return (
     <aside className="flex h-full w-60 flex-col border-r border-bos-silver/30 bg-white dark:border-bos-silver/20 dark:bg-neutral-950">
@@ -133,10 +138,39 @@ export function AgentSidebar() {
         <div className="flex flex-col">
           <span className="text-sm font-bold leading-tight tracking-tight">BOS</span>
           <span className="text-[10px] font-medium uppercase tracking-widest text-bos-gold">
-            {isRLA ? "RLA Portal" : "Remote Agent"}
+            {portalLabel}
           </span>
         </div>
       </div>
+
+      {/* Agent identity badge */}
+      {agentName && (
+        <div className="border-b border-bos-silver/20 px-4 py-2">
+          <p className="truncate text-xs font-medium text-neutral-700 dark:text-neutral-300">{agentName}</p>
+          {regionCode && (
+            <span className="inline-block rounded bg-bos-purple-light px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-bos-purple">
+              Region {regionCode}
+            </span>
+          )}
+          {contractStatus === "REDUCED_COMMISSION" && (
+            <span className="ml-1 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+              Reduced Rate
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Contract warning banner */}
+      {contractWarning && (
+        <div className="border-b border-red-200 bg-red-50 px-4 py-2 dark:border-red-900 dark:bg-red-950">
+          <p className="text-[11px] font-semibold text-red-700 dark:text-red-400">
+            {contractStatus === "SUSPENDED" ? "Account Suspended" : "Contract Terminated"}
+          </p>
+          <p className="text-[10px] text-red-600 dark:text-red-500">
+            Contact Platform Admin to resolve.
+          </p>
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">

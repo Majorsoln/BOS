@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from django.http import HttpRequest, JsonResponse
@@ -6184,3 +6184,186 @@ def platform_remittance_overdue_view(request: HttpRequest) -> JsonResponse:
         "count": len(overdue),
         "grace_days": grace_days,
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# AGENT CONTRACT ENDPOINTS — Platform-RLA Franchise Agreement Management
+# BOS Doctrine: Platform = Franchisor, RLA = Franchisee with guided autonomy.
+# ═══════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+def agent_contract_generate_view(request: HttpRequest) -> JsonResponse:
+    """
+    POST /saas/agents/contract/generate
+    Platform generates a franchise contract for an RLA (starts as DRAFT).
+    Body: { agent_id, agent_name, region_code, commission_rate,
+            max_platform_discount_pct, max_trial_days,
+            contract_duration_months?, monthly_tenant_target?,
+            monthly_revenue_target?, notes? }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        body = json.loads(request.body)
+        from core.saas.contracts import generate_agent_contract
+        contract = generate_agent_contract(
+            agent_id=body["agent_id"],
+            agent_name=body["agent_name"],
+            region_code=body["region_code"],
+            commission_rate=float(body["commission_rate"]),
+            max_platform_discount_pct=int(body.get("max_platform_discount_pct", 15)),
+            max_trial_days=int(body.get("max_trial_days", 180)),
+            contract_duration_months=int(body.get("contract_duration_months", 24)),
+            monthly_tenant_target=int(body.get("monthly_tenant_target", 0)),
+            monthly_revenue_target=int(body.get("monthly_revenue_target", 0)),
+            generated_by=body.get("generated_by"),
+            notes=body.get("notes", ""),
+        )
+        return JsonResponse({"status": "ok", "data": contract}, status=201)
+    except (ValueError, KeyError) as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+
+@csrf_exempt
+def agent_contract_sign_view(request: HttpRequest) -> JsonResponse:
+    """
+    POST /saas/agents/contract/sign
+    RLA acknowledges and signs the contract (DRAFT → ACTIVE).
+    Body: { contract_id, signed_by_name }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        body = json.loads(request.body)
+        from core.saas.contracts import sign_agent_contract
+        contract = sign_agent_contract(
+            contract_id=body["contract_id"],
+            signed_by_name=body["signed_by_name"],
+        )
+        return JsonResponse({"status": "ok", "data": contract})
+    except (ValueError, KeyError) as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+
+@csrf_exempt
+def agent_contract_get_view(request: HttpRequest) -> JsonResponse:
+    """
+    GET /saas/agents/contract?agent_id=<uuid>
+    Retrieve the current contract for an RLA.
+    """
+    agent_id = request.GET.get("agent_id", "")
+    if not agent_id:
+        return JsonResponse({"error": "agent_id required"}, status=400)
+    from core.saas.contracts import get_agent_contract
+    contract = get_agent_contract(agent_id)
+    if not contract:
+        return JsonResponse({"status": "ok", "data": None})
+    return JsonResponse({"status": "ok", "data": contract})
+
+
+@csrf_exempt
+def agent_terminate_reversible_view(request: HttpRequest) -> JsonResponse:
+    """
+    POST /saas/agents/terminate-reversible
+    Reversible termination — violation that can be remedied.
+    Region enters PENDING_RLA state; tenants keep service, billing paused.
+    Body: { agent_id, reason }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        body = json.loads(request.body)
+        from core.saas.contracts import terminate_agent_contract_reversible
+        contract = terminate_agent_contract_reversible(
+            agent_id=body["agent_id"],
+            reason=body.get("reason", ""),
+            terminated_by=body.get("terminated_by"),
+        )
+        return JsonResponse({"status": "ok", "data": contract})
+    except (ValueError, KeyError) as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+
+@csrf_exempt
+def agent_terminate_permanent_view(request: HttpRequest) -> JsonResponse:
+    """
+    POST /saas/agents/terminate-permanent
+    Permanent termination — serious breach, licence revoked forever.
+    This RLA can NEVER be reinstated under any circumstances.
+    Body: { agent_id, reason }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        body = json.loads(request.body)
+        from core.saas.contracts import terminate_agent_contract_permanent
+        contract = terminate_agent_contract_permanent(
+            agent_id=body["agent_id"],
+            reason=body.get("reason", ""),
+            terminated_by=body.get("terminated_by"),
+        )
+        return JsonResponse({"status": "ok", "data": contract})
+    except (ValueError, KeyError) as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+
+@csrf_exempt
+def agent_reinstate_full_view(request: HttpRequest) -> JsonResponse:
+    """
+    POST /saas/agents/reinstate-full
+    Full reinstatement after REVERSIBLE termination — restores original terms.
+    Region exits PENDING_RLA state; normal billing resumes.
+    Body: { agent_id, notes? }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        body = json.loads(request.body)
+        from core.saas.contracts import reinstate_agent_contract_full
+        contract = reinstate_agent_contract_full(
+            agent_id=body["agent_id"],
+            reinstated_by=body.get("reinstated_by"),
+            notes=body.get("notes", ""),
+        )
+        return JsonResponse({"status": "ok", "data": contract})
+    except (ValueError, KeyError) as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+
+@csrf_exempt
+def agent_reinstate_reduced_view(request: HttpRequest) -> JsonResponse:
+    """
+    POST /saas/agents/reinstate-reduced
+    Reduced-commission reinstatement — RLA reinstated under lower share for
+    a fixed term. After term expires, full rates resume.
+    Body: { agent_id, reduced_commission_rate, reduced_commission_term_months, reason? }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        body = json.loads(request.body)
+        from core.saas.contracts import reinstate_agent_contract_reduced
+        contract = reinstate_agent_contract_reduced(
+            agent_id=body["agent_id"],
+            reduced_commission_rate=float(body["reduced_commission_rate"]),
+            reduced_commission_term_months=int(body["reduced_commission_term_months"]),
+            reason=body.get("reason", ""),
+            reinstated_by=body.get("reinstated_by"),
+        )
+        return JsonResponse({"status": "ok", "data": contract})
+    except (ValueError, KeyError) as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+
+@csrf_exempt
+def agent_pending_regions_view(request: HttpRequest) -> JsonResponse:
+    """
+    GET /saas/regions/pending-rla
+    List regions currently without an active RLA (terminated, tenants on hold).
+    """
+    from core.saas.contracts import list_pending_regions
+    try:
+        regions = list_pending_regions()
+        return JsonResponse({"status": "ok", "data": regions, "count": len(regions)})
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)

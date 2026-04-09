@@ -1135,3 +1135,136 @@ class SaaSRegionalTarget(models.Model):
             f"Target {self.region_code}/{self.period}: "
             f"{self.target_tenant_count} tenants, {self.target_revenue} {self.currency}"
         )
+
+
+# ---------------------------------------------------------------------------
+# 22. AgentContractStatus / TerminationType — enums for RLA contracts
+# ---------------------------------------------------------------------------
+
+class AgentContractStatus(models.TextChoices):
+    DRAFT = "DRAFT", "Draft"
+    ACTIVE = "ACTIVE", "Active"
+    SUSPENDED = "SUSPENDED", "Suspended"
+    TERMINATED_REVERSIBLE = "TERMINATED_REVERSIBLE", "Terminated (Reversible)"
+    TERMINATED_PERMANENT = "TERMINATED_PERMANENT", "Terminated (Permanent)"
+    REDUCED_COMMISSION = "REDUCED_COMMISSION", "Reduced Commission (Reinstated)"
+    EXPIRED = "EXPIRED", "Expired"
+
+
+class TerminationType(models.TextChoices):
+    REVERSIBLE = "REVERSIBLE", "Reversible — can be reinstated to full terms"
+    PERMANENT = "PERMANENT", "Permanent — licence revoked, never reinstated"
+    REDUCED_COMMISSION = "REDUCED_COMMISSION", "Reduced Commission — reinstated at lower share under term"
+
+
+# ---------------------------------------------------------------------------
+# 23. AgentContract — Platform-generated RLA franchise agreement
+# ---------------------------------------------------------------------------
+# BOS Doctrine: Platform is Franchisor. RLA is Franchisee with guided autonomy.
+# Contract has HARDCODED terms (non-negotiable) and GENERATED terms
+# (commission rate, region, targets — set at appointment time).
+#
+# Three termination outcomes (franchisor doctrine):
+#   REVERSIBLE   — violation allows reinstatement to full terms
+#   PERMANENT    — serious breach; licence permanently revoked
+#   REDUCED      — reinstated but at reduced commission share under fixed term
+#
+# During any termination: tenants continue service without billing until
+# a new RLA is assigned to the region.
+# ---------------------------------------------------------------------------
+
+class AgentContract(models.Model):
+    contract_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Which agent this contract governs
+    agent_id = models.UUIDField(db_index=True)
+    agent_name = models.CharField(max_length=255, default="")
+    region_code = models.CharField(max_length=8)
+
+    # Contract lifecycle
+    status = models.CharField(
+        max_length=30,
+        choices=AgentContractStatus.choices,
+        default=AgentContractStatus.DRAFT,
+    )
+    version = models.IntegerField(default=1)
+
+    # Termination metadata (populated only when terminated)
+    termination_type = models.CharField(
+        max_length=20,
+        choices=TerminationType.choices,
+        blank=True,
+        default="",
+    )
+    termination_reason = models.TextField(blank=True, default="")
+    terminated_by = models.UUIDField(null=True, blank=True)
+    terminated_at = models.DateTimeField(null=True, blank=True)
+
+    # Hardcoded platform terms (non-negotiable — serialised as JSON)
+    # These cannot be changed by the RLA. They include:
+    #   - remittance_deadline_days: 5 (RLA must remit within 5 days of collection)
+    #   - tenant_continuity_guaranteed: true (tenants never lose access due to RLA termination)
+    #   - region_exclusivity: true (one active RLA per region)
+    #   - platform_audit_right: true (platform can audit RLA records at any time)
+    #   - compliance_ownership: true (RLA owns all regional compliance filings)
+    #   - sub_agent_requires_approval: true (RLA cannot appoint sub-agents without platform approval)
+    #   - price_bound_enforcement: true (RLA must price within platform min/max)
+    hardcoded_terms = models.JSONField(default=dict, blank=True)
+
+    # Generated / configurable terms (set at appointment — negotiated)
+    # Includes:
+    #   - commission_rate: e.g. 0.30 (30% market share)
+    #   - max_platform_discount_pct: e.g. 15
+    #   - max_trial_days: e.g. 180
+    #   - performance_targets: {monthly_tenant_target, monthly_revenue_target}
+    #   - contract_duration_months: e.g. 24
+    #   - reduced_commission_rate (only when status=REDUCED_COMMISSION)
+    generated_terms = models.JSONField(default=dict, blank=True)
+
+    # Reduced-commission reinstatement terms (populated only for REDUCED_COMMISSION outcome)
+    reduced_commission_rate = models.DecimalField(
+        max_digits=5, decimal_places=4, null=True, blank=True,
+        help_text="Commission rate during reduced-commission reinstatement period"
+    )
+    reduced_commission_term_months = models.IntegerField(
+        null=True, blank=True,
+        help_text="Number of months the reduced-commission term lasts"
+    )
+    reduced_commission_expires_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the reduced-commission term ends (normal rates resume)"
+    )
+
+    # Signing workflow
+    generated_at = models.DateTimeField(null=True, blank=True)
+    sent_to_agent_at = models.DateTimeField(null=True, blank=True)
+    signed_at = models.DateTimeField(null=True, blank=True)
+    signed_by_name = models.CharField(max_length=255, blank=True, default="")
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    # Tenant continuity tracking
+    # When RLA is terminated, this region enters PENDING_RLA state.
+    # Tenants continue service — no billing until new RLA assigned.
+    region_pending_rla_since = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Set when RLA terminated; cleared when new RLA takes over region"
+    )
+
+    # Audit
+    generated_by = models.UUIDField(null=True, blank=True)
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_agent_contract"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["agent_id"], name="idx_saas_contract_agent"),
+            models.Index(fields=["region_code"], name="idx_saas_contract_region"),
+            models.Index(fields=["status"], name="idx_saas_contract_status"),
+            models.Index(fields=["termination_type"], name="idx_saas_contract_term_type"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Contract {self.contract_id} | {self.region_code} | {self.status}"

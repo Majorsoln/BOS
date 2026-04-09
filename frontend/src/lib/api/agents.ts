@@ -372,3 +372,73 @@ export async function setMyPrice(data: {
   const res = await api.post("/agent/pricing/set", data);
   return res.data;
 }
+
+/* ── Agent Franchise Contracts ────────────────────────────── */
+
+export async function getAgentContract(agentId: string) {
+  const res = await api.get("/saas/agents/contract", { params: { agent_id: agentId } });
+  return res.data;
+}
+
+export async function generateAgentContract(data: {
+  agent_id: string;
+  agent_name: string;
+  region_code: string;
+  commission_rate: number;
+  max_platform_discount_pct?: number;
+  max_trial_days?: number;
+  contract_duration_months?: number;
+  monthly_tenant_target?: number;
+  monthly_revenue_target?: number;
+  notes?: string;
+}) {
+  const res = await api.post("/saas/agents/contract/generate", data);
+  return res.data;
+}
+
+export async function signAgentContract(data: {
+  contract_id: string;
+  signed_by_name: string;
+}) {
+  const res = await api.post("/saas/agents/contract/sign", data);
+  return res.data;
+}
+
+export async function terminateAgentReversible(data: {
+  agent_id: string;
+  reason: string;
+}) {
+  const res = await api.post("/saas/agents/terminate-reversible", data);
+  return res.data;
+}
+
+export async function terminateAgentPermanent(data: {
+  agent_id: string;
+  reason: string;
+}) {
+  const res = await api.post("/saas/agents/terminate-permanent", data);
+  return res.data;
+}
+
+export async function reinstateAgentFull(data: {
+  agent_id: string;
+  notes?: string;
+}) {
+  const res = await api.post("/saas/agents/reinstate-full", data);
+  return res.data;
+}
+
+export async function reinstateAgentReduced(data: {
+  agent_id: string;
+  reduced_commission_rate: number;
+  reduced_commission_term_months: number;
+  reason?: string;
+}) {
+  const res = await api.post("/saas/agents/reinstate-reduced", data);
+  return res.data;
+}
+
+export async function getPendingRlaRegions() {
+  const res = await api.get("/saas/regions/pending-rla");
+  return res.data;
+}

@@ -233,4 +233,14 @@ urlpatterns = [
     path("platform/regions/rollup", views.platform_regions_rollup_view),
     # ── Platform Remittance Oversight ────────────────────────────────────────
     path("platform/remittance/overdue", views.platform_remittance_overdue_view),
+    # ── Agent Contract (Franchise Agreement) ────────────────────────────────
+    path("saas/agents/contract/generate", views.agent_contract_generate_view),
+    path("saas/agents/contract/sign", views.agent_contract_sign_view),
+    path("saas/agents/contract", views.agent_contract_get_view),
+    path("saas/agents/terminate-reversible", views.agent_terminate_reversible_view),
+    path("saas/agents/terminate-permanent", views.agent_terminate_permanent_view),
+    path("saas/agents/reinstate-full", views.agent_reinstate_full_view),
+    path("saas/agents/reinstate-reduced", views.agent_reinstate_reduced_view),
+    # ── Pending-RLA Regions (tenants on continuity hold) ────────────────────
+    path("saas/regions/pending-rla", views.agent_pending_regions_view),
 ]
