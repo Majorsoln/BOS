@@ -13,7 +13,7 @@ import uuid
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("saas", "0003_agentcontract"),
+        ("core_saas", "0003_agentcontract"),
     ]
 
     operations = [

@@ -15,7 +15,7 @@ import uuid
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("saas", "0002_service_pricing"),
+        ("core_saas", "0002_service_pricing"),
     ]
 
     operations = [
