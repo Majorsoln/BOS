@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { PlatformShell } from "@/components/layout/platform-shell";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared/page-header";
 import { FormDialog } from "@/components/shared/form-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -116,8 +116,6 @@ export default function CompliancePage() {
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
 
   // ── Packs tab state ──
-  const [packs, setPacks] = useState<CompliancePack[]>([]);
-  const [packsLoading, setPacksLoading] = useState(false);
   const [packRegion, setPackRegion] = useState("");
   const [showPublish, setShowPublish] = useState(false);
   const [publishData, setPublishData] = useState({
@@ -152,8 +150,6 @@ export default function CompliancePage() {
   const [publishing, setPublishing] = useState(false);
 
   // ── Policies tab state ──
-  const [policies, setPolicies] = useState<CountryPolicyType[]>([]);
-  const [policiesLoading, setPoliciesLoading] = useState(false);
   const [showAddPolicy, setShowAddPolicy] = useState(false);
   const [policyData, setPolicyData] = useState({
     country_code: "", country_name: "",
@@ -189,36 +185,19 @@ export default function CompliancePage() {
   const [reviewReason, setReviewReason] = useState("");
   const [reviewing, setReviewing] = useState(false);
 
-  // ── Load packs ──
-  async function loadPacks() {
-    setPacksLoading(true);
-    try {
-      const res = await listCompliancePacks(packRegion || undefined);
-      setPacks(res.packs || []);
-    } catch {
-      setToast({ message: "Failed to load compliance packs", variant: "error" });
-    } finally {
-      setPacksLoading(false);
-    }
-  }
+  const qc = useQueryClient();
 
-  // ── Load policies ──
-  async function loadPolicies() {
-    setPoliciesLoading(true);
-    try {
-      const res = await listCountryPolicies();
-      setPolicies(res.policies || []);
-    } catch {
-      setToast({ message: "Failed to load country policies", variant: "error" });
-    } finally {
-      setPoliciesLoading(false);
-    }
-  }
+  const packsQuery = useQuery({
+    queryKey: ["saas", "compliance-packs", packRegion],
+    queryFn: () => listCompliancePacks(packRegion || undefined),
+  });
+  const packs: CompliancePack[] = packsQuery.data?.packs ?? [];
 
-  useEffect(() => {
-    if (tab === "packs") loadPacks();
-    if (tab === "policies") loadPolicies();
-  }, [tab]);
+  const policiesQuery = useQuery({
+    queryKey: ["saas", "country-policies"],
+    queryFn: listCountryPolicies,
+  });
+  const policies: CountryPolicyType[] = policiesQuery.data?.policies ?? [];
 
   // ── Publish pack ──
   async function handlePublish(e: React.FormEvent) {
@@ -292,7 +271,7 @@ export default function CompliancePage() {
       });
       setToast({ message: "Compliance pack published", variant: "success" });
       setShowPublish(false);
-      loadPacks();
+      qc.invalidateQueries({ queryKey: ["saas", "compliance-packs"] });
     } catch {
       setToast({ message: "Failed to publish pack", variant: "error" });
     } finally {
@@ -347,7 +326,7 @@ export default function CompliancePage() {
       });
       setToast({ message: `Policy for ${policyData.country_code} saved`, variant: "success" });
       setShowAddPolicy(false);
-      loadPolicies();
+      qc.invalidateQueries({ queryKey: ["saas", "country-policies"] });
     } catch {
       setToast({ message: "Failed to save policy", variant: "error" });
     } finally {
@@ -409,7 +388,7 @@ export default function CompliancePage() {
   }
 
   return (
-    <PlatformShell>
+    <div>
       <PageHeader title="Compliance Management" description="Compliance packs, country policies, and tenant verification" />
 
       {/* Tabs */}
@@ -443,13 +422,13 @@ export default function CompliancePage() {
                 <option key={r.code} value={r.code}>{r.code} — {r.name}</option>
               ))}
             </Select>
-            <Button size="sm" variant="outline" onClick={loadPacks}>Refresh</Button>
+            <Button size="sm" variant="outline" onClick={() => qc.invalidateQueries({ queryKey: ["saas", "compliance-packs"] })}>Refresh</Button>
             <Button size="sm" onClick={() => setShowPublish(true)}>Publish New Pack</Button>
           </div>
 
           <Card>
             <CardContent className="pt-6">
-              {packsLoading ? (
+              {packsQuery.isLoading ? (
                 <p className="text-sm text-neutral-400">Loading...</p>
               ) : packs.length === 0 ? (
                 <EmptyState title="No compliance packs" description="Publish a compliance pack for a region to get started" />
@@ -495,12 +474,12 @@ export default function CompliancePage() {
         <>
           <div className="mb-4 flex items-center gap-3">
             <Button size="sm" onClick={() => setShowAddPolicy(true)}>Add Country Policy</Button>
-            <Button size="sm" variant="outline" onClick={loadPolicies}>Refresh</Button>
+            <Button size="sm" variant="outline" onClick={() => qc.invalidateQueries({ queryKey: ["saas", "country-policies"] })}>Refresh</Button>
           </div>
 
           <Card>
             <CardContent className="pt-6">
-              {policiesLoading ? (
+              {policiesQuery.isLoading ? (
                 <p className="text-sm text-neutral-400">Loading...</p>
               ) : policies.length === 0 ? (
                 <EmptyState title="No country policies" description="Configure compliance policies per country" />
@@ -1223,6 +1202,6 @@ export default function CompliancePage() {
       {toast && (
         <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />
       )}
-    </PlatformShell>
+    </div>
   );
 }
