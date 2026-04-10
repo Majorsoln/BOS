@@ -1,9 +1,17 @@
 "use client";
 
+import { useEffect } from "react";
 import { AgentSidebar } from "./agent-sidebar";
 import { AgentTopbar } from "./agent-topbar";
+import { useAgentAuthStore } from "@/stores/agent-auth-store";
 
 export function AgentShell({ children }: { children: React.ReactNode }) {
+  const { hydrate } = useAgentAuthStore();
+
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+
   return (
     <div className="flex h-screen overflow-hidden">
       <AgentSidebar />

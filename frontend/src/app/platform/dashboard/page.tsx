@@ -6,31 +6,13 @@ import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui";
 import { getPromos, getSubscriptions, getTrials, getLedgerSummary } from "@/lib/api/saas";
-import { getAgents, getAgentPayouts } from "@/lib/api/agents";
+import { getAgents, getAgentPayouts, getPendingRlaRegions, listAgentHealthScores } from "@/lib/api/agents";
 import { getRegionsRollup, getRemittanceOverdue } from "@/lib/api/platform";
 import {
-  Users,
-  Clock,
-  UserCheck,
-  Tag,
-  Package,
-  TrendingUp,
-  ArrowRight,
-  DollarSign,
-  FileText,
-  Activity,
-  Shield,
-  AlertTriangle,
-  Scale,
-  MapPin,
-  ShieldCheck,
-  Briefcase,
-  BarChart3,
-  Eye,
-  PiggyBank,
-  CheckCircle,
-  Settings,
-  Banknote,
+  Users, Clock, UserCheck, Tag, Package, TrendingUp, ArrowRight,
+  DollarSign, FileText, Activity, Shield, AlertTriangle, Scale, MapPin,
+  ShieldCheck, Briefcase, BarChart3, Eye, PiggyBank, CheckCircle, Settings,
+  Banknote, XCircle, Ban,
 } from "lucide-react";
 
 export default function PlatformDashboardPage() {
@@ -44,6 +26,8 @@ export default function PlatformDashboardPage() {
   const ledgerSummary = useQuery({ queryKey: ["saas", "ledger", "summary", currentPeriod], queryFn: () => getLedgerSummary(currentPeriod) });
   const regionsRollup = useQuery({ queryKey: ["platform", "regions", "rollup", currentPeriod], queryFn: () => getRegionsRollup(currentPeriod) });
   const remittanceOverdue = useQuery({ queryKey: ["platform", "remittance", "overdue"], queryFn: () => getRemittanceOverdue(3) });
+  const pendingRla = useQuery({ queryKey: ["saas", "regions", "pending-rla"], queryFn: getPendingRlaRegions });
+  const healthScores = useQuery({ queryKey: ["saas", "agents", "health-scores", currentPeriod], queryFn: () => listAgentHealthScores({ period: currentPeriod }) });
 
   const activePromos = promos.data?.data?.filter((p: { status: string }) => p.status === "ACTIVE")?.length ?? 0;
   const allAgents = agents.data?.data ?? [];
@@ -84,6 +68,26 @@ export default function PlatformDashboardPage() {
   };
   const overdueRows: OverdueRow[] = remittanceOverdue.data?.data ?? [];
   const overdueCount = remittanceOverdue.data?.count ?? 0;
+
+  type PendingRlaRow = { region_code: string; agent_name: string; termination_type: string; pending_since: string };
+  const pendingRlaRows: PendingRlaRow[] = pendingRla.data?.data ?? [];
+
+  type HealthRow = {
+    agent_id: string; region_code: string; period: string;
+    total_score: number; grade: string;
+    remittance_score: number; growth_score: number; escalation_score: number; activity_score: number;
+    overdue_remittances: number; open_escalations: number;
+  };
+  const healthRows: HealthRow[] = healthScores.data?.data ?? [];
+  const criticalAgents = healthRows.filter((h) => h.grade === "RED" || h.grade === "BLACK");
+
+  const GRADE_STYLE: Record<string, string> = {
+    GREEN:  "bg-green-100 text-green-800",
+    AMBER:  "bg-amber-100 text-amber-800",
+    ORANGE: "bg-orange-100 text-orange-800",
+    RED:    "bg-red-100 text-red-800",
+    BLACK:  "bg-neutral-900 text-white",
+  };
 
   return (
     <div>
@@ -173,6 +177,116 @@ export default function PlatformDashboardPage() {
           )}
         />
       </div>
+
+      {/* ── C: Pending-RLA Regions Alert ─────────────────────── */}
+      {pendingRlaRows.length > 0 && (
+        <Card className="mt-4 border-red-300 bg-red-50/50 dark:border-red-900 dark:bg-red-950/30">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Ban className="h-5 w-5 text-red-600" />
+              <CardTitle className="text-sm text-red-800 dark:text-red-300">
+                {pendingRlaRows.length} Region{pendingRlaRows.length > 1 ? "s" : ""} Without Active RLA — Tenant Continuity Mode
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-red-200 dark:border-red-900">
+                    <th className="px-4 py-2 text-left text-xs font-medium text-red-700">Region</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-red-700">Former RLA</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-red-700">Termination</th>
+                    <th className="px-4 py-2 text-center text-xs font-medium text-red-700">Pending Since</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-red-700">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingRlaRows.map((r) => (
+                    <tr key={r.region_code} className="border-b border-red-100 last:border-0 dark:border-red-950">
+                      <td className="px-4 py-2">
+                        <Badge variant="purple">{r.region_code}</Badge>
+                      </td>
+                      <td className="px-4 py-2 text-xs text-bos-silver-dark">{r.agent_name}</td>
+                      <td className="px-4 py-2">
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${r.termination_type === "PERMANENT" ? "bg-red-200 text-red-800" : "bg-amber-100 text-amber-800"}`}>
+                          {r.termination_type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-center text-xs text-bos-silver-dark">
+                        {new Date(r.pending_since).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <Link href="/platform/agents/rla" className="text-xs text-bos-purple hover:underline">Appoint RLA →</Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="px-4 pb-3 pt-1 text-xs text-red-700 dark:text-red-400">
+              Tenants in these regions continue service without billing. Appoint a new RLA to resume normal operations.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── D: RLA Health Score — Critical Agents ───────────────── */}
+      {criticalAgents.length > 0 && (
+        <Card className="mt-4 border-orange-200 dark:border-orange-900">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <XCircle className="h-5 w-5 text-orange-600" />
+                <CardTitle className="text-sm text-orange-800 dark:text-orange-300">
+                  {criticalAgents.length} RLA{criticalAgents.length > 1 ? "s" : ""} Require Attention
+                </CardTitle>
+              </div>
+              <Link href="/platform/agents/rla" className="text-xs text-bos-purple hover:underline">View All →</Link>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-orange-100 dark:border-orange-900">
+                    <th className="px-4 py-2 text-left text-xs font-medium text-orange-700">Region</th>
+                    <th className="px-4 py-2 text-center text-xs font-medium text-orange-700">Health Score</th>
+                    <th className="px-4 py-2 text-center text-xs font-medium text-orange-700">Grade</th>
+                    <th className="px-4 py-2 text-center text-xs font-medium text-orange-700">Remittance</th>
+                    <th className="px-4 py-2 text-center text-xs font-medium text-orange-700">Escalations</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {criticalAgents.map((h) => (
+                    <tr key={h.agent_id} className="border-b border-orange-50 last:border-0 dark:border-orange-950">
+                      <td className="px-4 py-2">
+                        <Badge variant="purple">{h.region_code || "—"}</Badge>
+                      </td>
+                      <td className="px-4 py-2 text-center font-bold font-mono">{h.total_score}/100</td>
+                      <td className="px-4 py-2 text-center">
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${GRADE_STYLE[h.grade] ?? ""}`}>
+                          {h.grade}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-center text-xs">
+                        {h.overdue_remittances > 0
+                          ? <span className="text-red-600 font-semibold">{h.overdue_remittances} overdue</span>
+                          : <span className="text-green-600">✓</span>}
+                      </td>
+                      <td className="px-4 py-2 text-center text-xs">
+                        {h.open_escalations > 0
+                          ? <span className="text-orange-600 font-semibold">{h.open_escalations} open</span>
+                          : <span className="text-green-600">✓</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Remittance Overdue Alert ─────────────────────────── */}
       {overdueCount > 0 && (

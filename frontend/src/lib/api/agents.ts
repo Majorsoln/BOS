@@ -442,3 +442,65 @@ export async function getPendingRlaRegions() {
   const res = await api.get("/saas/regions/pending-rla");
   return res.data;
 }
+
+/* ── Price Bounds Governance (A) ─────────────────────────────── */
+
+export async function getPricingGovernanceBounds(params?: { region_code?: string; service_key?: string }) {
+  const res = await api.get("/saas/pricing-governance", { params });
+  return res.data;
+}
+
+export async function setPricingGovernanceBound(data: {
+  service_key: string;
+  region_code: string;
+  currency: string;
+  min_amount: number;
+  max_amount: number;
+}) {
+  const res = await api.post("/saas/pricing-governance/set", data);
+  return res.data;
+}
+
+export async function getMyPricingWithBounds(agentId: string) {
+  const res = await api.get("/agent/pricing", { params: { agent_id: agentId } });
+  return res.data;
+}
+
+export async function setMyPriceEnforced(data: {
+  agent_id: string;
+  service_key: string;
+  amount: number;
+  currency?: string;
+}) {
+  const res = await api.post("/agent/pricing/set", data);
+  return res.data;
+}
+
+/* ── Remittance Status (B) ───────────────────────────────────── */
+
+export async function getRemittanceStatus(agentId: string) {
+  const res = await api.get("/agent/remittance/status", { params: { agent_id: agentId } });
+  return res.data;
+}
+
+export async function approvePayout(data: { payout_id: string; agent_id?: string }) {
+  const res = await api.post("/saas/agents/payouts/approve-enforced", data);
+  return res.data;
+}
+
+/* ── Health Score (D) ────────────────────────────────────────── */
+
+export async function getAgentHealthScore(agentId: string, period?: string) {
+  const res = await api.get("/saas/agents/health-score", { params: { agent_id: agentId, period } });
+  return res.data;
+}
+
+export async function listAgentHealthScores(params?: { period?: string; grade?: string }) {
+  const res = await api.get("/saas/agents/health-scores", { params });
+  return res.data;
+}
+
+export async function refreshAgentHealthScore(data: { agent_id: string; period?: string }) {
+  const res = await api.post("/saas/agents/health-score/refresh", data);
+  return res.data;
+}

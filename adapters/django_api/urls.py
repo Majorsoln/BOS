@@ -243,4 +243,17 @@ urlpatterns = [
     path("saas/agents/reinstate-reduced", views.agent_reinstate_reduced_view),
     # ── Pending-RLA Regions (tenants on continuity hold) ────────────────────
     path("saas/regions/pending-rla", views.agent_pending_regions_view),
+    # ── A. Price Bounds Enforcement ──────────────────────────────────────────
+    path("saas/pricing-governance", views.saas_pricing_governance_view),
+    path("saas/pricing-governance/set", views.saas_pricing_governance_set_view),
+    path("agent/pricing", views.agent_pricing_view),
+    path("agent/pricing/set", views.agent_pricing_set_view),
+    # ── B. Remittance Enforcement ────────────────────────────────────────────
+    path("agent/remittance/status", views.agent_remittance_status_view),
+    # Override payout approval with remittance check
+    path("saas/agents/payouts/approve-enforced", views.saas_agents_approve_payout_with_remittance_check_view),
+    # ── D. RLA Health Score ──────────────────────────────────────────────────
+    path("saas/agents/health-score", views.agent_health_score_view),
+    path("saas/agents/health-scores", views.agent_health_scores_list_view),
+    path("saas/agents/health-score/refresh", views.agent_health_score_refresh_view),
 ]

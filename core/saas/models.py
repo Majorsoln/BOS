@@ -1268,3 +1268,149 @@ class AgentContract(models.Model):
 
     def __str__(self) -> str:
         return f"Contract {self.contract_id} | {self.region_code} | {self.status}"
+
+
+# ---------------------------------------------------------------------------
+# 24. SaaSPricingGovernanceBound — Platform sets min/max per service per region
+# ---------------------------------------------------------------------------
+# BOS Doctrine: Platform sets the guardrails. RLA operates within them.
+# Every service the RLA can sell has a min and max price set by Platform Admin.
+# If RLA tries to set a price outside this range, the API rejects it.
+# ---------------------------------------------------------------------------
+
+class SaaSPricingGovernanceBound(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    service_key = models.CharField(
+        max_length=128,
+        help_text="e.g. 'retail', 'restaurant', 'bos_duka_monthly'"
+    )
+    region_code = models.CharField(max_length=8)
+    currency = models.CharField(max_length=8)
+    min_amount = models.BigIntegerField(
+        default=0,
+        help_text="Minimum price in minor currency units (e.g. cents/fils)"
+    )
+    max_amount = models.BigIntegerField(
+        default=999_999_99,
+        help_text="Maximum price in minor currency units"
+    )
+    set_by = models.UUIDField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_pricing_governance"
+        ordering = ["region_code", "service_key"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["service_key", "region_code"],
+                name="uq_saas_pricegov_service_region",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["region_code"], name="idx_saas_pricegov_region"),
+            models.Index(fields=["service_key"], name="idx_saas_pricegov_service"),
+        ]
+
+    def __str__(self) -> str:
+        return f"PriceGov {self.service_key} {self.region_code}: {self.min_amount}–{self.max_amount} {self.currency}"
+
+
+# ---------------------------------------------------------------------------
+# 25. SaaSRlaServicePrice — RLA's actual price per service (within bounds)
+# ---------------------------------------------------------------------------
+
+class SaaSRlaServicePrice(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    agent_id = models.UUIDField(db_index=True)
+    region_code = models.CharField(max_length=8, default="")
+    service_key = models.CharField(max_length=128)
+    amount = models.BigIntegerField(help_text="Price in minor currency units")
+    currency = models.CharField(max_length=8)
+    set_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_rla_service_price"
+        ordering = ["agent_id", "service_key"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agent_id", "service_key"],
+                name="uq_saas_rla_price_agent_service",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["agent_id"], name="idx_saas_rlaprice_agent"),
+            models.Index(fields=["region_code"], name="idx_saas_rlaprice_region"),
+        ]
+
+    def __str__(self) -> str:
+        return f"RLAPrice agent={self.agent_id} {self.service_key}: {self.amount} {self.currency}"
+
+
+# ---------------------------------------------------------------------------
+# 26. SaaSRlaHealthScore — Composite health score for an RLA (0-100)
+# ---------------------------------------------------------------------------
+# Computed periodically; stored for historical trend.
+# Components:
+#   remittance_score   (40 pts) — on-time remittance compliance
+#   growth_score       (25 pts) — tenant growth vs target
+#   escalation_score   (20 pts) — open/unresolved escalation rate
+#   activity_score     (15 pts) — last_active_at recency
+# ---------------------------------------------------------------------------
+
+class RlaHealthGrade(models.TextChoices):
+    GREEN  = "GREEN",  "Green  — Healthy (80–100)"
+    AMBER  = "AMBER",  "Amber  — Watch (60–79)"
+    ORANGE = "ORANGE", "Orange — At Risk (40–59)"
+    RED    = "RED",    "Red    — Action Required (20–39)"
+    BLACK  = "BLACK",  "Black  — Critical / Suspended (0–19)"
+
+
+class SaaSRlaHealthScore(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    agent_id = models.UUIDField(db_index=True)
+    region_code = models.CharField(max_length=8, default="")
+    period = models.CharField(max_length=8, help_text="YYYY-MM")
+
+    total_score = models.IntegerField(default=0, help_text="0–100")
+    grade = models.CharField(
+        max_length=8,
+        choices=RlaHealthGrade.choices,
+        default=RlaHealthGrade.GREEN,
+    )
+
+    # Component scores
+    remittance_score = models.IntegerField(default=40, help_text="0–40")
+    growth_score     = models.IntegerField(default=25, help_text="0–25")
+    escalation_score = models.IntegerField(default=20, help_text="0–20")
+    activity_score   = models.IntegerField(default=15, help_text="0–15")
+
+    # Raw inputs used for scoring
+    overdue_remittances  = models.IntegerField(default=0)
+    active_tenants       = models.IntegerField(default=0)
+    tenant_target        = models.IntegerField(default=0)
+    open_escalations     = models.IntegerField(default=0)
+    days_since_active    = models.IntegerField(default=0)
+
+    computed_at = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "bos_saas_rla_health_score"
+        ordering = ["-period", "agent_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agent_id", "period"],
+                name="uq_saas_health_agent_period",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["agent_id"], name="idx_saas_health_agent"),
+            models.Index(fields=["grade"], name="idx_saas_health_grade"),
+            models.Index(fields=["period"], name="idx_saas_health_period"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Health {self.agent_id} {self.period}: {self.total_score} ({self.grade})"

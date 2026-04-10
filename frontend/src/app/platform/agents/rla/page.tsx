@@ -17,6 +17,7 @@ import {
   terminateAgentReversible, terminateAgentPermanent,
   reinstateAgentFull, reinstateAgentReduced,
   generateAgentContract, getPendingRlaRegions,
+  listAgentHealthScores,
 } from "@/lib/api/agents";
 import { REGIONS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
@@ -47,6 +48,13 @@ export default function RegionLicenseAgentsPage() {
   const pendingQuery = useQuery({
     queryKey: ["saas", "regions", "pending-rla"],
     queryFn: getPendingRlaRegions,
+  });
+
+  const now = new Date();
+  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const healthQuery = useQuery({
+    queryKey: ["saas", "agents", "health-scores", currentPeriod],
+    queryFn: () => listAgentHealthScores({ period: currentPeriod }),
   });
 
   const appointMut = useMutation({
@@ -136,6 +144,18 @@ export default function RegionLicenseAgentsPage() {
   const agentList: AgentRow[] = agentsQuery.data?.data ?? [];
   const pendingRegions: Array<{ region_code: string; pending_since: string; termination_type: string }> =
     pendingQuery.data?.data ?? [];
+
+  type HealthRow = { agent_id: string; region_code: string; total_score: number; grade: string; overdue_remittances: number; open_escalations: number };
+  const healthScores: HealthRow[] = healthQuery.data?.data ?? [];
+  const healthByRegion = Object.fromEntries(healthScores.map((h) => [h.region_code, h]));
+
+  const GRADE_DOT: Record<string, string> = {
+    GREEN:  "bg-green-500",
+    AMBER:  "bg-amber-400",
+    ORANGE: "bg-orange-500",
+    RED:    "bg-red-600",
+    BLACK:  "bg-neutral-900",
+  };
 
   const assignedRegions = new Set(
     agentList.filter((a) => a.status !== "TERMINATED_PERMANENT" && a.status !== "TERMINATED_REVERSIBLE").map((a) => a.territory).filter(Boolean)
@@ -305,6 +325,7 @@ export default function RegionLicenseAgentsPage() {
                   <TableHead className="text-center">Market Share</TableHead>
                   <TableHead className="text-center">Status</TableHead>
                   <TableHead className="text-right">Tenants</TableHead>
+                  <TableHead className="text-center">Health</TableHead>
                   <TableHead className="text-center">Contract</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -353,6 +374,17 @@ export default function RegionLicenseAgentsPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right font-mono">{a.active_tenant_count ?? 0}</TableCell>
+                      <TableCell className="text-center">
+                        {a.territory && healthByRegion[a.territory] ? (() => {
+                          const h = healthByRegion[a.territory];
+                          return (
+                            <div className="flex items-center justify-center gap-1.5" title={`Score: ${h.total_score}/100 | Remittance overdue: ${h.overdue_remittances} | Open escalations: ${h.open_escalations}`}>
+                              <span className={`inline-block h-2 w-2 rounded-full ${GRADE_DOT[h.grade] ?? "bg-neutral-400"}`} />
+                              <span className="font-mono text-xs">{h.total_score}</span>
+                            </div>
+                          );
+                        })() : <span className="text-xs text-bos-silver-dark">—</span>}
+                      </TableCell>
                       <TableCell className="text-center">
                         {a.contract_status ? (
                           <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${

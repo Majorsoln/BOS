@@ -9,23 +9,37 @@ import {
   Card, CardContent, CardHeader, CardTitle, Badge,
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui";
-import { getAgentDashboard, getMyTenants } from "@/lib/api/agents";
+import { getAgentDashboard, getMyTenants, getMyCommissions, getRemittanceStatus } from "@/lib/api/agents";
 import { getLedgerEntries } from "@/lib/api/saas";
+import { useAgentAuthStore } from "@/stores/agent-auth-store";
 import { formatDate } from "@/lib/utils";
 import Link from "next/link";
 import {
   Users, Clock, DollarSign, TrendingUp, UserPlus, BarChart3,
-  Percent, AlertCircle, Shield, ArrowRight, PiggyBank,
+  Percent, AlertCircle, Shield, ArrowRight,
   BookOpen, Send, UserCheck, Tag, FileCheck, Building2,
-  AlertTriangle, Eye,
+  AlertTriangle, MapPin,
 } from "lucide-react";
 
 export default function AgentDashboardPage() {
+  const { isRLA, agentId, regionCode } = useAgentAuthStore();
+
   const dash = useQuery({ queryKey: ["agent", "dashboard"], queryFn: getAgentDashboard });
   const tenants = useQuery({ queryKey: ["agent", "tenants"], queryFn: () => getMyTenants() });
+  const commissions = useQuery({
+    queryKey: ["agent", "commissions"],
+    queryFn: () => getMyCommissions(),
+    enabled: !isRLA,
+  });
+  const remittance = useQuery({
+    queryKey: ["agent", "remittance", agentId],
+    queryFn: () => getRemittanceStatus(agentId),
+    enabled: isRLA && !!agentId,
+  });
   const ledger = useQuery({
     queryKey: ["agent", "ledger", "recent"],
     queryFn: () => getLedgerEntries({ limit: 10 }),
+    enabled: isRLA,
   });
 
   const d = dash.data?.data ?? {};
@@ -40,7 +54,14 @@ export default function AgentDashboardPage() {
   };
   const recentLedger: LedgerEntry[] = ledger.data?.data ?? [];
 
-  // Expiring trials
+  type CommissionEntry = {
+    commission_id: string; tenant_name: string; amount: number;
+    currency: string; period: string; status: string; created_at: string;
+  };
+  const commissionList: CommissionEntry[] = commissions.data?.data ?? [];
+  const remittanceData = remittance.data?.data ?? {} as Record<string, unknown>;
+  const overdueCount = (remittanceData.overdue_count as number) ?? 0;
+
   const expiringTrials = tenantList.filter((t) => {
     if (t.status !== "TRIAL") return false;
     const expiresAt = t.trial_expires_at as string;
@@ -49,6 +70,160 @@ export default function AgentDashboardPage() {
     return daysLeft <= 14 && daysLeft >= 0;
   });
 
+  /* ── Remote Agent View ──────────────────────────────────────── */
+  if (!isRLA) {
+    return (
+      <div>
+        <PageHeader
+          title="My Dashboard"
+          description="Your tenants, commissions, and activity at a glance."
+        />
+
+        {/* Identity Banner */}
+        <Card className="mb-6 border-bos-purple/20 bg-bos-purple-light/30 dark:border-bos-purple/10 dark:bg-bos-purple-light/10">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <UserCheck className="mt-0.5 h-5 w-5 text-bos-purple" />
+              <div className="text-sm">
+                <p className="font-semibold text-bos-purple">BOS Remote Agent</p>
+                <p className="mt-1 text-neutral-600 dark:text-neutral-400">
+                  You operate under your Region License Agent. Tenants you onboard are attributed to you and commissions accrue automatically on each tenant payment.
+                </p>
+                {regionCode && (
+                  <p className="mt-1 flex items-center gap-1 text-xs text-bos-silver-dark">
+                    <MapPin className="h-3 w-3" /> Region: {regionCode}
+                  </p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* My Key Metrics */}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <StatCard
+            title="My Tenants"
+            value={tenantList.length}
+            icon={Users}
+            description={`${payingCount} paying, ${trialCount} trials`}
+          />
+          <StatCard
+            title="Active Tenants"
+            value={activeCount}
+            icon={UserPlus}
+          />
+          <StatCard
+            title="This Month"
+            value={d.month_commission ?? "—"}
+            icon={TrendingUp}
+            description="Commission earned"
+          />
+          <StatCard
+            title="Pending Payout"
+            value={d.pending_payout ?? "—"}
+            icon={DollarSign}
+            description="Accrued, not yet paid"
+          />
+        </div>
+
+        {/* Expiring Trials */}
+        {expiringTrials.length > 0 && (
+          <Card className="mt-4 border-amber-200 dark:border-amber-800">
+            <CardContent className="flex items-center gap-4 p-4">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <div className="flex-1 text-sm">
+                <Badge variant="gold">{expiringTrials.length}</Badge> trial{expiringTrials.length > 1 ? "s" : ""} expiring within 14 days — follow up to convert!
+              </div>
+              <Link href="/agent/trials" className="text-sm text-bos-purple hover:underline">View Trials</Link>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Quick Actions */}
+        <h2 className="mt-8 mb-4 text-lg font-semibold">Quick Actions</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <QuickAction title="Onboard Tenant" description="Register a new business on BOS" href="/agent/onboard" icon={UserPlus} />
+          <QuickAction title="My Commissions" description="Track your earnings per tenant" href="/agent/commissions" icon={TrendingUp} />
+          <QuickAction title="Create Promotion" description="Offer promos to attract tenants" href="/agent/promotions" icon={Tag} />
+          <QuickAction title="Profile & Contract" description="Your agent contract and settings" href="/agent/profile" icon={Building2} />
+        </div>
+
+        {/* Recent Commissions */}
+        <h2 className="mt-8 mb-4 text-lg font-semibold">Recent Commissions</h2>
+        <Card>
+          <CardContent className="p-0">
+            {commissionList.length === 0 ? (
+              <EmptyState title="No commissions yet" description="Commissions appear here when your tenants pay" />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tenant</TableHead>
+                    <TableHead>Period</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Currency</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead>Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {commissionList.slice(0, 8).map((c) => (
+                    <TableRow key={c.commission_id}>
+                      <TableCell className="text-sm font-medium">{c.tenant_name || "—"}</TableCell>
+                      <TableCell className="text-xs text-bos-silver-dark">{c.period}</TableCell>
+                      <TableCell className="text-right font-mono text-green-600">{(c.amount || 0).toLocaleString()}</TableCell>
+                      <TableCell className="text-xs">{c.currency}</TableCell>
+                      <TableCell className="text-center"><StatusBadge status={c.status} /></TableCell>
+                      <TableCell className="text-xs text-bos-silver-dark">{c.created_at ? formatDate(c.created_at) : "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* My Tenants Preview */}
+        <h2 className="mt-8 mb-4 text-lg font-semibold">My Tenants</h2>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm">Tenants I Manage</CardTitle>
+              <Link href="/agent/tenants" className="text-sm text-bos-purple hover:underline">View All &rarr;</Link>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {tenantList.length === 0 ? (
+              <EmptyState title="No tenants yet" description="Onboard your first tenant to get started" />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Business</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead>City</TableHead>
+                    <TableHead>Joined</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tenantList.slice(0, 5).map((t) => (
+                    <TableRow key={t.business_id as string}>
+                      <TableCell className="text-sm font-medium">{(t.business_name as string) || "—"}</TableCell>
+                      <TableCell className="text-center"><StatusBadge status={t.status as string} /></TableCell>
+                      <TableCell className="text-xs text-bos-silver-dark">{(t.city as string) || "—"}</TableCell>
+                      <TableCell className="text-xs text-bos-silver-dark">{t.created_at ? formatDate(t.created_at as string) : "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  /* ── RLA View (full regional dashboard) ────────────────────── */
   return (
     <div>
       <PageHeader
@@ -140,7 +315,21 @@ export default function AgentDashboardPage() {
         />
       </div>
 
-      {/* Alerts */}
+      {/* Remittance Overdue Alert */}
+      {overdueCount > 0 && (
+        <Card className="mt-4 border-red-200 dark:border-red-800">
+          <CardContent className="flex items-center gap-4 p-4">
+            <AlertCircle className="h-5 w-5 text-red-600" />
+            <div className="flex-1 text-sm">
+              <span className="font-semibold text-red-600">Remittance overdue!</span>{" "}
+              {overdueCount} overdue remittance{overdueCount > 1 ? "s" : ""} — payout approval is blocked until cleared.
+            </div>
+            <Link href="/agent/revenue/remittance" className="text-sm text-red-600 hover:underline font-medium">Remit Now</Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Expiring Trials Alert */}
       {expiringTrials.length > 0 && (
         <Card className="mt-4 border-amber-200 dark:border-amber-800">
           <CardContent className="flex items-center gap-4 p-4">
@@ -166,7 +355,7 @@ export default function AgentDashboardPage() {
         <QuickAction title="Profile & License" description="Your license, contract, settings" href="/agent/profile" icon={Building2} />
       </div>
 
-      {/* Recent Revenue Ledger Entries */}
+      {/* Recent Revenue Ledger */}
       <h2 className="mt-8 mb-4 text-lg font-semibold">Recent Revenue</h2>
       <Card>
         <CardHeader>

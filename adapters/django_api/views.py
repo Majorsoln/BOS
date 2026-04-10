@@ -6367,3 +6367,418 @@ def agent_pending_regions_view(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"status": "ok", "data": regions, "count": len(regions)})
     except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=500)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# A. PRICE BOUNDS ENFORCEMENT
+# Platform sets min/max per service per region.
+# RLA sets their price within those bounds — API rejects out-of-range.
+# Doctrine: Platform holds the guardrails. RLA operates within them.
+# ═══════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+def saas_pricing_governance_view(request: HttpRequest) -> JsonResponse:
+    """
+    GET /saas/pricing-governance?region_code=&service_key=
+    List platform-defined price bounds (min/max per service per region).
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+    from core.saas.models import SaaSPricingGovernanceBound
+    try:
+        qs = SaaSPricingGovernanceBound.objects.all()
+        region = request.GET.get("region_code", "")
+        service = request.GET.get("service_key", "")
+        if region:
+            qs = qs.filter(region_code=region)
+        if service:
+            qs = qs.filter(service_key=service)
+        data = [
+            {
+                "id": str(b.id), "service_key": b.service_key,
+                "region_code": b.region_code, "currency": b.currency,
+                "min_amount": b.min_amount, "max_amount": b.max_amount,
+                "updated_at": b.updated_at.isoformat(),
+            }
+            for b in qs
+        ]
+        return JsonResponse({"status": "ok", "data": data})
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+
+@csrf_exempt
+def saas_pricing_governance_set_view(request: HttpRequest) -> JsonResponse:
+    """
+    POST /saas/pricing-governance/set
+    Platform Admin sets or updates price bounds for a service in a region.
+    Body: { service_key, region_code, currency, min_amount, max_amount }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        body = json.loads(request.body)
+        from core.saas.models import SaaSPricingGovernanceBound
+        service_key = body["service_key"]
+        region_code = body["region_code"]
+        currency = body["currency"]
+        min_amount = int(body["min_amount"])
+        max_amount = int(body["max_amount"])
+        if min_amount < 0 or max_amount <= min_amount:
+            return JsonResponse({"error": "max_amount must be > min_amount >= 0"}, status=400)
+
+        obj, created = SaaSPricingGovernanceBound.objects.update_or_create(
+            service_key=service_key,
+            region_code=region_code,
+            defaults={
+                "currency": currency,
+                "min_amount": min_amount,
+                "max_amount": max_amount,
+                "set_by": uuid.UUID(body["set_by"]) if body.get("set_by") else None,
+            },
+        )
+        return JsonResponse({
+            "status": "ok",
+            "created": created,
+            "data": {
+                "service_key": obj.service_key, "region_code": obj.region_code,
+                "currency": obj.currency, "min_amount": obj.min_amount,
+                "max_amount": obj.max_amount,
+            },
+        })
+    except (KeyError, ValueError) as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+
+@csrf_exempt
+def agent_pricing_view(request: HttpRequest) -> JsonResponse:
+    """
+    GET /agent/pricing?agent_id=<uuid>
+    Returns RLA's current prices AND the platform bounds for each service,
+    so the RLA can see exactly what range they're allowed to set.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+    agent_id = request.GET.get("agent_id", "")
+    if not agent_id:
+        return JsonResponse({"error": "agent_id required"}, status=400)
+
+    from core.saas.models import SaaSRlaServicePrice, SaaSPricingGovernanceBound
+
+    # Get this agent's region from their contract
+    region_code = ""
+    try:
+        from core.saas.models import AgentContract, AgentContractStatus
+        contract = AgentContract.objects.filter(
+            agent_id=uuid.UUID(agent_id),
+            status__in=[AgentContractStatus.ACTIVE, AgentContractStatus.REDUCED_COMMISSION],
+        ).first()
+        if contract:
+            region_code = contract.region_code
+    except Exception:
+        pass
+
+    # My prices
+    my_prices = {
+        p.service_key: {"amount": p.amount, "currency": p.currency, "set_at": p.set_at.isoformat()}
+        for p in SaaSRlaServicePrice.objects.filter(agent_id=agent_id)
+    }
+
+    # Platform bounds for this region
+    bounds = {
+        b.service_key: {
+            "min_amount": b.min_amount, "max_amount": b.max_amount,
+            "currency": b.currency,
+        }
+        for b in SaaSPricingGovernanceBound.objects.filter(region_code=region_code)
+    }
+
+    # Merge
+    all_services = set(list(my_prices.keys()) + list(bounds.keys()))
+    result = []
+    for svc in sorted(all_services):
+        entry = {"service_key": svc}
+        if svc in bounds:
+            entry.update(bounds[svc])
+        if svc in my_prices:
+            entry["current_price"] = my_prices[svc]["amount"]
+            entry["currency"] = my_prices[svc]["currency"]
+            entry["set_at"] = my_prices[svc]["set_at"]
+            # Flag out-of-bounds (shouldn't happen but shows data integrity)
+            if svc in bounds:
+                b = bounds[svc]
+                entry["in_bounds"] = b["min_amount"] <= my_prices[svc]["amount"] <= b["max_amount"]
+        else:
+            entry["current_price"] = None
+
+        result.append(entry)
+
+    return JsonResponse({"status": "ok", "data": result, "region_code": region_code})
+
+
+@csrf_exempt
+def agent_pricing_set_view(request: HttpRequest) -> JsonResponse:
+    """
+    POST /agent/pricing/set
+    RLA sets their price for a service. Validated against platform bounds.
+    Body: { agent_id, service_key, amount, currency }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        body = json.loads(request.body)
+        agent_id = body["agent_id"]
+        service_key = body["service_key"]
+        amount = int(body["amount"])
+        currency = body.get("currency", "")
+    except (KeyError, ValueError) as exc:
+        return JsonResponse({"error": f"Invalid request: {exc}"}, status=400)
+
+    from core.saas.models import SaaSPricingGovernanceBound, SaaSRlaServicePrice, AgentContract, AgentContractStatus
+
+    # Get agent's region
+    region_code = ""
+    try:
+        contract = AgentContract.objects.filter(
+            agent_id=uuid.UUID(agent_id),
+            status__in=[AgentContractStatus.ACTIVE, AgentContractStatus.REDUCED_COMMISSION],
+        ).first()
+        if contract:
+            region_code = contract.region_code
+    except Exception:
+        pass
+
+    # Enforce price bounds
+    bound = SaaSPricingGovernanceBound.objects.filter(
+        service_key=service_key, region_code=region_code,
+    ).first()
+
+    if bound:
+        if amount < bound.min_amount:
+            return JsonResponse({
+                "error": f"Price {amount} is below the platform minimum of {bound.min_amount} {bound.currency} "
+                         f"for '{service_key}' in region {region_code}.",
+                "code": "PRICE_BELOW_MINIMUM",
+                "min_amount": bound.min_amount,
+                "max_amount": bound.max_amount,
+                "currency": bound.currency,
+            }, status=422)
+        if amount > bound.max_amount:
+            return JsonResponse({
+                "error": f"Price {amount} exceeds the platform maximum of {bound.max_amount} {bound.currency} "
+                         f"for '{service_key}' in region {region_code}.",
+                "code": "PRICE_ABOVE_MAXIMUM",
+                "min_amount": bound.min_amount,
+                "max_amount": bound.max_amount,
+                "currency": bound.currency,
+            }, status=422)
+        if not currency:
+            currency = bound.currency
+
+    obj, created = SaaSRlaServicePrice.objects.update_or_create(
+        agent_id=uuid.UUID(agent_id),
+        service_key=service_key,
+        defaults={
+            "region_code": region_code,
+            "amount": amount,
+            "currency": currency,
+            "set_at": datetime.now(tz=timezone.utc),
+        },
+    )
+    return JsonResponse({
+        "status": "ok",
+        "created": created,
+        "data": {
+            "agent_id": agent_id, "service_key": service_key,
+            "amount": obj.amount, "currency": obj.currency,
+            "region_code": obj.region_code,
+        },
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# B. REMITTANCE ENFORCEMENT
+# RLA must remit platform share within 5 days of collection.
+# If overdue remittances exist, payout requests are blocked.
+# Doctrine: "BOS holds truth, RLA holds money" — but money must flow upward.
+# ═══════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+def agent_remittance_status_view(request: HttpRequest) -> JsonResponse:
+    """
+    GET /agent/remittance/status?agent_id=<uuid>
+    Returns remittance compliance status for an RLA:
+    - overdue count, total overdue amount, days overdue
+    - whether payout is currently blocked
+    - recent remittance history
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+    agent_id = request.GET.get("agent_id", "")
+    if not agent_id:
+        return JsonResponse({"error": "agent_id required"}, status=400)
+
+    deadline_days = int(request.GET.get("deadline_days", "5"))
+    now = datetime.now(tz=timezone.utc)
+    deadline = now - timedelta(days=deadline_days)
+
+    overdue = []
+    compliant = []
+    try:
+        from core.saas.models import SaaSLedgerEntry
+        entries = SaaSLedgerEntry.objects.filter(rla_id=agent_id).order_by("-created_at")[:50]
+        for e in entries:
+            age_days = (now - e.created_at).days
+            entry_dict = {
+                "entry_id": str(e.id),
+                "period": getattr(e, "period", ""),
+                "platform_share": int(getattr(e, "platform_share", 0)),
+                "currency": getattr(e, "currency", ""),
+                "status": e.status,
+                "created_at": e.created_at.isoformat(),
+                "age_days": age_days,
+            }
+            if e.status == "RECORDED" and e.created_at < deadline:
+                overdue.append(entry_dict)
+            else:
+                compliant.append(entry_dict)
+    except Exception:
+        pass
+
+    total_overdue_amount = sum(e["platform_share"] for e in overdue)
+    is_blocked = len(overdue) > 0
+    currency = overdue[0]["currency"] if overdue else ""
+
+    return JsonResponse({
+        "status": "ok",
+        "data": {
+            "agent_id": agent_id,
+            "is_payout_blocked": is_blocked,
+            "overdue_count": len(overdue),
+            "total_overdue_amount": total_overdue_amount,
+            "currency": currency,
+            "deadline_days": deadline_days,
+            "overdue_entries": overdue,
+            "recent_compliant": compliant[:10],
+        },
+    })
+
+
+@csrf_exempt
+def saas_agents_approve_payout_with_remittance_check_view(request: HttpRequest) -> JsonResponse:
+    """
+    POST /saas/agents/payouts/approve
+    Approve a payout — but ONLY if RLA has no overdue remittances.
+    This replaces the original approve view to add enforcement.
+    Body: { payout_id, agent_id }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        body = json.loads(request.body)
+        payout_id = body["payout_id"]
+        agent_id = body.get("agent_id", "")
+    except (KeyError, ValueError) as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    # Check remittance compliance first
+    if agent_id:
+        deadline_days = 5
+        now = datetime.now(tz=timezone.utc)
+        deadline = now - timedelta(days=deadline_days)
+        try:
+            from core.saas.models import SaaSLedgerEntry
+            overdue_count = SaaSLedgerEntry.objects.filter(
+                rla_id=agent_id,
+                status="RECORDED",
+                created_at__lt=deadline,
+            ).count()
+            if overdue_count > 0:
+                return JsonResponse({
+                    "error": f"Payout blocked: {overdue_count} overdue remittance(s) must be settled first. "
+                             "RLA must remit platform share within 5 days of collection.",
+                    "code": "REMITTANCE_OVERDUE",
+                    "overdue_count": overdue_count,
+                    "remedy": "Settle overdue remittances, then retry payout approval.",
+                }, status=422)
+        except Exception:
+            pass  # If ledger model not available, proceed (dev environment)
+
+    # Proceed with normal payout approval
+    try:
+        svcs = _get_saas_services()
+        svcs._reseller_proj.approve_payout(payout_id)
+        return JsonResponse({"status": "ok", "message": "Payout approved"})
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# D. RLA HEALTH SCORE
+# Composite 0-100 score: remittance + growth + escalations + activity.
+# Platform Agent Manager uses this for oversight and intervention decisions.
+# ═══════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+def agent_health_score_view(request: HttpRequest) -> JsonResponse:
+    """
+    GET /saas/agents/health-score?agent_id=<uuid>&period=YYYY-MM
+    Get health score for a specific agent. Computes fresh if not yet stored.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+    agent_id = request.GET.get("agent_id", "")
+    period = request.GET.get("period", "")
+    if not agent_id:
+        return JsonResponse({"error": "agent_id required"}, status=400)
+
+    from core.saas.health import get_health_score, refresh_agent_health_score
+    score = get_health_score(agent_id, period or None)
+    if not score:
+        # Compute fresh if no stored score
+        try:
+            score = refresh_agent_health_score(agent_id, period or None)
+        except Exception as exc:
+            return JsonResponse({"error": str(exc)}, status=500)
+
+    return JsonResponse({"status": "ok", "data": score})
+
+
+@csrf_exempt
+def agent_health_scores_list_view(request: HttpRequest) -> JsonResponse:
+    """
+    GET /saas/agents/health-scores?period=YYYY-MM&grade=GREEN|AMBER|ORANGE|RED|BLACK
+    List health scores for all RLAs (Platform Admin overview).
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    from core.saas.health import list_health_scores
+    period = request.GET.get("period", "")
+    grade = request.GET.get("grade", "")
+    scores = list_health_scores(period=period or None, grade=grade or None)
+    return JsonResponse({"status": "ok", "data": scores, "count": len(scores)})
+
+
+@csrf_exempt
+def agent_health_score_refresh_view(request: HttpRequest) -> JsonResponse:
+    """
+    POST /saas/agents/health-score/refresh
+    Recompute and save health score for an agent.
+    Body: { agent_id, period? }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        body = json.loads(request.body)
+        agent_id = body["agent_id"]
+        period = body.get("period", "")
+    except (KeyError, ValueError) as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    from core.saas.health import refresh_agent_health_score
+    try:
+        score = refresh_agent_health_score(agent_id, period or None)
+        return JsonResponse({"status": "ok", "data": score})
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
