@@ -483,7 +483,7 @@ export async function getRemittanceStatus(agentId: string) {
   return res.data;
 }
 
-export async function approvePayout(data: { payout_id: string; agent_id?: string }) {
+export async function approvePayoutEnforced(data: { payout_id: string; agent_id?: string }) {
   const res = await api.post("/saas/agents/payouts/approve-enforced", data);
   return res.data;
 }
