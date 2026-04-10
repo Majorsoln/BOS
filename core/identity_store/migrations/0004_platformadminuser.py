@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("identity_store", "0003_customerprofile"),
+        ("core_identity_store", "0003_customerprofile"),
     ]
 
     operations = [
