@@ -13,7 +13,7 @@ import {
 import {
   getLedgerEntries, getLedgerEntry, getLedgerSummary, getOperatingLaws,
 } from "@/lib/api/saas";
-import { REGIONS } from "@/lib/constants";
+import { useRegions } from "@/hooks/use-regions";
 import { formatDate } from "@/lib/utils";
 import Link from "next/link";
 import {
@@ -98,6 +98,7 @@ function LedgerEntriesTab() {
   const [regionFilter, setRegionFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const { regions } = useRegions();
 
   const entriesQuery = useQuery({
     queryKey: ["saas", "ledger", "entries", regionFilter, statusFilter],
@@ -167,7 +168,7 @@ function LedgerEntriesTab() {
         <Select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)} className="w-48">
           <option value="">All Regions</option>
           {activeRegions.map((r) => (
-            <option key={r} value={r}>{r} — {REGIONS.find((reg) => reg.code === r)?.name || r}</option>
+            <option key={r} value={r}>{r} — {regions.find((reg) => reg.code === r)?.name || r}</option>
           ))}
         </Select>
         <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-48">

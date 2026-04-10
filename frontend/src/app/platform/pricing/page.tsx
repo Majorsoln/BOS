@@ -15,7 +15,8 @@ import {
   getReductionRates, setReductionRate,
 } from "@/lib/api/saas";
 import { getAgents, getPricingGovernance, setPricingGovernance } from "@/lib/api/agents";
-import { BOS_SERVICES, CAPACITY_DIMENSIONS, REGIONS } from "@/lib/constants";
+import { BOS_SERVICES, CAPACITY_DIMENSIONS } from "@/lib/constants";
+import { useRegions } from "@/hooks/use-regions";
 import {
   Package, DollarSign, Power, PowerOff, Layers, Percent, Building2, FileText, Users, Cpu, Shield, Eye, ArrowUpDown,
 } from "lucide-react";
@@ -48,9 +49,10 @@ export default function PricingPage() {
     queryFn: () => getAgents({ type: "REGION_LICENSE_AGENT" }),
   });
 
+  const { regions: allRegions } = useRegions();
   const rlaList: Array<{ territory?: string; status: string }> = rlaQuery.data?.data ?? [];
   const activeRLARegions = new Set(rlaList.filter((a) => a.status === "ACTIVE").map((a) => a.territory).filter(Boolean));
-  const pricingRegions = REGIONS.filter((r) => activeRLARegions.has(r.code));
+  const pricingRegions = allRegions.filter((r) => activeRLARegions.has(r.code));
   const hasNoRLAs = pricingRegions.length === 0;
 
   const tabs: { key: TabKey; label: string }[] = [

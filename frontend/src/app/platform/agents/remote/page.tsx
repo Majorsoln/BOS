@@ -14,7 +14,7 @@ import {
 import {
   getAgents, registerAgent, suspendAgent, reinstateAgent, terminateAgent,
 } from "@/lib/api/agents";
-import { REGIONS } from "@/lib/constants";
+import { useRegions } from "@/hooks/use-regions";
 import { formatDate } from "@/lib/utils";
 import { UserCheck, Plus, XCircle, Play, Shield, AlertTriangle, Users, Globe, TrendingUp } from "lucide-react";
 import Link from "next/link";
@@ -23,6 +23,7 @@ type ToastState = { message: string; variant: "success" | "error" } | null;
 
 export default function RemoteAgentsPage() {
   const qc = useQueryClient();
+  const { regions } = useRegions();
   const [toast, setToast] = useState<ToastState>(null);
   const [statusFilter, setStatusFilter] = useState("");
   const [showRegister, setShowRegister] = useState(false);
@@ -165,7 +166,7 @@ export default function RemoteAgentsPage() {
               </TableHeader>
               <TableBody>
                 {agentList.map((a) => {
-                  const region = REGIONS.find((r) => r.code === a.territory);
+                  const region = regions.find((r) => r.code === a.territory);
                   const tierVariant = a.tier === "GOLD" ? "warning" : a.tier === "SILVER" ? "secondary" : "outline";
                   return (
                     <TableRow key={a.agent_id}>
@@ -236,7 +237,7 @@ export default function RemoteAgentsPage() {
             <Label>Base Country</Label>
             <Select name="country" required>
               <option value="">Select country...</option>
-              {REGIONS.map((r) => (
+              {regions.map((r) => (
                 <option key={r.code} value={r.code}>{r.code} — {r.name}</option>
               ))}
             </Select>

@@ -9,13 +9,15 @@ import {
   Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Toast,
 } from "@/components/ui";
 import { getMyCommissions, requestMyPayout } from "@/lib/api/agents";
-import { PAYOUT_METHODS, REGIONS } from "@/lib/constants";
+import { PAYOUT_METHODS } from "@/lib/constants";
+import { useRegions } from "@/hooks/use-regions";
 import { DollarSign, Download } from "lucide-react";
 
 export default function CommissionHistoryPage() {
   const [showPayout, setShowPayout] = useState(false);
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
   const commissions = useQuery({ queryKey: ["agent", "commissions"], queryFn: () => getMyCommissions() });
+  const { regions } = useRegions();
 
   const payoutMut = useMutation({
     mutationFn: requestMyPayout,
@@ -141,7 +143,7 @@ export default function CommissionHistoryPage() {
         <div>
           <Label htmlFor="pay_currency">Currency</Label>
           <Select id="pay_currency" name="currency" className="mt-1" required>
-            {REGIONS.map((r) => <option key={r.code} value={r.currency}>{r.currency} ({r.name})</option>)}
+            {regions.map((r) => <option key={r.code} value={r.currency}>{r.currency} ({r.name})</option>)}
           </Select>
         </div>
         <div>

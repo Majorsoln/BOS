@@ -8,7 +8,8 @@ import {
   Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Toast, Badge,
 } from "@/components/ui";
 import { getEffectiveRate, publishRateChange } from "@/lib/api/saas";
-import { REGIONS, COUNTRY_TAX_RULES, BOS_SERVICES } from "@/lib/constants";
+import { BOS_SERVICES } from "@/lib/constants";
+import { useRegions } from "@/hooks/use-regions";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   Search, TrendingUp, AlertTriangle, Shield, FileText, Building2, Scale,
@@ -130,6 +131,12 @@ function BillingDoctrine() {
 }
 
 function TaxRulesTable() {
+  const { regions, isLoading } = useRegions();
+
+  if (isLoading) {
+    return <p className="py-8 text-center text-sm text-bos-silver-dark">Loading regions…</p>;
+  }
+
   return (
     <Card>
       <CardContent className="p-0">
@@ -147,27 +154,27 @@ function TaxRulesTable() {
               </tr>
             </thead>
             <tbody>
-              {REGIONS.map((region) => {
-                const rules = COUNTRY_TAX_RULES[region.code];
-                if (!rules) return null;
-                return (
-                  <tr key={region.code} className="border-b border-bos-silver/10 hover:bg-bos-silver-light/50 dark:hover:bg-neutral-900/50">
-                    <td className="px-4 py-3 font-medium">{region.name}</td>
-                    <td className="px-4 py-3"><Badge variant="outline">{region.currency}</Badge></td>
-                    <td className="px-4 py-3">{rules.tax_name}</td>
-                    <td className="px-4 py-3 text-right font-mono">{Math.round(rules.vat_rate * 100)}%</td>
-                    <td className="px-4 py-3 text-right font-mono">
-                      {rules.digital_tax_rate > 0 ? `${(rules.digital_tax_rate * 100).toFixed(1)}%` : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <StatusBadge status={rules.b2b_reverse_charge ? "ACTIVE" : "INACTIVE"} />
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <StatusBadge status={rules.registration_required ? "ACTIVE" : "INACTIVE"} />
-                    </td>
-                  </tr>
-                );
-              })}
+              {regions.map((region) => (
+                <tr key={region.code} className="border-b border-bos-silver/10 hover:bg-bos-silver-light/50 dark:hover:bg-neutral-900/50">
+                  <td className="px-4 py-3 font-medium">{region.name}</td>
+                  <td className="px-4 py-3"><Badge variant="outline">{region.currency}</Badge></td>
+                  <td className="px-4 py-3">{region.tax_name ?? "VAT"}</td>
+                  <td className="px-4 py-3 text-right font-mono">
+                    {region.vat_rate != null ? `${Math.round(region.vat_rate * 100)}%` : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono">
+                    {region.digital_tax_rate && region.digital_tax_rate > 0
+                      ? `${(region.digital_tax_rate * 100).toFixed(1)}%`
+                      : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <StatusBadge status={region.b2b_reverse_charge ? "ACTIVE" : "INACTIVE"} />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <StatusBadge status={region.registration_required ? "ACTIVE" : "INACTIVE"} />
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -253,6 +260,7 @@ function EffectiveRateChecker() {
 }
 
 function RateChangePublisher({ onSuccess, onError }: { onSuccess: () => void; onError: () => void }) {
+  const { regions } = useRegions({ onlyActive: true });
   const publishMut = useMutation({
     mutationFn: publishRateChange,
     onSuccess,
@@ -264,7 +272,7 @@ function RateChangePublisher({ onSuccess, onError }: { onSuccess: () => void; on
     const form = e.target as HTMLFormElement;
     const data = new FormData(form);
     const regionCode = data.get("region_code") as string;
-    const region = REGIONS.find((r) => r.code === regionCode);
+    const region = regions.find((r) => r.code === regionCode);
     publishMut.mutate({
       service_key: data.get("service_key") as string,
       region_code: regionCode,
@@ -307,7 +315,8 @@ function RateChangePublisher({ onSuccess, onError }: { onSuccess: () => void; on
             <div>
               <Label htmlFor="region_code">Region</Label>
               <Select id="region_code" name="region_code" className="mt-1" required>
-                {REGIONS.map((r) => (
+                <option value="">Select region…</option>
+                {regions.map((r) => (
                   <option key={r.code} value={r.code}>{r.name} ({r.currency})</option>
                 ))}
               </Select>

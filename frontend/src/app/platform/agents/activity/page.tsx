@@ -12,7 +12,7 @@ import {
 } from "@/components/ui";
 import { getAgents } from "@/lib/api/agents";
 import { getTrials, getSubscriptions, getPromos } from "@/lib/api/saas";
-import { REGIONS } from "@/lib/constants";
+import { useRegions } from "@/hooks/use-regions";
 import { formatDate } from "@/lib/utils";
 import Link from "next/link";
 import {
@@ -241,6 +241,7 @@ function HealthTab() {
 /* ── Service Delivery Tab ─────────────────────────────── */
 
 function ServiceTab() {
+  const { regions } = useRegions();
   const rlaQuery = useQuery({
     queryKey: ["saas", "agents", "REGION_LICENSE_AGENT"],
     queryFn: () => getAgents({ type: "REGION_LICENSE_AGENT" }),
@@ -297,7 +298,7 @@ function ServiceTab() {
                   });
                   const totalTenants = (rla.active_tenant_count as number ?? rla.tenant_count as number ?? 0) +
                     regionRemotes.reduce((s, r) => s + (r.active_tenant_count as number ?? r.tenant_count as number ?? 0), 0);
-                  const regionInfo = REGIONS.find((r) => r.code === region);
+                  const regionInfo = regions.find((r) => r.code === region);
 
                   return (
                     <TableRow key={rla.agent_id as string}>

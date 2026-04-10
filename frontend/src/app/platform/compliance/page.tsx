@@ -18,7 +18,7 @@ import {
   getComplianceProfile, reviewComplianceProfile,
   activateComplianceProfile, suspendComplianceProfile, reactivateComplianceProfile,
 } from "@/lib/api/saas";
-import { REGIONS } from "@/lib/constants";
+import { useRegions } from "@/hooks/use-regions";
 import { formatDate } from "@/lib/utils";
 
 type TabKey = "packs" | "policies" | "profiles";
@@ -114,6 +114,7 @@ const STATE_BADGE_VARIANT: Record<string, "success" | "warning" | "destructive" 
 export default function CompliancePage() {
   const [tab, setTab] = useState<TabKey>("packs");
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
+  const { regions } = useRegions();
 
   // ── Packs tab state ──
   const [packRegion, setPackRegion] = useState("");
@@ -418,7 +419,7 @@ export default function CompliancePage() {
           <div className="mb-4 flex items-center gap-3">
             <Select value={packRegion} onChange={(e) => setPackRegion(e.target.value)} className="w-48">
               <option value="">All Regions</option>
-              {REGIONS.map((r) => (
+              {regions.map((r) => (
                 <option key={r.code} value={r.code}>{r.code} — {r.name}</option>
               ))}
             </Select>
@@ -678,7 +679,7 @@ export default function CompliancePage() {
             <Label>Region</Label>
             <Select value={publishData.region_code} onChange={(e) => setPublishData({ ...publishData, region_code: e.target.value })} required>
               <option value="">-- Select --</option>
-              {REGIONS.map((r) => (
+              {regions.map((r) => (
                 <option key={r.code} value={r.code}>{r.code} — {r.name}</option>
               ))}
             </Select>
@@ -946,11 +947,11 @@ export default function CompliancePage() {
           <div>
             <Label>Country Code</Label>
             <Select value={policyData.country_code} onChange={(e) => {
-              const region = REGIONS.find((r) => r.code === e.target.value);
+              const region = regions.find((r) => r.code === e.target.value);
               setPolicyData({ ...policyData, country_code: e.target.value, country_name: region?.name || "" });
             }} required>
               <option value="">-- Select --</option>
-              {REGIONS.map((r) => (
+              {regions.map((r) => (
                 <option key={r.code} value={r.code}>{r.code} — {r.name}</option>
               ))}
             </Select>

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui";
 import { getAgents, getAgentPayouts } from "@/lib/api/agents";
 import { getSubscriptions, getTrials } from "@/lib/api/saas";
-import { REGIONS } from "@/lib/constants";
+import { useRegions } from "@/hooks/use-regions";
 import { formatDate } from "@/lib/utils";
 import Link from "next/link";
 import {
@@ -97,6 +97,7 @@ export default function FinanceDashboardPage() {
 /* ── Revenue Overview Tab ─────────────────────────────── */
 
 function RevenueOverviewTab() {
+  const { regions } = useRegions();
   const rlaQuery = useQuery({
     queryKey: ["saas", "agents", "REGION_LICENSE_AGENT"],
     queryFn: () => getAgents({ type: "REGION_LICENSE_AGENT" }),
@@ -254,7 +255,7 @@ function RevenueOverviewTab() {
               </TableHeader>
               <TableBody>
                 {rlas.map((a) => {
-                  const region = REGIONS.find((r) => r.code === a.territory);
+                  const region = regions.find((r) => r.code === a.territory);
                   return (
                     <TableRow key={a.agent_id}>
                       <TableCell>
@@ -291,6 +292,7 @@ function RevenueOverviewTab() {
 
 function CollectionsTab() {
   const [regionFilter, setRegionFilter] = useState("");
+  const { regions } = useRegions();
 
   const rlaQuery = useQuery({
     queryKey: ["saas", "agents", "REGION_LICENSE_AGENT"],
@@ -325,7 +327,7 @@ function CollectionsTab() {
         <Select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)} className="w-48">
           <option value="">All Regions</option>
           {activeRegions.map((r) => (
-            <option key={r} value={r}>{r} — {REGIONS.find((reg) => reg.code === r)?.name || r}</option>
+            <option key={r} value={r}>{r} — {regions.find((reg) => reg.code === r)?.name || r}</option>
           ))}
         </Select>
       </div>
@@ -342,7 +344,7 @@ function CollectionsTab() {
             const rlaPayouts = payouts.filter((p) => p.agent_id === rla.agent_id);
             const completedPayouts = rlaPayouts.filter((p) => p.status === "COMPLETED");
             const pendingPayouts = rlaPayouts.filter((p) => p.status === "PENDING");
-            const region = REGIONS.find((r) => r.code === rla.territory);
+            const region = regions.find((r) => r.code === rla.territory);
 
             return (
               <Card key={rla.agent_id}>

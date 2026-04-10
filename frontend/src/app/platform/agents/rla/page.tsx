@@ -19,7 +19,7 @@ import {
   generateAgentContract, getPendingRlaRegions,
   listAgentHealthScores,
 } from "@/lib/api/agents";
-import { REGIONS } from "@/lib/constants";
+import { useRegions } from "@/hooks/use-regions";
 import { formatDate } from "@/lib/utils";
 import {
   Shield, MapPin, Plus, XCircle, Play, AlertTriangle, Users,
@@ -157,13 +157,15 @@ export default function RegionLicenseAgentsPage() {
     BLACK:  "bg-neutral-900",
   };
 
+  const { regions: allRegions } = useRegions({ onlyActive: true });
+
   const assignedRegions = new Set(
     agentList.filter((a) => a.status !== "TERMINATED_PERMANENT" && a.status !== "TERMINATED_REVERSIBLE").map((a) => a.territory).filter(Boolean)
   );
-  const availableRegions = REGIONS.filter((r) => !assignedRegions.has(r.code));
+  const availableRegions = allRegions.filter((r) => !assignedRegions.has(r.code));
 
   const activeCount = agentList.filter((a) => a.status === "ACTIVE").length;
-  const totalRegions = REGIONS.length;
+  const totalRegions = allRegions.length;
 
   function handleAppoint(e: React.FormEvent) {
     e.preventDefault();
@@ -250,7 +252,7 @@ export default function RegionLicenseAgentsPage() {
               </TableHeader>
               <TableBody>
                 {pendingRegions.map((r) => {
-                  const region = REGIONS.find((x) => x.code === r.region_code);
+                  const region = allRegions.find((x) => x.code === r.region_code);
                   return (
                     <TableRow key={r.region_code}>
                       <TableCell>
@@ -332,7 +334,7 @@ export default function RegionLicenseAgentsPage() {
               </TableHeader>
               <TableBody>
                 {agentList.map((a) => {
-                  const region = REGIONS.find((r) => r.code === a.territory);
+                  const region = allRegions.find((r) => r.code === a.territory);
                   const termLabel = getTerminationLabel(a.status);
                   const isTerminated = a.status === "TERMINATED_REVERSIBLE" || a.status === "TERMINATED_PERMANENT";
                   const canReinstate = a.status === "TERMINATED_REVERSIBLE";
